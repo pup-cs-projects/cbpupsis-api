@@ -49,7 +49,7 @@ and the milestone's due date is the target date shown on every issue in it.
 |---|---|---|
 | 0 | Sep 16 to Sep 20 | Kickoff: decisions closed Wed to Fri, setup PRs merged, every developer runs the stack |
 | 1 | Sep 21 to Sep 25 | Authentication: sign in, sessions, and role checks, with their tests |
-| 2 | Sep 28 to Oct 02 | Authentication and access control |
+| 2 | Sep 28 to Oct 02 | Access control finished, user administration, and the security baseline |
 | 3 | Oct 05 to Oct 09 | Student profile, course catalog, academic calendar |
 | 4 | Oct 12 to Oct 16 | Fees and assessments, notifications |
 | 5 | Oct 19 to Oct 23 | Enrollment journey and course schedule |
