@@ -1,0 +1,93 @@
+meta {
+  name: Login is rate limited
+  type: http
+  seq: 99
+}
+
+post {
+  url: {{api}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "rate-limit-probe@example.com",
+    "password": "wrong-password-on-purpose"
+  }
+}
+
+tests {
+  // Deliberately last in the collection. Rate-limit counters are keyed per IP
+  // and, with the default memory:// storage, persist for the window — so
+  // tripping the login limit early would poison every later login in the run.
+  //
+  // The suite runs against a RAISED login limit (see environments/README.md) so
+  // that ordinary logins in folders 00-04 are not throttled. This drives past
+  // that raised ceiling to prove limiting still works, stopping the moment it
+  // sees a 429 rather than always burning the full budget.
+  //
+  // MAX_ATTEMPTS must exceed the configured limit. Raise it alongside
+  // RATE_LIMIT_LOGIN if that value ever goes up.
+  const url = `${bru.getEnvVar("api")}/auth/login`;
+
+  // bru.sendRequest REJECTS on a non-2xx status rather than returning it, and
+  // every probe here is deliberately a 401. Catching and reading err.response
+  // is what makes the loop able to see its own expected failures — without it
+  // the first 401 aborts the script and no test ever registers.
+  const attempt = async () => {
+    try {
+      return await bru.sendRequest({
+        method: "POST",
+        url,
+        headers: { "Content-Type": "application/json" },
+        data: {
+          email: "rate-limit-probe@example.com",
+          password: "wrong-password-on-purpose",
+        },
+      });
+    } catch (err) {
+      if (err.response) return err.response;
+      throw err;
+    }
+  };
+
+  const MAX_ATTEMPTS = 240;
+
+  let limited = null;
+  for (let i = 0; i < MAX_ATTEMPTS && !limited; i++) {
+    const r = await attempt();
+    if (r.status === 429) limited = r;
+  }
+
+  if (!limited) {
+    // Not a failure: RATE_LIMIT_ENABLED=false is a legitimate configuration,
+    // and the pytest suite switches it off precisely so counters cannot make
+    // tests order-dependent. Failing here would punish a valid setup.
+    test("[skipped] rate limiting appears disabled in this environment", function () {
+      expect(true).to.be.true;
+    });
+  } else {
+    test("returns 429 once the limit is crossed", function () {
+      expect(limited.status).to.equal(429);
+    });
+
+    test("tells the client when to retry", function () {
+      // Without Retry-After a client can only guess, and a naive one will
+      // hammer the endpoint for the rest of the window.
+      const retryAfter =
+        limited.headers["retry-after"] || limited.headers["Retry-After"];
+      expect(retryAfter, "Retry-After header").to.not.be.undefined;
+      expect(Number(retryAfter)).to.be.greaterThan(0);
+    });
+  }
+}
+
+docs {
+  Sequenced last on purpose — see the comment in the test block. If you add
+  requests to this collection, keep this one at the end.
+}

@@ -1,0 +1,50 @@
+meta {
+  name: An explicit null clears a field
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{api}}/users/me
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: owner
+}
+
+body:json {
+  {
+    "bio": null
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("null clears the field it names", function () {
+    // The other half of the partial-update contract. Request 02 proved an
+    // ABSENT key changes nothing; this proves an explicit null is a real
+    // instruction to erase. Collapse the two — by treating null as "unset" —
+    // and a user can never clear their own bio, with the API answering 200 to
+    // every attempt.
+    expect(res.getBody().bio, "bio after an explicit null").to.be.null;
+  });
+
+  test("clearing one field leaves its neighbours alone", function () {
+    // display_name was set by request 02 and is not mentioned in this body, so
+    // it must survive. This catches a "null clears everything nullable"
+    // over-correction.
+    expect(res.getBody().display_name).to.equal("E2E Display Name");
+  });
+}
+
+docs {
+  Paired with 02. Together they pin both directions of `exclude_unset=True`,
+  which is the kind of rule that is easy to half-implement and whose failure
+  looks like a 200.
+}

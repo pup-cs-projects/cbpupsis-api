@@ -1,0 +1,32 @@
+meta {
+  name: Add a user to the group
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{api}}/iam/groups/{{e2e_group_id}}/users
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: admin
+}
+
+body:json {
+  {
+    "user_id": "{{other_user_id}}"
+  }
+}
+
+assert {
+  res.status: eq 204
+}
+
+docs {
+  `other` is used rather than `owner` so that the permission this grants cannot
+  interfere with the ownership assertions in folder 03, whichever order the
+  folders run in.
+}

@@ -1,0 +1,27 @@
+meta {
+  name: Malformed JSON is rejected cleanly
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{api}}/auth/login
+  body: text
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:text {
+  {"email": "broken@example.com", "password":
+}
+
+tests {
+  test("answers 422 rather than crashing", function () {
+    // A truncated body is what a flaky mobile connection actually produces, and
+    // it must not reach an unhandled parse error.
+    expect(res.getStatus()).to.equal(422);
+  });
+}

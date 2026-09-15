@@ -1,0 +1,37 @@
+meta {
+  name: CORS preflight allows the configured origin
+  type: http
+  seq: 6
+}
+
+options {
+  url: {{api}}/auth/login
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: http://localhost:3000
+  Access-Control-Request-Method: POST
+  Access-Control-Request-Headers: content-type
+}
+
+tests {
+  test("returns the allow-origin header for a configured origin", function () {
+    // http://localhost:3000 is the origin in env.example's CORS_ORIGINS. A
+    // browser silently drops the response without this header, which is the
+    // single most common "the API works in curl but not in the app" failure —
+    // and one no in-process test can catch, because there is no browser and no
+    // preflight.
+    const allowed = res.getHeader("access-control-allow-origin");
+    expect(allowed, "Access-Control-Allow-Origin").to.be.a("string");
+    expect(allowed).to.be.oneOf(["http://localhost:3000", "*"]);
+  });
+
+  test("permits the POST the client is asking about", function () {
+    const methods = res.getHeader("access-control-allow-methods") || "";
+    expect(methods.toUpperCase()).to.satisfy(
+      (m) => m.includes("POST") || m.includes("*")
+    );
+  });
+}

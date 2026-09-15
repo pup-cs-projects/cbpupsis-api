@@ -1,0 +1,49 @@
+meta {
+  name: The granted permission survives a fresh login
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{api}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "e2e-other@example.com",
+    "password": "{{e2e_password}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("the newly grouped user can still authenticate", function () {
+    expect(res.getBody().access_token).to.be.a("string").and.not.be.empty;
+  });
+
+  // Refresh the stored token: this login rotates nothing, but keeping the
+  // variable current means later folders act as the group-bearing principal.
+  bru.setVar("other_access_token", res.getBody().access_token);
+}
+
+docs {
+  The end of the chain, and an honest statement of its limit.
+
+  There is no endpoint that returns a caller's effective permissions, so this
+  suite cannot assert over HTTP that `ReadE2EProbe...` was actually granted —
+  only that the whole create/attach/add sequence completed and left the account
+  in a working state. Verifying the grant itself is unit-level work and belongs
+  to `tests/test_iam.py`, which can call `get_effective_permissions` directly.
+
+  If an endpoint exposing effective permissions is ever added, this request is
+  where the real assertion should go.
+}

@@ -1,0 +1,32 @@
+meta {
+  name: A client-supplied request id is honored
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/health
+  body: none
+  auth: none
+}
+
+headers {
+  X-Request-ID: {{supplied_request_id}}
+}
+
+script:pre-request {
+  bru.setVar("supplied_request_id", `e2e-${Date.now()}`);
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("the response carries the id the client sent", function () {
+    // Correlating a client-side error report with server logs depends on this.
+    // If the middleware overwrote the incoming id, a client could never point
+    // at the request it actually made.
+    expect(res.getHeader("x-request-id")).to.equal(bru.getVar("supplied_request_id"));
+  });
+}

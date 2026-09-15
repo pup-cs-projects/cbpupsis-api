@@ -1,0 +1,94 @@
+meta {
+  name: avatar_url refuses dangerous schemes
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{api}}/users/me
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: owner
+}
+
+body:json {
+  {
+    "avatar_url": "https://cdn.example.com/avatars/e2e.png"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("accepts an absolute https URL", function () {
+    expect(res.getBody().avatar_url).to.equal(
+      "https://cdn.example.com/avatars/e2e.png"
+    );
+  });
+
+  test("stores the URL exactly as sent", function () {
+    // Why the field is a constrained string and not pydantic's HttpUrl:
+    // HttpUrl normalises, appending a trailing slash to some inputs. A value
+    // that reads back different from what the client wrote breaks equality
+    // checks and makes a form look dirty the moment it loads.
+    expect(res.getBody().avatar_url).to.not.contain("png/");
+  });
+
+  // The dangerous schemes. Driven as probes from one request because they
+  // assert a single rule; a file each would add noise, not coverage.
+  //
+  // bru.sendRequest throws on non-2xx and every one of these is a deliberate
+  // 422 — unwrap err.response or the first probe aborts the script and the
+  // whole file silently reports zero tests.
+  const api = bru.getEnvVar("api");
+  const token = bru.getVar("owner_access_token");
+
+  const attempt = async (avatarUrl) => {
+    try {
+      return await bru.sendRequest({
+        method: "PATCH",
+        url: `${api}/users/me`,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        data: { avatar_url: avatarUrl },
+      });
+    } catch (err) {
+      if (err.response) return err.response;
+      throw err;
+    }
+  };
+
+  const dangerous = [
+    ["javascript:alert(document.cookie)", "stored XSS once rendered into an href"],
+    ["data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==", "inline HTML payload"],
+    ["file:///etc/passwd", "local file scheme"],
+    ["//cdn.example.com/x.png", "protocol-relative, inherits the page scheme"],
+    ["not-a-url-at-all", "not absolute"],
+  ];
+
+  for (const [value, why] of dangerous) {
+    const r = await attempt(value);
+    test(`refuses ${value.slice(0, 24)}… — ${why}`, function () {
+      expect(r.status, `${value} must be refused`).to.equal(422);
+    });
+  }
+}
+
+docs {
+  A stored `javascript:` URL is stored XSS the moment a frontend renders it into
+  an `href` or an `<img src>`. The guard belongs in the API because it is the
+  only layer every client shares — one frontend remembering to sanitize does not
+  protect the mobile app or the next client someone writes.
+
+  The five probes all fail the validator's `http(s)://` allowlist, which is why
+  each expects 422. An allowlist rather than a denylist is the right shape here:
+  a denylist has to predict every scheme a browser will honor.
+}

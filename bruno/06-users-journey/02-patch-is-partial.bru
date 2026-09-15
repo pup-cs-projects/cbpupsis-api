@@ -1,0 +1,61 @@
+meta {
+  name: PATCH updates only the fields it sends
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{api}}/users/me
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: owner
+}
+
+body:json {
+  {
+    "display_name": "E2E Display Name",
+    "bio": "Set by the Bruno end-to-end suite."
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("applies the fields that were sent", function () {
+    const body = res.getBody();
+    expect(body.display_name).to.equal("E2E Display Name");
+    expect(body.bio).to.equal("Set by the Bruno end-to-end suite.");
+  });
+
+  test("leaves unsent fields untouched", function () {
+    // The `exclude_unset=True` contract. Without it the router would dump the
+    // whole model and every field the client did not mention — timezone,
+    // locale, phone number, avatar — would be overwritten with null.
+    //
+    // This is the destructive-partial-update bug, and it is invisible in a
+    // request that happens to send every field. Only an omitted key shows it,
+    // which is why this assertion follows a body that deliberately sends two
+    // fields out of seven.
+    const body = res.getBody();
+    expect(body.email, "email must survive a partial update").to.equal(
+      "e2e-owner@example.com"
+    );
+    expect(body.id).to.equal(bru.getVar("owner_user_id"));
+    expect(body.is_active, "is_active").to.be.true;
+  });
+}
+
+docs {
+  The distinction between an absent key and an explicit null is a JSON-level
+  property. A direct service call passes Python kwargs, where "not passed" and
+  "passed as None" take effort to tell apart — over HTTP it is the difference
+  between two bodies, which is how a client actually experiences it.
+
+  Request 03 asserts the other half: an explicit null clears the field.
+}

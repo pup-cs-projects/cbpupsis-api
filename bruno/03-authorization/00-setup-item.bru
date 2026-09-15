@@ -1,0 +1,36 @@
+meta {
+  name: Setup — owner creates an item
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{api}}/items
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: owner
+}
+
+body:json {
+  {
+    "name": "Owner's private widget",
+    "price": "5.00"
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  bru.setVar("guarded_item_id", res.getBody().id);
+}
+
+docs {
+  Setup, not an assertion of anything new — folder 02 already covers creation.
+  It exists so this folder owns its fixture and can run standalone.
+}

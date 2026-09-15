@@ -1,0 +1,40 @@
+meta {
+  name: Login admin
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{api}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "e2e-admin@example.com",
+    "password": "{{e2e_password}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns a bearer token pair", function () {
+    expect(res.getBody().access_token).to.be.a("string").and.not.be.empty;
+  });
+
+  bru.setVar("admin_access_token", res.getBody().access_token);
+}
+
+docs {
+  Establishes the `admin` principal, which holds `ManageIAM`. Seeded by script
+  because that permission cannot be self-granted through the API — the IAM
+  endpoints that would grant it are themselves gated behind it.
+}

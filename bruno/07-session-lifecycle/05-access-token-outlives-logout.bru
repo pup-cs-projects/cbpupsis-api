@@ -1,0 +1,65 @@
+meta {
+  name: The access token outlives logout, by design
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{api}}/auth/whoami
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{session_access_token}}
+}
+
+tests {
+  // This request documents a deliberate trade-off rather than guarding a rule,
+  // and it is written to stay honest either way.
+  //
+  // Logout revokes the REFRESH token. The access token is a JWT verified by
+  // signature — no database lookup for the token itself — so it keeps working
+  // until it expires. That is the cost of stateless verification, and it is
+  // bounded by the access-token TTL.
+  //
+  // The reason it is not simply "wrong": get_current_user still loads the user
+  // row on every request, so a deactivated or deleted account is refused
+  // IMMEDIATELY. The surviving window applies only to a still-valid account
+  // whose session was ended, which is the case where the exposure is smallest.
+  //
+  // Asserted permissively on purpose. If someone later adds a denylist and the
+  // token starts being refused, that is a security IMPROVEMENT and must not
+  // fail the suite — but the change should be noticed, so the test reports
+  // which behavior it saw.
+  const status = res.getStatus();
+
+  test("the access token's post-logout behavior is one of the two known states", function () {
+    expect(
+      [200, 401],
+      `whoami after logout returned ${status}`
+    ).to.include(status);
+  });
+
+  if (status === 200) {
+    test("[documented] access token still valid until expiry (stateless JWT)", function () {
+      // The current, intended behavior.
+      expect(res.getBody().email).to.equal("e2e-other@example.com");
+    });
+  } else {
+    test("[changed] access tokens are now revoked at logout", function () {
+      // Not a failure — someone tightened this. Worth seeing in the output so
+      // the folder docs and the auth README can be brought into line.
+      expect(status).to.equal(401);
+    });
+  }
+}
+
+docs {
+  Pins a known trade-off so it is a decision on the record rather than a
+  surprise someone rediscovers during an incident.
+
+  If this ever reports "[changed]", update `07-session-lifecycle/folder.bru` and
+  the auth section of the API README — the behavior is now stricter than they
+  describe.
+}

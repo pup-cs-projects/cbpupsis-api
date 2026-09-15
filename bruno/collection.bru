@@ -1,0 +1,93 @@
+headers {
+  Accept: application/json
+}
+
+auth {
+  mode: none
+}
+
+script:pre-request {
+  // Attach the bearer token to every request that asked for one.
+  //
+  // Requests opt in by setting `auth: inherit` in their own `auth` block and
+  // naming which principal they act as via the `x-e2e-actor` header (owner |
+  // other | admin). Doing it here rather than per-request means a request file
+  // never contains a token, and switching principals is one header instead of a
+  // copied Authorization line that drifts out of date.
+  const actor = req.getHeader("x-e2e-actor");
+  if (actor) {
+    // The header is an instruction to this script, not something the API should
+    // ever see. Strip it before the request leaves.
+    req.setHeader("x-e2e-actor", null);
+    const token = bru.getVar(`${actor}_access_token`);
+    if (!token) {
+      throw new Error(
+        `No access token for actor "${actor}". The login request in ` +
+        `00-smoke must run before this one — run the whole folder, not a ` +
+        `single request in isolation.`
+      );
+    }
+    req.setHeader("Authorization", `Bearer ${token}`);
+  }
+}
+
+script:post-response {
+  // One contract check applied to every response in the collection.
+  //
+  // Every request inherits this, so the transport-level guarantees are asserted
+  // hundreds of times without a single request file mentioning them. A journey
+  // request is then free to assert only its own business outcome.
+  const status = res.getStatus();
+
+  // CORS preflight (and a rejected origin) is answered by the CORS middleware
+  // before the request-id middleware ever runs, so those responses legitimately
+  // carry neither the header nor the envelope. 08-contract asserts what IS true
+  // of them; here they are simply out of scope.
+  const isCorsShortCircuit =
+    req.getMethod().toUpperCase() === "OPTIONS" ||
+    (status === 400 && res.getHeader("x-request-id") === undefined);
+
+  if (!isCorsShortCircuit) {
+    // X-Request-ID is what makes an opaque 500 traceable in the logs.
+    test("[contract] response carries X-Request-ID", function () {
+      expect(res.getHeader("x-request-id"), "X-Request-ID header")
+        .to.be.a("string").and.not.be.empty;
+    });
+  }
+
+  // Starlette answers an unmatched route or a wrong method itself, without ever
+  // entering the application's exception handlers — so those bodies are a bare
+  // {"detail": ...} with no request_id. That is framework behavior, not a
+  // contract violation, and asserting the envelope on them would fail forever.
+  const isFrameworkError = status === 404 || status === 405;
+
+  if (status >= 400 && status !== 429 && !isCorsShortCircuit && !isFrameworkError) {
+    test("[contract] error uses the documented envelope", function () {
+      const body = res.getBody();
+      expect(body, "error body").to.be.an("object");
+      // `detail` is a string for handled errors and an array of field errors
+      // for 422s raised by FastAPI's validation layer.
+      expect(body).to.have.property("detail");
+      expect(body).to.have.property("request_id");
+      expect(
+        body.request_id,
+        "request_id in the body must match the X-Request-ID header"
+      ).to.equal(res.getHeader("x-request-id"));
+    });
+  }
+}
+
+docs {
+  # api-e2e
+
+  End-to-end HTTP tests for this API. See `bruno/README.md` for how to run them.
+
+  Two things are centralized here so individual requests stay about one thing each:
+
+  - **Authentication.** A request opts in with `auth: inherit` plus an
+    `x-e2e-actor` header naming the principal. The pre-request script above
+    resolves that to a bearer token.
+  - **The transport contract.** The `X-Request-ID` header and the error envelope
+    are asserted on every single response by the post-response script, so no
+    journey request has to repeat them.
+}

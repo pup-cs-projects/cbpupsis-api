@@ -1,0 +1,24 @@
+meta {
+  name: A normal user cannot read another profile
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{api}}/users/{{other_user_id}}
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 403
+}
+
+docs {
+  `GET /users/{id}` allows self-reads or holders of ReadAllUser. `owner` is
+  neither, relative to `other`'s id — so the object-level branch must refuse it.
+}

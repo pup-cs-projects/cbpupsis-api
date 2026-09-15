@@ -1,0 +1,50 @@
+meta {
+  name: Create an item
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{api}}/items
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: owner
+}
+
+body:json {
+  {
+    "name": "E2E Widget",
+    "price": "19.99",
+    "description": "Created by the Bruno end-to-end suite."
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("returns the detail shape, owned by the caller", function () {
+    const body = res.getBody();
+    expect(body.name).to.equal("E2E Widget");
+    expect(body.description).to.equal("Created by the Bruno end-to-end suite.");
+    // Ownership comes from the token, never the body — a client must not be
+    // able to create records on someone else's behalf.
+    expect(body.owner_id).to.equal(bru.getVar("owner_user_id"));
+    expect(body).to.have.property("created_at");
+    expect(body).to.have.property("updated_at");
+  });
+
+  test("serializes price exactly, without float rounding", function () {
+    // Money is Decimal/Numeric throughout. If this ever comes back as the
+    // number 19.99 rather than a faithful decimal, something has routed it
+    // through a float and cents will go missing at scale.
+    expect(String(res.getBody().price)).to.equal("19.99");
+  });
+
+  bru.setVar("item_id", res.getBody().id);
+}

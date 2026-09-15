@@ -1,0 +1,61 @@
+meta {
+  name: Login owner
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{api}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "e2e-owner@example.com",
+    "password": "{{e2e_password}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  // A 403 here is the single most likely first-run failure, and the generic
+  // "expected 403 to equal 200" tells you nothing about the cause. Name it.
+  if (res.getStatus() === 403 && res.getBody()?.code === "email_not_verified") {
+    throw new Error(
+      "e2e-owner@example.com exists but is unverified. The suite cannot verify " +
+      "an address over HTTP (tokens go only to the console log), which is why " +
+      "seeding is a script: run `uv run python -m scripts.seed_e2e`."
+    );
+  }
+  if (res.getStatus() === 401) {
+    throw new Error(
+      "Login rejected. Either the accounts are not seeded (run " +
+      "`uv run python -m scripts.seed_e2e`) or E2E_PASSWORD does not match the " +
+      "password they were seeded with."
+    );
+  }
+
+  test("returns a bearer token pair", function () {
+    const body = res.getBody();
+    expect(body.access_token, "access_token").to.be.a("string").and.not.be.empty;
+    expect(body.refresh_token, "refresh_token").to.be.a("string").and.not.be.empty;
+    expect(body.token_type.toLowerCase()).to.equal("bearer");
+  });
+
+  // Every later request acting as `owner` reads these.
+  bru.setVar("owner_access_token", res.getBody().access_token);
+  bru.setVar("owner_refresh_token", res.getBody().refresh_token);
+}
+
+docs {
+  Establishes the `owner` principal: an ordinary member who creates and owns
+  records. Seeded by `scripts/seed_e2e.py`.
+}

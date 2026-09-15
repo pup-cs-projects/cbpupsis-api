@@ -1,0 +1,25 @@
+meta {
+  name: A deleted item is no longer readable
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{api}}/items/{{item_id}}
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 404
+}
+
+docs {
+  The delete is a soft delete — the row survives so nothing referencing it is
+  orphaned. This asserts the part that matters to a client: soft-deleted rows
+  must be invisible through the API, not merely flagged in the database.
+}

@@ -1,0 +1,57 @@
+meta {
+  name: The docs surface matches the environment
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{base_url}}/openapi.json
+  body: none
+  auth: none
+}
+
+tests {
+  const expected = String(bru.getEnvVar("docs_expected")) === "true";
+
+  if (expected) {
+    test("development serves the schema", function () {
+      expect(res.getStatus()).to.equal(200);
+      expect(res.getBody()).to.have.property("paths");
+    });
+  } else {
+    test("production does not serve the schema at all", function () {
+      // The schema IS the sensitive part — main.py gates openapi_url for
+      // exactly this reason, since switching off the UIs alone would still
+      // leave the full API surface downloadable here.
+      expect(res.getStatus(), "/openapi.json must not be reachable").to.equal(404);
+    });
+
+    // The UIs are separate routes and separately gated; one being closed is no
+    // evidence about the others.
+    for (const path of ["/docs", "/redoc", "/scalar"]) {
+      // bru.sendRequest rejects on a non-2xx status, and a 404 is exactly what
+      // this branch is hoping for — so the rejection carries the answer and
+      // must be unwrapped rather than allowed to abort the script.
+      let probe;
+      try {
+        probe = await bru.sendRequest({
+          method: "GET",
+          url: `${bru.getEnvVar("base_url")}${path}`,
+        });
+      } catch (err) {
+        if (!err.response) throw err;
+        probe = err.response;
+      }
+      test(`production does not serve ${path}`, function () {
+        expect(probe.status, `${path} must not be reachable`).to.equal(404);
+      });
+    }
+  }
+}
+
+docs {
+  Driven by the `docs_expected` variable rather than hardcoded, so the same
+  request asserts the opposite (and more valuable) thing when pointed at a
+  deployed environment. Set `docs_expected: false` in any production-like
+  environment file.
+}

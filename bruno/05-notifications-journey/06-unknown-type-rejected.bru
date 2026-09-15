@@ -1,0 +1,44 @@
+meta {
+  name: An unknown notification type is refused
+  type: http
+  seq: 6
+}
+
+put {
+  url: {{api}}/notifications/preferences
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: owner
+}
+
+body:json {
+  {
+    "notification_type": "item.definitely_not_a_real_type",
+    "channel": "in_app",
+    "enabled": false
+  }
+}
+
+assert {
+  res.status: eq 422
+}
+
+tests {
+  test("refuses a preference for a type that does not exist", function () {
+    // Accepting it would store a row that suppresses nothing while telling the
+    // user they had switched something off — the worst kind of silent failure,
+    // because the user only discovers it by not receiving something.
+    expect(res.getStatus()).to.equal(422);
+  });
+}
+
+docs {
+  The counterpart to 05: that one refuses a real type the user may not disable,
+  this one refuses a type that is not real at all. Both are 422, and both must
+  stay refusals — a permissive write here is invisible until someone misses a
+  notification.
+}

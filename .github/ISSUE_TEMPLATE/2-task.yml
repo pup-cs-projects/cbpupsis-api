@@ -1,0 +1,38 @@
+name: Task
+description: Technical work with no direct user-facing behavior (tooling, refactor, infrastructure).
+labels: ["type: task"]
+body:
+  - type: input
+    id: epic
+    attributes:
+      label: Epic
+      placeholder: "#12"
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: One or two sentences. What exists when this is done?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why it is needed now, and anything a newcomer would not know.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Verifiable outcomes. Each one should be checkable by someone who did not do the work.
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      placeholder: "SRS 2.4, docs/tech-book/API-GUIDE.md"

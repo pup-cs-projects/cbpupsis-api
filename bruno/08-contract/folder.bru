@@ -1,0 +1,15 @@
+meta {
+  name: 08-contract
+  seq: 9
+}
+
+docs {
+  Cross-cutting HTTP behavior that belongs to no single domain: the error
+  envelope, request-id propagation, CORS, the docs surface, and 404/405
+  handling.
+
+  This is the folder with the least overlap with pytest. The in-process test
+  suite exercises handlers; these assertions cover what only a real server
+  reaching a real client can show — middleware ordering, headers that survive
+  the whole stack, and the exact bytes on the wire.
+}

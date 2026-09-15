@@ -1,0 +1,39 @@
+meta {
+  name: Another user cannot read the item
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{api}}/items/{{guarded_item_id}}
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: other
+}
+
+assert {
+  res.status: eq 404
+}
+
+tests {
+  test("hides the item rather than confirming it exists", function () {
+    // 404, not 403. `other` holds ReadItem and is a normal member, so a 403
+    // here would still be a refusal — but it would confirm the id is real,
+    // turning the endpoint into an enumeration oracle. The 404 is the whole
+    // point of the read boundary.
+    expect(res.getBody().detail).to.be.a("string").and.not.be.empty;
+  });
+}
+
+docs {
+  Items are private by default. `GET /items/{id}` returns a row only to its
+  owner or to a holder of ReadAllItem; `other` is neither, relative to
+  `owner`'s item.
+
+  This is the read half of the two-level check. The requests above prove
+  `other` cannot WRITE the item; without this one, a regression that reopened
+  the read path would pass the whole folder.
+}

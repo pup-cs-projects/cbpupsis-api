@@ -1,0 +1,32 @@
+meta {
+  name: Create a group
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{api}}/iam/groups
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: admin
+}
+
+body:json {
+  {
+    "name": "{{e2e_group}}",
+    "description": "Created by the Bruno end-to-end suite."
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.name: eq {{e2e_group}}
+}
+
+tests {
+  bru.setVar("e2e_group_id", res.getBody().id);
+}

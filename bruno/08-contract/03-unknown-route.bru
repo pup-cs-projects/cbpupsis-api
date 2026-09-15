@@ -1,0 +1,26 @@
+meta {
+  name: An unknown route returns a clean 404
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{api}}/no-such-endpoint
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 404
+}
+
+tests {
+  test("returns JSON, not an HTML error page", function () {
+    expect(res.getHeader("content-type")).to.contain("application/json");
+  });
+}
+
+docs {
+  Framework-generated 404s are the easiest place for the error envelope to be
+  inconsistent, because the response never passes through application code.
+}

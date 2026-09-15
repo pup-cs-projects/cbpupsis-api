@@ -1,0 +1,18 @@
+meta {
+  name: 01-auth-journey
+  seq: 2
+}
+
+docs {
+  The account lifecycle over real HTTP, as a client experiences it.
+
+  This folder registers its OWN throwaway user each run (a timestamped address),
+  rather than using a seeded one. That is deliberate: registration and the
+  unverified-login rejection can only be observed on an account whose history
+  the run controls. The seeded accounts are already verified and so can never
+  exercise this path.
+
+  The one thing it cannot do is verify that address — tokens go only to the
+  console email backend. Everything after verification is therefore tested with
+  the pre-verified seeded principals instead.
+}

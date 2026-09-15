@@ -1,0 +1,61 @@
+meta {
+  name: A spent refresh token cannot be replayed
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{api}}/auth/refresh
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "refresh_token": "{{spent_refresh_token}}"
+  }
+}
+
+assert {
+  res.status: eq 401
+}
+
+tests {
+  // Replaying a rotated token is treated as evidence the token leaked, so the
+  // service revokes EVERY refresh token the user holds — including the live one
+  // request 06 just issued. That is correct behavior, and it means this request
+  // deliberately destroys the owner session as a side effect.
+  //
+  // Logging back in here keeps that blast radius inside this folder. Without
+  // it, every later folder would fail on an expired session and the cause would
+  // look like anything but a test four files upstream.
+  const relogin = await bru.sendRequest({
+    method: "POST",
+    url: `${bru.getEnvVar("api")}/auth/login`,
+    headers: { "Content-Type": "application/json" },
+    data: {
+      email: "e2e-owner@example.com",
+      password: bru.getEnvVar("e2e_password"),
+    },
+  });
+
+  test("owner session is restored for the folders that follow", function () {
+    expect(relogin.status, "re-login after family revocation").to.equal(200);
+  });
+
+  bru.setVar("owner_access_token", relogin.data.access_token);
+  bru.setVar("owner_refresh_token", relogin.data.refresh_token);
+}
+
+docs {
+  Replays the token request 06 consumed. If this ever returned 200, a stolen
+  refresh token would stay valid indefinitely.
+
+  Note the cleanup in the test block: rejecting a replay also revokes the whole
+  token family, so this request re-establishes the owner session before handing
+  control to the next folder.
+}

@@ -1,0 +1,44 @@
+meta {
+  name: Refresh rotates the token pair
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{api}}/auth/refresh
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "refresh_token": "{{owner_refresh_token}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("issues a genuinely new refresh token", function () {
+    const issued = res.getBody().refresh_token;
+    expect(issued).to.be.a("string").and.not.be.empty;
+    expect(issued, "refresh token must rotate, not be re-served").to.not.equal(
+      bru.getVar("owner_refresh_token")
+    );
+  });
+
+  bru.setVar("spent_refresh_token", bru.getVar("owner_refresh_token"));
+  bru.setVar("owner_refresh_token", res.getBody().refresh_token);
+  bru.setVar("owner_access_token", res.getBody().access_token);
+}
+
+docs {
+  Rotation is the point: the old token must not survive the exchange. Request 07
+  proves the spent one is dead.
+}

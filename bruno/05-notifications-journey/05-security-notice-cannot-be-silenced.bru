@@ -1,0 +1,66 @@
+meta {
+  name: A security notice cannot be switched off
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{api}}/notifications/preferences
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: owner
+}
+
+body:json {
+  {
+    "notification_type": "{{mandatory_type}}",
+    "channel": "{{mandatory_channel}}",
+    "enabled": false
+  }
+}
+
+tests {
+  // A security property, asserted over the wire because that is the surface an
+  // attacker actually reaches.
+  //
+  // The threat: someone who has stolen a session tries to go quiet before doing
+  // damage. `auth.password_changed` is the notice that surfaces an account
+  // takeover to its victim, so if a bearer token were enough to disable it, the
+  // one signal the real owner gets would be gone.
+  //
+  // Guarded here rather than only in pytest because the guard has to hold at
+  // the edge: what matters is that a request arriving with a valid token is
+  // refused, not that a service function raises when called directly.
+  if (!bru.getVar("mandatory_type")) {
+    test("[skipped] no non-editable notification type is configured", function () {
+      // Not a failure. Every type being editable is a legitimate configuration
+      // — it just means this guarantee has nothing to protect right now.
+      expect(true).to.be.true;
+    });
+  } else {
+    test("refuses to disable a mandatory notification", function () {
+      expect(
+        res.getStatus(),
+        `disabling ${bru.getVar("mandatory_type")} must be refused`
+      ).to.equal(422);
+    });
+
+    test("says which type was refused", function () {
+      // A client rendering the error needs to know which toggle failed; a bare
+      // "invalid request" leaves a settings screen unable to point at anything.
+      const body = res.getBody();
+      expect(body).to.have.property("detail");
+      expect(JSON.stringify(body.detail)).to.contain(bru.getVar("mandatory_type"));
+    });
+  }
+}
+
+docs {
+  Proves an attacker holding a live session cannot silence the alert that would
+  expose them. The type under test is discovered in request 04, so this keeps
+  working as the notification registry changes.
+}

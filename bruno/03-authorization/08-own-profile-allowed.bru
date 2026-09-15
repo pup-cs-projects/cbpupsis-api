@@ -1,0 +1,26 @@
+meta {
+  name: But can read their own profile by id
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{api}}/users/{{owner_user_id}}
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 200
+  res.body.email: eq e2e-owner@example.com
+}
+
+docs {
+  The other half of request 07, and the reason that one is a real test: the
+  endpoint is not simply closed to everyone. Self-access through the same code
+  path must still work, or the previous test would pass for the wrong reason.
+}

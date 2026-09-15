@@ -1,0 +1,45 @@
+meta {
+  name: Listing does not leak another user's items
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{api}}/items?limit=200&offset=0
+  body: none
+  auth: inherit
+}
+
+params:query {
+  limit: 200
+  offset: 0
+}
+
+headers {
+  x-e2e-actor: other
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("the guarded item is absent from an unprivileged listing", function () {
+    // The bug this guards: `mine` used to be an opt-in filter, so the default
+    // listing returned every user's rows to any authenticated caller. A 200
+    // with someone else's data in it looks perfectly healthy in a log.
+    const ids = res.getBody().items.map((i) => i.id);
+    expect(ids).to.not.include(bru.getVar("guarded_item_id"));
+  });
+
+  test("every row returned belongs to the caller", function () {
+    const mine = bru.getVar("other_user_id");
+    const foreign = res.getBody().items.filter((i) => i.owner_id !== mine);
+    expect(foreign, "items belonging to someone else").to.have.lengthOf(0);
+  });
+}
+
+docs {
+  Without ReadAllItem a caller is scoped to their own rows, so `other` must not
+  see the item `owner` created in this folder's setup request.
+}

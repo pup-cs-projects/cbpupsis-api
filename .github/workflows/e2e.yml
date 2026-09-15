@@ -1,0 +1,122 @@
+# End-to-end API tests: boot the real stack, seed accounts, run Bruno against it.
+#
+# Separate from ci.yml on purpose. pytest needs no database and finishes in
+# about two minutes; this needs Postgres, migrations, and a live server. Keeping
+# them apart means an infrastructure failure here is never mistaken for a
+# broken business rule.
+
+name: e2e
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Bruno HTTP suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      # Not a secret. These accounts exist only in a database this job creates
+      # and destroys, and the value must match what scripts/seed_e2e.py seeds.
+      E2E_PASSWORD: E2ETestPassword123!
+      COMPOSE: docker compose -f docker/docker-compose.yml
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write the environment file
+        # env/ is gitignored because it holds real values, so CI composes its
+        # own. The database URL matches docker-compose.yml's local Postgres.
+        # JWT_SECRET is generated per run and clears the 32-character minimum.
+        run: |
+          mkdir -p env
+          cat > env/env.dev <<EOF
+          APP_NAME="CBPUPSIS API (CI)"
+          ENVIRONMENT=development
+          DEBUG=true
+          CORS_ORIGINS=["http://localhost:3000"]
+          LOG_LEVEL=INFO
+          LOG_JSON=false
+          DATABASE_URL=postgresql://postgres:postgres@db:5432/app
+          DIRECT_DATABASE_URL=postgresql://postgres:postgres@db:5432/app
+          JWT_SECRET=$(openssl rand -hex 32)
+          ACCESS_TOKEN_TTL_MINUTES=15
+          REFRESH_TOKEN_TTL_DAYS=30
+          EMAIL_VERIFICATION_TTL_HOURS=24
+          PASSWORD_RESET_TTL_MINUTES=30
+          RATE_LIMIT_ENABLED=true
+          RATE_LIMIT_STORAGE_URI=memory://
+          RATE_LIMIT_RESEND_VERIFICATION=3/hour
+          RATE_LIMIT_FORGOT_PASSWORD=3/hour
+          # Raised so ordinary logins across folders do not hit 429. Limiting
+          # stays enabled, and the suite still drives past this ceiling once.
+          RATE_LIMIT_LOGIN=200/minute
+          RATE_LIMIT_REGISTER=5/hour
+          AWS_REGION=ap-southeast-1
+          FRONTEND_BASE_URL=http://localhost:3000
+          EOF
+
+      - name: Start the stack
+        # The compose command runs `alembic upgrade head` before serving.
+        run: $COMPOSE up -d --build
+
+      - name: Wait for the API
+        run: |
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:8000/health > /dev/null 2>&1; then
+              echo "API is up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::API did not become healthy within 90s"
+          $COMPOSE logs --no-color
+          exit 1
+
+      - name: Seed IAM and the test accounts
+        # seed_iam first: it creates the groups seed_e2e assigns accounts to.
+        run: |
+          $COMPOSE exec -T api python -m scripts.seed_iam
+          $COMPOSE exec -T -e E2E_PASSWORD="$E2E_PASSWORD" api python -m scripts.seed_e2e --quiet
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install the Bruno CLI
+        run: npm install --prefix bruno
+
+      - name: Run the end-to-end tests
+        working-directory: bruno
+        run: npm run test:ci
+
+      - name: Dump service logs on failure
+        # Every service, not only the API: a delivery the outbox worker never
+        # made leaves no trace in the API log.
+        if: failure()
+        run: $COMPOSE logs --no-color
+
+      - name: Upload the test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-reports
+          path: bruno/reports/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Tear down
+        if: always()
+        run: $COMPOSE down -v

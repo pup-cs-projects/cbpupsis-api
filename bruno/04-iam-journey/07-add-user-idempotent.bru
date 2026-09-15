@@ -1,0 +1,32 @@
+meta {
+  name: Re-adding the same user is a no-op
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{api}}/iam/groups/{{e2e_group_id}}/users
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: admin
+}
+
+body:json {
+  {
+    "user_id": "{{other_user_id}}"
+  }
+}
+
+assert {
+  res.status: eq 204
+}
+
+docs {
+  Repeats request 06 exactly. Membership is a set, so a second add must succeed
+  quietly rather than 500 on a duplicate-key violation — the failure mode a
+  naive insert produces, and one that only shows up on a re-run.
+}

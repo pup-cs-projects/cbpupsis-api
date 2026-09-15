@@ -1,0 +1,111 @@
+[project]
+name = "cbpupsis-api"
+version = "0.1.0"
+description = "CBPUPSIS: Cloud-Based PUP Student Information System API"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy[asyncio]",
+    "asyncpg",
+    "alembic",
+    "pydantic[email]",
+    "pydantic-settings",
+    "pyjwt",
+    "passlib[argon2]",
+    "sqladmin",
+    # Signs the admin panel's session cookie. A transitive-in-name-only
+    # dependency: Starlette's SessionMiddleware imports it but does not require
+    # it, so without this line the admin login fails at import time.
+    "itsdangerous",
+    "scalar-fastapi>=1.8.2",
+    # AWS SDK, used only for SES email delivery. Imported lazily in
+    # app/core/emails/sender.py so nothing loads it unless SES is configured.
+    "boto3",
+    # The IANA time zone database for `zoneinfo`, which validates the user
+    # profile's timezone field. Required, not optional: Windows ships no system
+    # tz database at all, and slim Linux images routinely omit it — without this
+    # `zoneinfo` finds zero zones and rejects every valid input.
+    "tzdata",
+    "slowapi>=0.1.10",
+    # The Redis client backing RATE_LIMIT_STORAGE_URI=redis://... Not optional
+    # despite the default being `memory://`: `limits` resolves the storage
+    # backend from the URI at startup and raises ConfigurationError if the
+    # client is absent, so a multi-worker deployment pointed at Redis without
+    # this fails to boot rather than falling back.
+    "redis>=5.0",
+]
+
+[dependency-groups]
+# dev-only deps: installed locally, excluded from the production image via --no-dev
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-env",      # sets env vars before collection (see pytest config)
+    "httpx",          # FastAPI's TestClient transport
+    "aiosqlite",      # in-memory async DB for tests
+    "pytest-cov",     # coverage, reported in CI
+    "pre-commit",     # git hooks; see .pre-commit-config.yaml
+    "ruff",
+]
+
+[tool.uv]
+# keep the project itself importable without packaging it as a wheel
+package = false
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+# Alembic generates these; reformatting an applied revision is churn on a file
+# that must not change, and its long type expressions are the tool's own style.
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+# PLC0415 ("import should be at the top-level of a file") is the reason "PL" is
+# here: E402 alone only catches a module-level import placed after code, not one
+# hidden inside a function. Both are imports in the middle of a file, and a
+# function-level import hides a dependency from the module's header, makes it a
+# per-call cost, and turns a missing package into a runtime error instead of an
+# import-time one.
+select = ["E", "F", "W", "I", "B", "UP", "RUF", "SIM", "C4", "PLC0415"]
+# B008 flags `Depends(...)` in argument defaults, but that is the idiomatic
+# FastAPI dependency-injection pattern, so it is ignored project-wide.
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests import inside a test to keep a fixture's setup beside its assertions,
+# and to import a module *after* monkeypatching its environment — which is the
+# behaviour under test, not an accident.
+"tests/**" = ["PLC0415"]
+
+[tool.bandit]
+# Security linting, run by the pre-commit hook. Dependency CVEs are a separate
+# concern and are audited in CI, where a network lookup does not slow a commit.
+exclude_dirs = [".venv", "migrations", "tests", "bruno"]
+# B105/B106 flag any string constant whose NAME contains "password" or "token".
+# Every hit in this codebase is an email subject, an enum value, or the
+# deliberately-invalid "!deleted" digest — never a credential. Left on, the hook
+# cries wolf on every commit and people learn to pass --no-verify, which costs
+# more than these checks are worth. Real secrets are caught by not being in the
+# source at all: they come from the environment, and detect-secrets or gitleaks
+# is the tool for proving that.
+skips = ["B105", "B106"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# Set before collection imports anything, because app.config validates settings
+# at import time. Kept here rather than in conftest so an import sorter cannot
+# hoist an app import above them.
+env = [
+    "DATABASE_URL=postgresql://test:test@localhost/test",
+    "JWT_SECRET=test-secret-key-that-is-long-enough-32chars",
+    "ENVIRONMENT=development",
+    "DEBUG=false",
+    # Off by default in tests: the limiter is a module-level singleton, so its
+    # counters would persist for the whole session and leak between tests —
+    # a test would pass or fail depending on how many requests ran before it.
+    # The tests that cover rate limiting turn it back on around themselves.
+    "RATE_LIMIT_ENABLED=false",
+]

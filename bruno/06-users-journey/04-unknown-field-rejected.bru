@@ -1,0 +1,49 @@
+meta {
+  name: A misspelled field is refused, not ignored
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{api}}/users/me
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: owner
+}
+
+body:json {
+  {
+    "displayName": "camelCase is not this API's convention"
+  }
+}
+
+assert {
+  res.status: eq 422
+}
+
+tests {
+  test("rejects a field the schema does not define", function () {
+    // `extra="forbid"`. Without it this request is a 200 that changed nothing:
+    // the client believes the write succeeded, the user sees their old name,
+    // and the bug is reported as "the profile page doesn't save" — a long way
+    // from a JSON key spelled the wrong way.
+    //
+    // The camelCase/snake_case boundary is where this actually bites, because
+    // a JavaScript client naturally produces the wrong one.
+    expect(res.getStatus()).to.equal(422);
+  });
+
+  test("names the offending field", function () {
+    expect(JSON.stringify(res.getBody().detail)).to.contain("displayName");
+  });
+}
+
+docs {
+  The silent-write-loss guard. Worth an HTTP test specifically because the
+  failure mode it prevents is a *success* response — the one shape no client
+  ever thinks to check.
+}

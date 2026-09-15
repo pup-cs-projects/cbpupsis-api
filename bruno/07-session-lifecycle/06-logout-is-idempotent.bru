@@ -1,0 +1,72 @@
+meta {
+  name: Logout is idempotent and never leaks
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{api}}/auth/logout
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "refresh_token": "{{session_refresh_token}}"
+  }
+}
+
+assert {
+  res.status: eq 204
+}
+
+tests {
+  test("logging out an already-revoked token still answers 204", function () {
+    // Idempotency is a real client requirement, not tidiness: a client that
+    // retries on a flaky connection, or a user double-clicking "sign out",
+    // must not see an error for successfully being logged out.
+    expect(res.getStatus()).to.equal(204);
+  });
+
+  test("a garbage token is accepted just as silently", async function () {
+    // The security half of the same behavior. If logout answered 204 for a real
+    // token and 401 for a fabricated one, it would become an oracle: an
+    // attacker could test captured strings for validity without ever needing
+    // them to work. Both must be indistinguishable.
+    const r = await bru.sendRequest({
+      method: "POST",
+      url: `${bru.getEnvVar("api")}/auth/logout`,
+      headers: { "Content-Type": "application/json" },
+      data: { refresh_token: "not.a.real.token" },
+    });
+    expect(r.status, "logout with a fabricated token").to.equal(204);
+  });
+
+  test("an access token is not accepted where a refresh token belongs", async function () {
+    // Cross-type confusion. The two token types are signed by the same key and
+    // differ only by a claim, so a decoder that skipped the type check would
+    // accept either — and a leaked access token could then revoke sessions.
+    //
+    // Answering 204 is correct here too: logout swallows every invalid token
+    // identically. What matters is that the session is NOT actually revoked by
+    // it, which is what the unit suite asserts directly. Here we assert only
+    // that the endpoint does not treat it as special.
+    const r = await bru.sendRequest({
+      method: "POST",
+      url: `${bru.getEnvVar("api")}/auth/logout`,
+      headers: { "Content-Type": "application/json" },
+      data: { refresh_token: bru.getVar("session_access_token") },
+    });
+    expect(r.status).to.equal(204);
+  });
+}
+
+docs {
+  Idempotency plus the reason it is written as "always 204": a status that
+  varied with the token's authenticity would let an attacker validate captured
+  strings for free.
+}

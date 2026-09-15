@@ -1,0 +1,71 @@
+meta {
+  name: Preferences list every type, including untouched ones
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{api}}/notifications/preferences
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns a row per type and channel, not only the ones set", function () {
+    // A settings screen renders the state the user is actually in, so the API
+    // has to report defaults for types the user has never touched. Returning
+    // only stored preference rows would render an empty settings page for
+    // every new account.
+    const body = res.getBody();
+    expect(body, "preferences").to.be.an("array").and.not.be.empty;
+
+    const first = body[0];
+    expect(first, "a preference row").to.have.property("notification_type");
+    expect(first).to.have.property("channel");
+    expect(first).to.have.property("enabled");
+    expect(first.enabled, "enabled").to.be.a("boolean");
+  });
+
+  test("exposes whether each preference may be switched off", function () {
+    // The flag an opt-out UI needs in order to render a security notice as
+    // locked rather than as a toggle that will 422 when clicked. If it is
+    // absent, a client cannot distinguish "off by default" from "cannot be
+    // turned off" and will offer a control that always fails.
+    const body = res.getBody();
+    const withFlag = body.filter((p) => Object.hasOwn(p, "editable"));
+    expect(
+      withFlag.length,
+      "preference rows should say whether they are editable"
+    ).to.equal(body.length);
+  });
+
+  // Find a mandatory type to attempt silencing in the next request. Discovered
+  // from the response rather than hardcoded, so adding or renaming a security
+  // notice does not require editing this suite.
+  const mandatory = res.getBody().find((p) => p.editable === false);
+  if (mandatory) {
+    bru.setVar("mandatory_type", mandatory.notification_type);
+    bru.setVar("mandatory_channel", mandatory.channel);
+  }
+
+  const optional = res.getBody().find((p) => p.editable === true);
+  if (optional) {
+    bru.setVar("optional_type", optional.notification_type);
+    bru.setVar("optional_channel", optional.channel);
+  }
+}
+
+docs {
+  Reads the preference surface and captures one mandatory and one optional
+  preference for the two requests that follow. Both are discovered from the
+  response, so the registry in `notifications/constants.py` can grow without
+  this folder going stale.
+}

@@ -1,0 +1,32 @@
+meta {
+  name: A non-positive price is rejected
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{api}}/items
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: owner
+}
+
+body:json {
+  {
+    "name": "Free lunch",
+    "price": "0"
+  }
+}
+
+assert {
+  res.status: eq 422
+}
+
+docs {
+  The schema constrains price to gt=0. Asserted over HTTP because a validation
+  rule that never reaches the wire is not actually protecting the endpoint.
+}

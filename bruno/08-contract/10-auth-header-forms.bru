@@ -1,0 +1,94 @@
+meta {
+  name: Malformed Authorization headers are refused cleanly
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{api}}/auth/whoami
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer
+}
+
+tests {
+  // The Authorization header is parsed before any application code runs, which
+  // makes it the one input every authenticated endpoint shares — and the one an
+  // in-process test client tends to construct correctly by default.
+  //
+  // What matters is that every malformation is a clean 401 or 403, never a 500.
+  // A 500 here means an unhandled parse error, and an attacker who can produce
+  // a stack trace from a header has found the cheapest possible probe: no
+  // account, no valid token, one request.
+  //
+  // Every probe below expects a non-2xx, so each must unwrap err.response —
+  // bru.sendRequest throws on those, and an unhandled throw would abort this
+  // script with zero tests registered.
+  const api = bru.getEnvVar("api");
+
+  const probe = async (headerValue) => {
+    try {
+      return await bru.sendRequest({
+        method: "GET",
+        url: `${api}/auth/whoami`,
+        headers: headerValue === null ? {} : { Authorization: headerValue },
+      });
+    } catch (err) {
+      if (err.response) return err.response;
+      throw err;
+    }
+  };
+
+  const cases = [
+    [null, "no header at all"],
+    ["", "an empty header"],
+    ["Bearer", "the scheme with no token"],
+    ["Bearer ", "the scheme with an empty token"],
+    ["bearer " + (bru.getVar("owner_access_token") || "x"), "a lowercase scheme"],
+    ["Basic dXNlcjpwYXNz", "the wrong auth scheme entirely"],
+    ["Bearer not.a.jwt", "a token that is not a JWT"],
+    ["Bearer a.b.c", "three segments of non-base64"],
+    ["Token " + (bru.getVar("owner_access_token") || "x"), "an unknown scheme name"],
+    ["Bearer " + "A".repeat(4096), "an oversized token"],
+  ];
+
+  for (const [value, why] of cases) {
+    const r = await probe(value);
+
+    test(`${why} → not a server error`, function () {
+      // The assertion that actually matters. Which 4xx is a design choice;
+      // a 5xx is a bug.
+      expect(
+        r.status,
+        `Authorization: ${String(value).slice(0, 32)} produced ${r.status}`
+      ).to.be.below(500);
+    });
+
+    test(`${why} → refused`, function () {
+      expect([401, 403], `expected an auth refusal, got ${r.status}`).to.include(
+        r.status
+      );
+    });
+  }
+
+  test("a lowercase bearer scheme is handled consistently", async function () {
+    // RFC 7235 says the scheme is case-insensitive. Whichever way this API
+    // decides, it must not be a 500 — that is covered above. This records which
+    // choice is in force so a change is visible in the diff rather than
+    // discovered by a client whose HTTP library lowercases.
+    const r = await probe("bearer " + (bru.getVar("owner_access_token") || "x"));
+    expect([200, 401, 403]).to.include(r.status);
+  });
+}
+
+docs {
+  A hostile-input matrix for the one header every authenticated request carries.
+
+  Belongs here rather than in pytest because an in-process test client builds
+  the header for you: reaching these shapes means bypassing the very helper that
+  normally guarantees they are well-formed. Over the wire they are just bytes,
+  which is how an attacker sends them.
+}
