@@ -40,13 +40,15 @@ belongs to. Register each id in [US-ACS.md](US-ACS.md) when the story is filed.
 
 ## Sprint calendar
 
-Kickoff Thursday 2026-09-17. Sprints run Monday to Friday, 10 of them, development ending
-Friday 2026-11-27. Each sprint is a milestone in both repositories, and the milestone's due
-date is the target date shown on every issue in it.
+Sprint 0 is the kickoff week: Wednesday 2026-09-16 to Sunday 2026-09-20, holding the developer
+setup work and the decisions that block everything else. Sprints 1 to 10 then run Monday to
+Friday, development ending Friday 2026-11-27. Each sprint is a milestone in both repositories,
+and the milestone's due date is the target date shown on every issue in it.
 
 | Sprint | Dates | Goal |
 |---|---|---|
-| 1 | Sep 21 to Sep 25 | Setup done: everyone runs the stack, first PR merged, blocking decisions closed |
+| 0 | Sep 16 to Sep 20 | Kickoff: decisions closed Wed to Fri, setup PRs merged, every developer runs the stack |
+| 1 | Sep 21 to Sep 25 | Authentication: sign in, sessions, and role checks, with their tests |
 | 2 | Sep 28 to Oct 02 | Authentication and access control |
 | 3 | Oct 05 to Oct 09 | Student profile, course catalog, academic calendar |
 | 4 | Oct 12 to Oct 16 | Fees and assessments, notifications |
@@ -64,7 +66,7 @@ first; the client half starts as soon as the endpoint contract is agreed, not wh
 
 | Wave | Epics | Why this order |
 |---|---|---|
-| 0 | EP-00, the CI part of EP-16, and the open decisions | Nobody can build features on an unmerged scaffold or an undecided login model |
+| Sprint 0 | EP-00, the CI part of EP-16, and the open decisions | Nobody can build features on an unmerged scaffold or an undecided login model |
 | 1 | EP-01, EP-11, EP-15 baseline | Every other module needs users, roles, and the audit trail |
 | 2 | EP-03, EP-04, EP-02, EP-14 | Catalog and calendar are the data enrollment validates against |
 | 3 | EP-09, EP-05, EP-06 | Enrollment checks account holds, so fees land first |
