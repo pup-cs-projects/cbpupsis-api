@@ -1,0 +1,34 @@
+meta {
+  name: Read the item back
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{api}}/items/{{item_id}}
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 200
+  res.body.name: eq E2E Widget
+}
+
+tests {
+  test("round-trips every field the create response returned", function () {
+    const body = res.getBody();
+    expect(body.id).to.equal(bru.getVar("item_id"));
+    expect(String(body.price)).to.equal("19.99");
+    expect(body.description).to.equal("Created by the Bruno end-to-end suite.");
+  });
+}
+
+docs {
+  Proves the write actually committed, rather than the create response merely
+  echoing what was sent.
+}

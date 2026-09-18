@@ -1,0 +1,18 @@
+{
+  "version": "1",
+  "name": "api-e2e",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git",
+    "reports"
+  ],
+  "scripts": {
+    "filesystemAccess": {
+      "allow": true
+    },
+    "moduleWhitelist": [
+      "crypto"
+    ]
+  }
+}

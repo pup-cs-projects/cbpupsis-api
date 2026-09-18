@@ -1,0 +1,33 @@
+meta {
+  name: Health
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/health
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq ok
+}
+
+tests {
+  test("reports an environment name", function () {
+    expect(res.getBody().env, "env").to.be.a("string").and.not.be.empty;
+  });
+
+  test("answers quickly — it must not touch the database", function () {
+    // The handler is documented as deliberately not querying Postgres, so a
+    // slow response here means something was added that does.
+    expect(res.getResponseTime()).to.be.below(1000);
+  });
+}
+
+docs {
+  The first request in the run. If this fails, the API is not up and every
+  subsequent failure is noise.
+}

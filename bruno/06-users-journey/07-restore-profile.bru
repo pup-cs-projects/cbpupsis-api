@@ -1,0 +1,55 @@
+meta {
+  name: Restore the profile this folder changed
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{api}}/users/me
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: owner
+}
+
+body:json {
+  {
+    "display_name": "{{owner_display_name_before}}",
+    "bio": "{{owner_bio_before}}",
+    "avatar_url": null
+  }
+}
+
+tests {
+  // Teardown, not an assertion about the API.
+  //
+  // A suite that leaves state behind is one whose second run tests something
+  // different from its first — and the difference surfaces days later as a
+  // flake nobody can reproduce. Requests 02, 03 and 05 each wrote to the shared
+  // seeded account, so this puts it back.
+  //
+  // An empty display_name is not necessarily valid input (the field is
+  // min_length=1 when present), so a blank snapshot means "there was nothing
+  // there" and the restore is skipped rather than forced into a 422.
+  test("the profile was restored, or there was nothing to restore", function () {
+    const status = res.getStatus();
+    if (status === 422 && !bru.getVar("owner_display_name_before")) {
+      // The account started with no display_name; sending "" back is refused by
+      // the min_length rule. Nothing to undo, so this is a clean no-op.
+      expect(true).to.be.true;
+      return;
+    }
+    expect(status, "restore should succeed").to.equal(200);
+  });
+}
+
+docs {
+  Teardown for this folder. Uses the values captured in request 01.
+
+  Kept as an explicit final request rather than hidden in a script so it is
+  visible in the run output — a silent teardown that starts failing is a
+  teardown nobody notices has stopped working.
+}

@@ -1,0 +1,22 @@
+meta {
+  name: Anonymous access is rejected
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{api}}/items/{{guarded_item_id}}
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 401
+}
+
+tests {
+  test("challenges without leaking whether the id exists", function () {
+    expect(res.getBody().detail).to.be.a("string");
+    expect(JSON.stringify(res.getBody())).to.not.contain("Owner's private widget");
+  });
+}

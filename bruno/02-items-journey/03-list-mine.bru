@@ -1,0 +1,46 @@
+meta {
+  name: List my items
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{api}}/items?mine=true&limit=50&offset=0
+  body: none
+  auth: inherit
+}
+
+params:query {
+  mine: true
+  limit: 50
+  offset: 0
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the documented pagination envelope", function () {
+    const body = res.getBody();
+    expect(body.items, "items").to.be.an("array");
+    expect(body.total, "total").to.be.a("number");
+    expect(body.limit).to.equal(50);
+    expect(body.offset).to.equal(0);
+  });
+
+  test("includes the item just created", function () {
+    const ids = res.getBody().items.map((i) => i.id);
+    expect(ids).to.include(bru.getVar("item_id"));
+  });
+
+  test("mine=true returns only the caller's items", function () {
+    const mine = bru.getVar("owner_user_id");
+    const foreign = res.getBody().items.filter((i) => i.owner_id !== mine);
+    expect(foreign, "items belonging to someone else").to.have.lengthOf(0);
+  });
+}

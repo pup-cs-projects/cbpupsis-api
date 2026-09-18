@@ -1,0 +1,35 @@
+meta {
+  name: CORS does not allow an unconfigured origin
+  type: http
+  seq: 7
+}
+
+options {
+  url: {{api}}/auth/login
+  body: none
+  auth: none
+}
+
+headers {
+  Origin: https://evil.example.com
+  Access-Control-Request-Method: POST
+}
+
+tests {
+  test("refuses the preflight outright", function () {
+    // Answered by the CORS middleware before the application is reached, so
+    // this response carries a plain-text body and no X-Request-ID — the
+    // collection-level contract checks skip it for that reason.
+    expect(res.getStatus()).to.equal(400);
+  });
+
+  test("does not echo an arbitrary origin back", function () {
+    // The dangerous misconfiguration is reflecting whatever Origin arrives,
+    // which defeats CORS entirely. Absent is correct; the attacker's own origin
+    // is not.
+    const allowed = res.getHeader("access-control-allow-origin");
+    expect(allowed, "must not allow evil.example.com").to.not.equal(
+      "https://evil.example.com"
+    );
+  });
+}

@@ -1,0 +1,40 @@
+meta {
+  name: Login other
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{api}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "e2e-other@example.com",
+    "password": "{{e2e_password}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns a bearer token pair", function () {
+    expect(res.getBody().access_token).to.be.a("string").and.not.be.empty;
+  });
+
+  bru.setVar("other_access_token", res.getBody().access_token);
+}
+
+docs {
+  Establishes the `other` principal: a second ordinary member, unrelated to
+  `owner`. Exists purely so authorization can be tested with a real second
+  identity rather than a fabricated id.
+}

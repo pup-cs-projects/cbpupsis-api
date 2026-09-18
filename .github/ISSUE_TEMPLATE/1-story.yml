@@ -1,0 +1,63 @@
+name: User story
+description: A capability a user can observe, with Given, When, Then acceptance criteria.
+title: "US-N: "
+labels: ["type: story"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe behavior a user can see. Do not name endpoints or tables here.
+        Take the story id from `docs/project-specs/US-ACS.md`. Ids are permanent and never reused.
+        After filing, attach this issue to its epic as a sub-issue and add the `area:` and `priority:` labels.
+  - type: input
+    id: epic
+    attributes:
+      label: Epic
+      placeholder: "#12"
+    validations:
+      required: true
+  - type: textarea
+    id: story
+    attributes:
+      label: Story
+      value: |
+        **As a**
+        **I want to**
+        **So that**
+    validations:
+      required: true
+  - type: input
+    id: srs
+    attributes:
+      label: SRS reference
+      description: Functional requirement and use-case ids.
+      placeholder: "FR7, UC-STU-002"
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: |
+        One row per testable behavior. Cover the happy path, the rules and limits,
+        who may not do this and what they see instead, and the edges (empty, one, many, twice).
+      value: |
+        | ID | Given | When | Then |
+        |---|---|---|---|
+        | AC-N.1 |  |  |  |
+        | AC-N.2 |  |  |  |
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      placeholder: "- Anything a reader might assume is included but is not"
+  - type: checkboxes
+    id: done
+    attributes:
+      label: Definition of done
+      options:
+        - label: Each acceptance criterion has a test that names its AC id
+        - label: New error responses are listed in docs/tech-book/ERROR-CODES.md
+        - label: Merged into dev with CI green

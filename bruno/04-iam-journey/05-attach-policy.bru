@@ -1,0 +1,26 @@
+meta {
+  name: Attach the policy to the group
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{api}}/iam/groups/{{e2e_group_id}}/policies
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: admin
+}
+
+body:json {
+  {
+    "policy_id": {{e2e_policy_id}}
+  }
+}
+
+assert {
+  res.status: eq 204
+}

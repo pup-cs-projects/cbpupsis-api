@@ -1,0 +1,25 @@
+meta {
+  name: Another user cannot delete the item
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{api}}/items/{{guarded_item_id}}
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: other
+}
+
+assert {
+  res.status: eq 403
+}
+
+docs {
+  The destructive counterpart to request 04. Tested separately because delete
+  and update are enforced by separate calls in the service — one being correct
+  is no guarantee about the other.
+}

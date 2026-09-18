@@ -1,0 +1,61 @@
+meta {
+  name: Read own profile
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{api}}/users/me
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the caller's own record", function () {
+    const body = res.getBody();
+    expect(body.email).to.equal("e2e-owner@example.com");
+    expect(body.id).to.equal(bru.getVar("owner_user_id"));
+    expect(body.is_active, "is_active").to.be.true;
+  });
+
+  test("never exposes the password hash", function () {
+    // The single most damaging serialization mistake available here. UserRead
+    // is an allowlist, so a hash can only appear if someone switches the
+    // response model to the ORM object — which is easy to do while debugging
+    // and easy to leave in.
+    const raw = JSON.stringify(res.getBody());
+    expect(raw).to.not.contain("password");
+    expect(raw).to.not.contain("hashed");
+    expect(raw).to.not.contain("$argon2");
+  });
+
+  test("reports verification as a timestamp, not a bare boolean", function () {
+    // Timestamps rather than booleans so support can answer "when", and a
+    // client can still render a checkmark from a non-null value.
+    const body = res.getBody();
+    expect(body, "email_verified_at").to.have.property("email_verified_at");
+    expect(
+      body.email_verified_at,
+      "the seeded account is pre-verified"
+    ).to.not.be.null;
+  });
+
+  // Snapshot the fields the PATCH requests will restore, so this folder leaves
+  // the account as it found it and stays re-runnable.
+  bru.setVar("owner_display_name_before", res.getBody().display_name ?? "");
+  bru.setVar("owner_bio_before", res.getBody().bio ?? "");
+}
+
+docs {
+  Baseline read. Also captures the current profile values so the mutations later
+  in this folder can be undone — a suite that leaves an account rewritten is one
+  whose second run tests something different from its first.
+}

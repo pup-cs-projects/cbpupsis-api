@@ -1,0 +1,53 @@
+meta {
+  name: read-all resolves as a literal route, not an id
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{api}}/notifications/read-all
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 204
+}
+
+tests {
+  test("read-all is matched by the literal route", function () {
+    // THE regression this folder exists to catch.
+    //
+    // `POST /notifications/read-all` and `POST /notifications/{notification_id}/read`
+    // are both one segment under /notifications. The literal route wins only
+    // because it is DECLARED FIRST in router.py — Starlette matches in
+    // declaration order. Reorder those two handlers (an innocent-looking
+    // alphabetical tidy-up) and "read-all" is captured as {notification_id},
+    // fails the UUID parse, and this endpoint answers 422 forever.
+    //
+    // Nothing in the unit suite catches it: calling the service function
+    // directly never goes through the router's matcher. Only a real path
+    // resolved by a real server can show it.
+    expect(res.getStatus(), "read-all must not be parsed as a UUID path param")
+      .to.equal(204);
+  });
+
+  test("no body on a 204", function () {
+    // A 204 carrying content is a protocol violation some HTTP clients treat
+    // as a framing error on a keep-alive connection.
+    const raw = res.getBody();
+    expect(raw === undefined || raw === null || raw === "").to.be.true;
+  });
+}
+
+docs {
+  Guards route-declaration order. See the test comment: this is the one failure
+  mode in the notifications router that only an HTTP round trip can reveal.
+
+  Also serves the folder as a fixture — it zeroes the unread count, so the
+  requests after it measure from a known state.
+}

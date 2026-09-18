@@ -1,0 +1,46 @@
+meta {
+  name: An unknown user cannot be added
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{api}}/iam/groups/{{e2e_group_id}}/users
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: admin
+}
+
+body:json {
+  {
+    "user_id": "00000000-0000-0000-0000-000000000000"
+  }
+}
+
+tests {
+  test("KNOWN DEFECT: is refused rather than silently accepted", function () {
+    // FAILING ON PURPOSE — this is a defect report, not a broken test.
+    //
+    // iam_service.add_user_to_group() never checks that user_id refers to a
+    // real user. It checks membership, inserts, and commits. Cross-domain ids
+    // are bare UUIDs with no foreign key (a deliberate architectural choice),
+    // so nothing at the database level catches it either: the API answers 204
+    // and a user_groups row is created pointing at a user that does not exist.
+    //
+    // Why it matters: group membership is an authorization primitive. Rows
+    // referencing nonexistent users accumulate silently, a typo'd id looks
+    // like success to whoever is administering access, and if that id is ever
+    // later issued to a real user they inherit a grant nobody deliberately
+    // made.
+    //
+    // The fix belongs in app/domains/iam/service.py — resolve the user through
+    // the users domain's service (per the cross-domain rule in CONVENTIONS.md) and
+    // raise NotFoundError when it does not exist. When that lands, this test
+    // passes as written; delete this comment and keep the assertion.
+    expect(res.getStatus(), "expected a 4xx").to.be.within(400, 499);
+  });
+}

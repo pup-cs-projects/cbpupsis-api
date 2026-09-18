@@ -1,0 +1,38 @@
+name: Decision
+description: A question the team must answer before work can continue.
+title: "Decide: "
+labels: ["type: decision"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: One sentence.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What the SRS says, what the code does today, and why they conflict.
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options
+      value: |
+        | Option | For | Against |
+        |---|---|---|
+        |  |  |  |
+    validations:
+      required: true
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Recommendation
+  - type: input
+    id: needed-by
+    attributes:
+      label: Needed by
+      placeholder: "EP-01, or a date"

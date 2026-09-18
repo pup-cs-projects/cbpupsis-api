@@ -1,0 +1,43 @@
+meta {
+  name: The logged-out refresh token is rejected
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{api}}/auth/refresh
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "refresh_token": "{{session_refresh_token}}"
+  }
+}
+
+assert {
+  res.status: eq 401
+}
+
+tests {
+  test("a revoked refresh token cannot mint new tokens", function () {
+    // The property that makes logout mean anything. If a revoked refresh token
+    // still worked, "log out" would be a client-side illusion: the token sits
+    // in whatever storage it was copied to, and anyone holding it could keep
+    // renewing indefinitely.
+    //
+    // This is the sequence the unit suite cannot assemble on its own — the
+    // token under test only exists because request 01 minted it and request 03
+    // revoked it.
+    expect(res.getStatus(), "refresh with a logged-out token").to.equal(401);
+  });
+}
+
+docs {
+  The core assertion of this folder.
+}

@@ -1,0 +1,34 @@
+meta {
+  name: The new session is usable
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{api}}/auth/whoami
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{session_access_token}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("the freshly minted access token authenticates", function () {
+    // Establishes the "before" state. Without it, a 401 in request 05 would be
+    // ambiguous: it could mean logout worked, or it could mean the token was
+    // never any good. Asserting the token works FIRST is what makes the later
+    // assertion meaningful.
+    expect(res.getBody().email).to.equal("e2e-other@example.com");
+  });
+}
+
+docs {
+  The control for this folder. A revocation test is only evidence if the thing
+  being revoked demonstrably worked beforehand.
+}

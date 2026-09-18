@@ -1,0 +1,71 @@
+# Fast, offline checks on every commit, plus a check on the commit message.
+# The test suite and the dependency audit live in CI: they take minutes or need
+# the network, and a slow hook is one people learn to bypass with --no-verify.
+#
+#   uv run pre-commit install          enable both hooks (pre-commit, commit-msg)
+#   uv run pre-commit run --all-files  run everything over the whole repo
+#
+# Versions are pinned; update them with `uv run pre-commit autoupdate`. Keep the
+# ruff rev in step with the ruff in uv.lock, or the hook and `uv run ruff`
+# disagree about what passes.
+
+default_install_hook_types: [pre-commit, commit-msg]
+
+default_language_version:
+  python: python3.12
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+      - id: debug-statements
+      - id: detect-private-key
+      # Detection only. .gitattributes is the real line-ending enforcement. A
+      # hook forcing LF fights Git's CRLF checkout on Windows, rewrites dozens
+      # of files, and conflicts with the stash pre-commit takes, which rolls the
+      # whole commit back.
+      - id: mixed-line-ending
+        args: [--fix=no]
+      # The org's Free plan cannot protect branches on private repositories,
+      # so "never commit directly to main or dev" is enforced on each machine.
+      - id: no-commit-to-branch
+        args: [--branch, main, --branch, dev]
+
+  # Ruff replaces autoflake, isort, flake8, and black, configured once under
+  # [tool.ruff] in pyproject.toml. Do not add black beside it: the two
+  # formatters disagree and would undo each other on every run.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.5
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.4
+    hooks:
+      - id: bandit
+        # Pinned per hook: default_language_version does not override a hook's
+        # own, and bandit needs a newer Python than some PATH defaults.
+        language_version: python3.12
+        args: [-c, pyproject.toml]
+        additional_dependencies: ["bandit[toml]"]
+        # Application code only: tests use assert by design (B101).
+        files: ^(app|scripts)/
+
+  # Commit messages follow Conventional Commits, with the types listed in
+  # CONTRIBUTING.md. Merge commits from `git pull` are still accepted.
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.2.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [feat, fix, docs, style, refactor, perf, test, chore]

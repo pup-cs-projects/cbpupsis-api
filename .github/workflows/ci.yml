@@ -1,0 +1,96 @@
+# Fast checks on every push and PR: the pre-commit hooks, the test suite with
+# coverage, and a dependency audit. The end-to-end HTTP suite is separate
+# (e2e.yml) because it needs Docker, Postgres, and seeded accounts.
+
+name: ci
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint and format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --dev
+
+      - name: Cache pre-commit environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Run every hook over every file
+        # The same hooks a developer runs on commit, so a contributor who never
+        # ran `pre-commit install` is still caught here. no-commit-to-branch is
+        # skipped because a push build checks out main or dev by design.
+        env:
+          SKIP: no-commit-to-branch
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+
+  test:
+    name: Tests and coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --dev
+
+      - name: pytest
+        # No database needed: the suite runs against in-memory SQLite.
+        # SRS 4.5 requires coverage above 80 percent, so the job fails below it.
+        run: >
+          uv run pytest -q
+          --cov=app --cov-report=term-missing --cov-report=xml
+          --cov-fail-under=80
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+          if-no-files-found: warn
+
+  security:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Audit dependencies for known CVEs
+        # In CI rather than pre-commit because it queries a remote advisory
+        # database. continue-on-error so a CVE disclosed upstream does not block
+        # an unrelated PR; it shows in the run summary and is triaged as an issue.
+        continue-on-error: true
+        run: |
+          uv export --no-emit-project --no-dev --format requirements-txt > requirements.txt
+          uvx pip-audit --requirement requirements.txt --strict

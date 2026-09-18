@@ -1,0 +1,46 @@
+meta {
+  name: Partially update the item
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{api}}/items/{{item_id}}
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: owner
+}
+
+body:json {
+  {
+    "price": "24.50"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("applies the change that was sent", function () {
+    // Compared as a string: `assert res.body.price: eq 24.50` would coerce to
+    // the number 24.5 and quietly stop checking the decimal representation,
+    // which is the part that matters for money.
+    expect(String(res.getBody().price)).to.equal("24.50");
+  });
+
+  test("leaves fields the request omitted untouched", function () {
+    // The defining property of PATCH here: the schema uses exclude_unset, so
+    // omitting `name` must preserve it. A regression to a full model_dump would
+    // blank every unmentioned field, and only an assertion like this catches it.
+    const body = res.getBody();
+    expect(body.name, "name was not sent and must survive").to.equal("E2E Widget");
+    expect(body.description, "description was not sent").to.equal(
+      "Created by the Bruno end-to-end suite."
+    );
+  });
+}

@@ -1,0 +1,37 @@
+meta {
+  name: Ready
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/ready
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq ready
+}
+
+tests {
+  test("reports an environment name", function () {
+    expect(res.getBody().env, "env").to.be.a("string").and.not.be.empty;
+  });
+}
+
+docs {
+  Readiness, the counterpart to /health: this one DOES query the database, so a
+  200 here proves the server can actually serve rather than merely that the
+  process is up.
+
+  This is the only place that round trip is genuinely exercised. The in-process
+  suite stubs the check, because it runs on in-memory SQLite while the probe
+  uses the application engine — so a real `SELECT 1` against a real database
+  only happens here.
+
+  If this fails while /health passes, the API is running but its database is
+  unreachable: check the connection string and that Postgres is up, rather than
+  looking for an application bug.
+}

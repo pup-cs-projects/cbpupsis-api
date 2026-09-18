@@ -1,0 +1,40 @@
+meta {
+  name: Unverified account cannot log in
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{api}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{throwaway_email}}",
+    "password": "{{e2e_password}}"
+  }
+}
+
+assert {
+  res.status: eq 403
+}
+
+tests {
+  test("carries the machine-readable code the client branches on", function () {
+    // ERROR-CODES.md is explicit that clients branch on `code`, never on
+    // `detail` — so `code` is the part worth asserting. A frontend uses this to
+    // route to a resend-verification screen instead of back to login.
+    expect(res.getBody().code).to.equal("email_not_verified");
+  });
+}
+
+docs {
+  The password is correct; only verification is missing. That distinction is why
+  this is a 403 with a code rather than the generic 401 a wrong password gets.
+}

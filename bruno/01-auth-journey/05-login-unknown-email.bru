@@ -1,0 +1,41 @@
+meta {
+  name: Unknown email is indistinguishable from a wrong password
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{api}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "nobody-has-this-address-8f3a@example.com",
+    "password": "definitely-not-the-password"
+  }
+}
+
+assert {
+  res.status: eq 401
+}
+
+tests {
+  test("returns byte-identical output to the wrong-password case", function () {
+    // The security property, asserted directly rather than inferred: if these
+    // two responses ever differ, /login becomes an oracle for testing whether
+    // an address is registered. Comparing them is the only way to catch a
+    // well-meaning edit that makes one message more "helpful" than the other.
+    expect(res.getBody().detail).to.equal(bru.getVar("wrong_password_detail"));
+  });
+}
+
+docs {
+  Deliberately paired with request 04. Neither test means much alone; together
+  they pin the account-enumeration guarantee.
+}

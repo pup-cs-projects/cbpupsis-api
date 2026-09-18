@@ -1,0 +1,47 @@
+meta {
+  name: Pagination limits are enforced at the edge
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{api}}/notifications?limit=500&offset=0
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 422
+}
+
+tests {
+  test("an over-large page is refused, not silently clamped", function () {
+    // limit is capped (le=200) so a client cannot ask for an unbounded page and
+    // turn a list endpoint into a cheap denial-of-service: one request that
+    // makes the server materialize every row a user has.
+    //
+    // Refusing beats clamping. A clamp is invisible to the client, which
+    // believes it received everything and stops paging — so rows silently go
+    // missing from whatever it renders.
+    //
+    // This constraint lives entirely in the query-parameter layer. A service
+    // call passes an int and never sees the string "500", so only an HTTP
+    // request exercises the coercion and the bound together.
+    expect(res.getStatus()).to.equal(422);
+  });
+
+  test("names the offending parameter", function () {
+    // FastAPI's 422 detail is an array of field errors; a client (or a
+    // developer reading a log) needs to see which parameter was wrong.
+    expect(JSON.stringify(res.getBody().detail)).to.contain("limit");
+  });
+}
+
+docs {
+  The upper bound on `limit`. Its siblings — a negative offset and a
+  non-numeric limit — are covered in the same folder's request 09.
+}

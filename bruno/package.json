@@ -1,0 +1,22 @@
+{
+  "name": "api-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "End-to-end HTTP tests for the API, run with the Bruno CLI.",
+  "scripts": {
+    "test": "bru run --env local --reporter-skip-all-headers",
+    "test:ci": "bru run --env ci --reporter-junit reports/junit.xml --reporter-html reports/report.html",
+    "test:smoke": "bru run 00-smoke --env local",
+    "test:auth": "bru run 00-smoke 01-auth-journey --env local",
+    "test:items": "bru run 00-smoke 02-items-journey --env local",
+    "test:authz": "bru run 00-smoke 03-authorization --env local",
+    "test:iam": "bru run 00-smoke 04-iam-journey --env local",
+    "test:contract": "bru run 00-smoke 08-contract --env local",
+    "test:notifications": "bru run 00-smoke 05-notifications-journey --env local",
+    "test:users": "bru run 00-smoke 06-users-journey --env local",
+    "test:session": "bru run 00-smoke 07-session-lifecycle --env local"
+  },
+  "devDependencies": {
+    "@usebruno/cli": "^2.9.0"
+  }
+}

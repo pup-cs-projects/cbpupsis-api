@@ -1,0 +1,38 @@
+meta {
+  name: Duplicate registration is rejected
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{api}}/auth/register
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{throwaway_email}}",
+    "password": "{{e2e_password}}",
+    "full_name": "E2E Duplicate"
+  }
+}
+
+assert {
+  res.status: eq 409
+}
+
+tests {
+  test("explains the conflict in prose a user could read", function () {
+    expect(res.getBody().detail).to.be.a("string").and.not.be.empty;
+  });
+}
+
+docs {
+  Re-sends request 01 verbatim. The address is now taken, so the API must
+  answer 409 rather than silently creating a second account.
+}

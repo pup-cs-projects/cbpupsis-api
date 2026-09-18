@@ -1,0 +1,34 @@
+meta {
+  name: Clearing drops the badge to zero
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{api}}/notifications/unread-count
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("read-all actually cleared the unread count", function () {
+    // The composition check: the previous request answered 204, but a 204 only
+    // says the endpoint accepted the call. This proves the write landed and is
+    // visible to the very next read — the two-request property a single
+    // service-level test cannot express, because it never crosses a
+    // transaction boundary the way two HTTP calls do.
+    expect(res.getBody().unread, "unread after read-all").to.equal(0);
+  });
+}
+
+docs {
+  Confirms the effect of 02, rather than trusting its status code.
+}

@@ -1,0 +1,56 @@
+name: Bug report
+description: Something behaves differently from the SRS, a story, or the error contract.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What is wrong
+      description: One or two sentences, as observed.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The narrowest reproduction. A Bruno request, a curl command, or a failing test id is ideal.
+      value: |
+        1.
+        2.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: Cite the story AC id, the SRS requirement, or the ERROR-CODES.md row.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+      description: Include the status code and response body. Remove any real student data first.
+    validations:
+      required: true
+  - type: input
+    id: request-id
+    attributes:
+      label: request_id
+      description: From the error response or the X-Request-ID header, if there is one.
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Local
+        - CI
+        - Staging
+        - Production
+    validations:
+      required: true
+  - type: input
+    id: story
+    attributes:
+      label: Related story
+      placeholder: "#34"

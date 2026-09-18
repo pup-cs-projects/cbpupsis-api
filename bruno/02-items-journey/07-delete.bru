@@ -1,0 +1,26 @@
+meta {
+  name: Soft-delete the item
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{api}}/items/{{item_id}}
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 204
+}
+
+tests {
+  test("204 carries no body", function () {
+    const body = res.getBody();
+    expect(body === null || body === undefined || body === "").to.be.true;
+  });
+}

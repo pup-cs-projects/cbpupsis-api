@@ -1,0 +1,88 @@
+meta {
+  name: Pagination rejects negative and non-numeric values
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{api}}/notifications?limit=1&offset=0
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  // The happy edge first: limit=1 is the smallest legal page, and a boundary
+  // written as `gt=0` instead of `ge=1` would reject it. Off-by-one on a bound
+  // is exactly the mistake a matrix like this catches.
+  test("the smallest legal page is accepted", function () {
+    const body = res.getBody();
+    expect(body.limit, "limit echoed back").to.equal(1);
+    expect(body.items.length, "at most one item").to.be.at.most(1);
+    expect(body, "page envelope").to.have.property("total");
+    expect(body.total, "total").to.be.a("number");
+  });
+
+  test("total counts all matching rows, not just the page", function () {
+    // The property that makes paging usable: `total` must ignore limit/offset,
+    // or a client can never render "showing 1-1 of N" and will stop paging at
+    // the first short page.
+    const body = res.getBody();
+    expect(body.total).to.be.at.least(body.items.length);
+  });
+
+  // Now the illegal values. Each is a separate probe rather than a separate
+  // request file, because they assert one rule — the bounds — and splitting
+  // them across five files would say nothing extra.
+  //
+  // bru.sendRequest REJECTS on a non-2xx, and every probe below is a
+  // deliberate 422, so each must be unwrapped from err.response. Without the
+  // catch the first probe aborts the script and NO test registers — the run
+  // reports 0/0 rather than a failure.
+  const api = bru.getEnvVar("api");
+  const token = bru.getVar("owner_access_token");
+
+  const probe = async (query) => {
+    try {
+      return await bru.sendRequest({
+        method: "GET",
+        url: `${api}/notifications?${query}`,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch (err) {
+      if (err.response) return err.response;
+      throw err;
+    }
+  };
+
+  const cases = [
+    ["limit=0", "a zero-length page is meaningless"],
+    ["limit=-1", "a negative page size"],
+    ["offset=-1", "a negative offset"],
+    ["limit=abc", "a non-numeric limit"],
+    ["limit=1.5", "a fractional limit"],
+  ];
+
+  for (const [query, why] of cases) {
+    const r = await probe(query);
+    test(`rejects ${query} — ${why}`, function () {
+      expect(r.status, `${query} should be refused`).to.equal(422);
+    });
+  }
+}
+
+docs {
+  The pagination bound matrix, driven from one request so the folder does not
+  grow a file per illegal value.
+
+  These are edge cases the in-process suite cannot fully reach: `limit=abc` and
+  `limit=1.5` test the *coercion* FastAPI performs on a raw query string, which
+  a service call bypasses entirely by passing a real int.
+}

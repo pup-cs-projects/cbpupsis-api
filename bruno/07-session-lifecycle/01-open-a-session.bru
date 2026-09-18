@@ -1,0 +1,47 @@
+meta {
+  name: Open an isolated session
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{api}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "e2e-other@example.com",
+    "password": "{{e2e_password}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("mints a fresh token pair", function () {
+    const body = res.getBody();
+    expect(body.access_token, "access_token").to.be.a("string").and.not.be.empty;
+    expect(body.refresh_token, "refresh_token").to.be.a("string").and.not.be.empty;
+  });
+
+  // Stored under names this folder owns, NOT the shared `other_*` vars from
+  // 00-smoke. This folder logs its session out, and clobbering the shared token
+  // would break 03-authorization when the collection is run in a different
+  // order — the kind of coupling that turns one broken folder into three.
+  bru.setVar("session_access_token", res.getBody().access_token);
+  bru.setVar("session_refresh_token", res.getBody().refresh_token);
+}
+
+docs {
+  A second, disposable login for `e2e-other`. Logging in twice is deliberate:
+  it gives this folder a session it can destroy without affecting the principals
+  every other folder authenticates as.
+}

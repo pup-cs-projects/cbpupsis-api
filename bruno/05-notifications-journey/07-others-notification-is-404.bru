@@ -1,0 +1,49 @@
+meta {
+  name: Someone else's notification id answers 404
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{api}}/notifications/00000000-0000-4000-8000-000000000000/read
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 404
+}
+
+tests {
+  test("an id the caller does not own is 404, never 403", function () {
+    // The enumeration-oracle rule, applied to notifications.
+    //
+    // 403 would confirm the id exists and belongs to someone — letting a caller
+    // walk the id space and learn how many notifications other accounts have,
+    // and when they arrived. 404 makes "not yours" and "not real" the same
+    // answer, so the endpoint reveals nothing.
+    //
+    // A random UUID stands in for another user's id here: the service treats
+    // both identically by design, which is the whole point. 03-authorization
+    // proves the same rule with a genuinely foreign record.
+    expect(res.getStatus(), "unknown/foreign notification id").to.equal(404);
+  });
+
+  test("the 404 body does not leak whether the id exists", function () {
+    // A detail string that differed between "no such notification" and "not
+    // yours" would rebuild the oracle the status code just closed.
+    const detail = String(res.getBody()?.detail ?? "");
+    expect(detail.toLowerCase()).to.not.contain("permission");
+    expect(detail.toLowerCase()).to.not.contain("forbidden");
+    expect(detail.toLowerCase()).to.not.contain("owner");
+  });
+}
+
+docs {
+  Reads are a boundary: an owned resource answers 404 for a caller who does not
+  own it, so the endpoint cannot be used to enumerate other users' records.
+}

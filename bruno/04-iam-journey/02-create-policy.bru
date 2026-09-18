@@ -1,0 +1,36 @@
+meta {
+  name: Bundle it into a policy
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{api}}/iam/policies
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: admin
+}
+
+body:json {
+  {
+    "name": "{{e2e_policy}}",
+    "permission_actions": ["{{e2e_permission}}"],
+    "description": "Created by the Bruno end-to-end suite."
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("reports the permission it bundles", function () {
+    expect(JSON.stringify(res.getBody())).to.contain(bru.getVar("e2e_permission"));
+  });
+
+  bru.setVar("e2e_policy_id", res.getBody().id);
+}

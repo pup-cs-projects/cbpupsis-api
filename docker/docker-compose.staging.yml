@@ -1,0 +1,50 @@
+# Staging overlay: docker compose -f docker-compose.yml -f docker-compose.staging.yml
+#
+# Runs the SAME build as production against the local Postgres, so you can verify
+# the shipping artifact rather than the dev image. Differences from dev are all
+# configuration: docs closed, structured logs, no reload, non-root, no bind mount.
+#
+# The Makefile applies this automatically with `env=staging`.
+
+services:
+  api:
+    build:
+      dockerfile: docker/Dockerfile.staging
+    # No bind mount: the image is the artifact under test, so a host edit must
+    # not silently change what is running.
+    volumes: []
+    environment:
+      # Rate limit counters in Redis, not in the process.
+      #
+      # With the default `memory://` each worker keeps its own counters, so a
+      # limit of "10/minute" is really 10 x the worker count and resets on every
+      # deploy — the limit silently weakens exactly as you scale out. Staging
+      # runs the production image with more than one worker, so it is the first
+      # place that divergence is observable, which is why the override lives
+      # here and dev is left alone.
+      #
+      # Set after env_file, so it wins over whatever env/env.staging carries.
+      # The application already supports this: it is configuration, not code.
+      RATE_LIMIT_STORAGE_URI: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Migrations run as an explicit step (`make migrate env=staging`), matching
+    # how a real deploy does it — two containers starting at once would both try.
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000
+      --proxy-headers --forwarded-allow-ips "*"
+
+  redis:
+    image: redis:7-alpine
+    # No persistence and no password: these counters are disposable, rebuild
+    # themselves within one window, and this port is not published to the host.
+    # A deployed Redis holding anything else needs both.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # depends_on alone waits only for the container to start, not for Redis to
+    # accept commands — the same trap as Postgres above.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10

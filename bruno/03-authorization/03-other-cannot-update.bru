@@ -1,0 +1,37 @@
+meta {
+  name: Another user cannot update the item
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{api}}/items/{{guarded_item_id}}
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: other
+}
+
+body:json {
+  {
+    "name": "Hijacked"
+  }
+}
+
+assert {
+  res.status: eq 403
+}
+
+tests {
+  test("is refused by the object-level check, not the permission check", function () {
+    // `other` HOLDS UpdateItem — they are a normal member and can update their
+    // own items. So a pass here proves specifically that the service's
+    // ownership check ran. If object-level authorization were removed, the
+    // endpoint's require_permission dependency would still be satisfied and
+    // this request would succeed: exactly the IDOR bug CONVENTIONS.md warns about.
+    expect(res.getBody().detail).to.be.a("string").and.not.be.empty;
+  });
+}

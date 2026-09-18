@@ -195,9 +195,9 @@ cython_debug/
 .abstra/
 
 # Visual Studio Code
-#   Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
+#   Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore
 #   that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#   and can be added to the global gitignore or merged into this file. However, if you prefer, 
+#   and can be added to the global gitignore or merged into this file. However, if you prefer,
 #   you could uncomment the following to ignore the entire vscode folder
 # .vscode/
 # Temporary file for partial code execution
@@ -216,3 +216,37 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- cbpupsis-api ------------------------------------------------------------
+# Real per-environment values live in env/env.<environment> and are never
+# committed. env.example is the committed shape to copy from.
+env/
+uploads/
+*.sqlite3
+bruno/reports/
+
+# --- AI assistant configuration: local only, never committed -----------------
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.mcp.json
+AGENTS.md
+GEMINI.md
+.gemini/
+.codex/
+.cursor/
+.cursorrules
+.cursorignore
+.windsurf/
+.windsurfrules
+.clinerules
+.clinerules/
+.roo/
+.roomodes
+.kiro/
+.aider*
+.continue/
+.github/copilot-instructions.md
+.github/instructions/
+.github/prompts/
+.github/chatmodes/

@@ -1,0 +1,18 @@
+meta {
+  name: 04-iam-journey
+  seq: 5
+}
+
+docs {
+  The IAM building blocks, assembled the way the domain intends: create a
+  permission, bundle it into a policy, create a group, attach the policy, then
+  add a user. Runs as `admin`.
+
+  The payoff is the last request, which proves the chain actually grants
+  something: `other` gains a permission purely by being added to the group.
+  Each link in isolation would prove very little.
+
+  Names are suffixed with a per-run value because permissions, policies, and
+  groups are unique by name and this suite must be re-runnable against a
+  database that already holds the previous run's records.
+}

@@ -1,0 +1,6 @@
+# Bruno CLI reports (JUnit/HTML), regenerated on every run.
+reports/
+
+# The Bruno CLI is an npm package; the collection itself is not a JS project.
+node_modules/
+package-lock.json

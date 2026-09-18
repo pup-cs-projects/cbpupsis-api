@@ -1,0 +1,28 @@
+meta {
+  name: The item survived both attacks unchanged
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{api}}/items/{{guarded_item_id}}
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("still exists, with its original name", function () {
+    // Rejection statuses alone do not prove nothing happened — an endpoint can
+    // return 403 after already writing. This confirms the attempted rename did
+    // not land and the delete did not take effect.
+    expect(res.getBody().name).to.equal("Owner's private widget");
+  });
+}

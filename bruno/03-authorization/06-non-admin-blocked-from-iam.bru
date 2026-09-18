@@ -1,0 +1,33 @@
+meta {
+  name: A normal user cannot reach the IAM surface
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{api}}/iam/permissions
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: owner
+}
+
+body:json {
+  {
+    "action": "EscalateSelf",
+    "description": "Should never be created."
+  }
+}
+
+assert {
+  res.status: eq 403
+}
+
+docs {
+  Privilege escalation, attempted directly: an ordinary member trying to mint a
+  permission. The IAM endpoints are gated behind ManageIAM, which is what makes
+  the seeded admin account necessary in the first place.
+}

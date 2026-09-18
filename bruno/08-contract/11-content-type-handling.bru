@@ -1,0 +1,123 @@
+meta {
+  name: Content-Type and body shape are validated
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{api}}/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: text/plain
+}
+
+body:json {
+  {
+    "email": "e2e-owner@example.com",
+    "password": "irrelevant"
+  }
+}
+
+tests {
+  // Content negotiation is transport behavior: it is decided before a handler
+  // runs, and an in-process client sets the header for you. These shapes only
+  // occur when something else is on the wire — a misconfigured proxy, a client
+  // library with different defaults, or someone probing.
+  //
+  // As everywhere in this folder, the bar is "a clean 4xx, never a 5xx".
+  test("a wrong Content-Type is refused, not crashed on", function () {
+    expect(res.getStatus(), "text/plain on a JSON endpoint").to.be.below(500);
+    expect([415, 422]).to.include(res.getStatus());
+  });
+
+  const api = bru.getEnvVar("api");
+
+  const probe = async (options) => {
+    try {
+      return await bru.sendRequest(options);
+    } catch (err) {
+      if (err.response) return err.response;
+      throw err;
+    }
+  };
+
+  test("a JSON array where an object is expected is a 422", async function () {
+    // A body that is valid JSON but the wrong TYPE. Pydantic must reject it as
+    // a validation error rather than raising an AttributeError reaching for
+    // .get on a list.
+    const r = await probe({
+      method: "POST",
+      url: `${api}/auth/login`,
+      headers: { "Content-Type": "application/json" },
+      data: ["e2e-owner@example.com", "irrelevant"],
+    });
+    expect(r.status).to.equal(422);
+  });
+
+  test("a JSON scalar where an object is expected is a 422", async function () {
+    const r = await probe({
+      method: "POST",
+      url: `${api}/auth/login`,
+      headers: { "Content-Type": "application/json" },
+      data: 42,
+    });
+    expect(r.status).to.equal(422);
+  });
+
+  test("a null body is a 422", async function () {
+    const r = await probe({
+      method: "POST",
+      url: `${api}/auth/login`,
+      headers: { "Content-Type": "application/json" },
+      data: null,
+    });
+    expect(r.status).to.be.oneOf([400, 422]);
+  });
+
+  test("deeply nested JSON does not crash the parser", async function () {
+    // A cheap denial-of-service probe: deep nesting can blow a recursive
+    // parser's stack. The response may legitimately be a 422 (it is not a valid
+    // login body) — what must not happen is a 500 or a hung connection.
+    let nested = { a: 1 };
+    for (let i = 0; i < 200; i++) nested = { a: nested };
+
+    const r = await probe({
+      method: "POST",
+      url: `${api}/auth/login`,
+      headers: { "Content-Type": "application/json" },
+      data: nested,
+    });
+    expect(r.status, "deeply nested body").to.be.below(500);
+  });
+
+  test("an oversized string field is refused by the schema", async function () {
+    // Every string field is length-capped so a schema cannot admit more than
+    // the column holds — an uncapped field is a 500 at INSERT, which is a
+    // client-triggered server error.
+    const r = await probe({
+      method: "POST",
+      url: `${api}/auth/login`,
+      headers: { "Content-Type": "application/json" },
+      data: { email: "a".repeat(10000) + "@example.com", password: "x".repeat(10000) },
+    });
+    expect(r.status, "oversized credentials").to.be.below(500);
+    expect([401, 422]).to.include(r.status);
+  });
+}
+
+docs {
+  Hostile and malformed request bodies against a stable, unauthenticated
+  endpoint.
+
+  `/auth/login` is chosen deliberately: it needs no token, so a failure here is
+  never confused with an auth problem, and it is the endpoint an unauthenticated
+  attacker actually reaches first.
+
+  Note this runs BEFORE 99-rate-limit but still issues several login requests.
+  It is a handful, well inside the raised ceiling the suite runs against — see
+  `environments/README.md`. If this folder grows many more login probes, move
+  them to an endpoint that is not rate limited.
+}

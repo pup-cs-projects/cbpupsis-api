@@ -1,0 +1,29 @@
+meta {
+  name: 05-notifications-journey
+  seq: 6
+}
+
+docs {
+  The notification lifecycle as a client experiences it: a badge count, a list,
+  marking one read, marking the rest read, and the preference screen.
+
+  **Why this belongs in the HTTP suite and not only in pytest.** Three of the
+  properties here have no in-process equivalent:
+
+  - **Route ordering.** `POST /notifications/read-all` and
+    `POST /notifications/{id}/read` are both POSTs one segment deep. The literal
+    route only wins because it is declared first; swap the two declarations and
+    "read-all" is parsed as a notification id and answers 422. Only a real
+    router resolving a real path can catch that regression.
+  - **Delivery is asynchronous.** A notification is published through the outbox
+    and delivered by a worker, so it appears some time after the request that
+    caused it returned. In-process tests drain the outbox synchronously; a
+    client polls. This folder polls, which is what a client actually does.
+  - **Ownership is invisible in the URL.** Every query is scoped to the bearer
+    token, so there is no id a client could supply to reach another user's
+    notifications. 03-authorization proves the crossing is refused; here we
+    prove the scoping itself holds on a live server.
+
+  The pytest suite owns the rule matrix — every preference combination, every
+  delivery decision. This folder owns the sequence.
+}

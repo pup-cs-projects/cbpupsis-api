@@ -1,0 +1,36 @@
+meta {
+  name: Log the session out
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{api}}/auth/logout
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "refresh_token": "{{session_refresh_token}}"
+  }
+}
+
+assert {
+  res.status: eq 204
+}
+
+tests {
+  test("logout answers 204 with no body", function () {
+    expect(res.getStatus()).to.equal(204);
+  });
+}
+
+docs {
+  Revokes the refresh token minted in request 01. Requests 04-06 assert what
+  that did and, just as importantly, what it did not do.
+}

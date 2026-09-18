@@ -1,0 +1,41 @@
+meta {
+  name: Unknown fields are rejected
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{api}}/items/{{item_id}}
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: owner
+}
+
+body:json {
+  {
+    "price": "30.00",
+    "owner_id": "00000000-0000-0000-0000-000000000000"
+  }
+}
+
+assert {
+  res.status: eq 422
+}
+
+tests {
+  test("names the offending field in the validation detail", function () {
+    // extra="forbid" on ItemUpdate is what makes this a 422 instead of a
+    // silently ignored field. Silently ignoring `owner_id` would be the more
+    // dangerous outcome: a client could believe it had reassigned ownership.
+    expect(JSON.stringify(res.getBody().detail)).to.contain("owner_id");
+  });
+}
+
+docs {
+  `owner_id` is the field worth probing: it is the one a client might try to
+  tamper with to reassign ownership.
+}

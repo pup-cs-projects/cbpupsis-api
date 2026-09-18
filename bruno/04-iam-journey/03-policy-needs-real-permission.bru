@@ -1,0 +1,32 @@
+meta {
+  name: A policy cannot reference an unknown permission
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{api}}/iam/policies
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  x-e2e-actor: admin
+}
+
+body:json {
+  {
+    "name": "E2EGhostPolicy{{e2e_suffix}}",
+    "permission_actions": ["ReadSomethingThatDoesNotExist"]
+  }
+}
+
+tests {
+  test("is refused rather than silently creating an empty policy", function () {
+    // The status matters less than the refusal: a policy that silently drops
+    // unknown permissions is how an authorization model quietly grants nothing
+    // while appearing correct in the UI.
+    expect(res.getStatus(), "expected a 4xx").to.be.within(400, 499);
+  });
+}

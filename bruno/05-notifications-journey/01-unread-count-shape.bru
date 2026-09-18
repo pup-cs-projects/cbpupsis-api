@@ -1,0 +1,44 @@
+meta {
+  name: Unread count is a number
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{api}}/notifications/unread-count
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns an integer count", function () {
+    // Polled on an interval by every client that renders a bell badge, so the
+    // shape is a contract a UI depends on. A string here — the shape you get
+    // if the count is ever serialized from a Decimal or a raw driver value —
+    // breaks arithmetic on the client silently, since "0" is truthy.
+    const body = res.getBody();
+    expect(body).to.have.property("unread");
+    expect(body.unread, "unread").to.be.a("number");
+    expect(Number.isInteger(body.unread), "unread is a whole number").to.be.true;
+    expect(body.unread).to.be.at.least(0);
+  });
+
+  // The baseline every later step in this folder measures against. Captured
+  // rather than assumed to be zero: the account is reused across runs and may
+  // carry notifications from a previous one.
+  bru.setVar("unread_at_start", res.getBody().unread);
+}
+
+docs {
+  Establishes the starting badge count. Later requests assert movement relative
+  to this rather than against an absolute number, so the folder is re-runnable
+  against a database that already has history.
+}

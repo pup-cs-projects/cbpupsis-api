@@ -1,0 +1,25 @@
+meta {
+  name: A malformed bearer token is rejected
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{api}}/items/{{guarded_item_id}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer not.a.real.token
+}
+
+assert {
+  res.status: eq 401
+}
+
+docs {
+  A garbage token must be rejected as cleanly as no token at all — never a 500.
+  The collection-level envelope check applies here too, so a stack trace leaking
+  through this path would fail the run.
+}

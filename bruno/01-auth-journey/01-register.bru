@@ -1,0 +1,53 @@
+meta {
+  name: Register a new account
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{api}}/auth/register
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{throwaway_email}}",
+    "password": "{{e2e_password}}",
+    "full_name": "E2E Throwaway"
+  }
+}
+
+script:pre-request {
+  // A fresh address per run. Registration is not idempotent — a fixed address
+  // would pass once and then 409 on every later run, which is the classic way
+  // an end-to-end suite rots into "just re-seed the database first".
+  const unique = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  bru.setVar("throwaway_email", `e2e-throwaway-${unique}@example.com`);
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("echoes the created user, without ever returning the password", function () {
+    const body = res.getBody();
+    expect(body.email).to.equal(bru.getVar("throwaway_email"));
+    expect(body.full_name).to.equal("E2E Throwaway");
+    expect(body).to.not.have.property("password");
+    expect(body).to.not.have.property("hashed_password");
+  });
+
+  test("does not issue tokens — those come from /login", function () {
+    expect(res.getBody()).to.not.have.property("access_token");
+  });
+}
+
+docs {
+  Registration returns the user, not a session. A client must log in afterwards.
+}

@@ -1,0 +1,50 @@
+meta {
+  name: Whoami captures principal ids
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{api}}/auth/whoami
+  body: none
+  auth: inherit
+}
+
+headers {
+  x-e2e-actor: owner
+}
+
+assert {
+  res.status: eq 200
+  res.body.email: eq e2e-owner@example.com
+}
+
+tests {
+  test("returns the id and email of the token's bearer", function () {
+    expect(res.getBody().id, "id").to.match(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    );
+  });
+
+  bru.setVar("owner_user_id", res.getBody().id);
+
+  // The authorization folder needs `other`'s id to prove that owner cannot read
+  // or modify records belonging to someone else. Asking the API for it is
+  // honest in a way decoding the JWT locally would not be: it exercises the
+  // same path a client uses, and it does not bake in assumptions about claims.
+  const other = await bru.sendRequest({
+    method: "GET",
+    url: `${bru.getEnvVar("api")}/auth/whoami`,
+    headers: { Authorization: `Bearer ${bru.getVar("other_access_token")}` },
+  });
+  bru.setVar("other_user_id", other.data.id);
+}
+
+docs {
+  Confirms the collection-level pre-request script actually attaches a token —
+  the first request in the run to use `auth: inherit`. If the mechanism is
+  broken, this fails here rather than misattributing the failure to a journey.
+
+  It also captures both ordinary principals' ids, which the authorization folder
+  needs.
+}
