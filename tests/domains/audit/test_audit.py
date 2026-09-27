@@ -122,7 +122,9 @@ class TestTheTrailIsWiredUp:
         register_audit_subscribers()
         assert len(event_bus.handlers_for("iam.group_created")) == before
 
-    async def test_an_iam_change_reaches_the_handler(self, db: AsyncSession) -> None:
+    async def test_an_iam_change_reaches_the_handler(
+        self, db: AsyncSession, make_user
+    ) -> None:
         """End to end through the bus, with the recorder stubbed.
 
         The real recorder opens its own session against the application engine,
@@ -139,7 +141,7 @@ class TestTheTrailIsWiredUp:
         event_bus.subscribe("iam.user_added_to_group", spy)
 
         actor = uuid.uuid4()
-        subject = uuid.uuid4()
+        subject = (await make_user("audited-member@example.com")).id
         group = await iam_service.create_group(db, name="Audited")
         await iam_service.add_user_to_group(db, subject, group.id, actor_id=actor)
         await event_bus.drain()
@@ -149,7 +151,9 @@ class TestTheTrailIsWiredUp:
         assert seen[0].payload["actor_id"] == str(actor)
         assert seen[0].payload["group_id"] == group.id
 
-    async def test_an_idempotent_no_op_records_nothing(self, db: AsyncSession) -> None:
+    async def test_an_idempotent_no_op_records_nothing(
+        self, db: AsyncSession, make_user
+    ) -> None:
         """Re-adding an existing member changes nothing, so the trail must not
         claim a grant happened."""
         seen: list[Event] = []
@@ -159,7 +163,7 @@ class TestTheTrailIsWiredUp:
 
         event_bus.subscribe("iam.user_added_to_group", spy)
 
-        subject = uuid.uuid4()
+        subject = (await make_user("idempotent-member@example.com")).id
         group = await iam_service.create_group(db, name="Audited")
         await iam_service.add_user_to_group(db, subject, group.id)
         await iam_service.add_user_to_group(db, subject, group.id)

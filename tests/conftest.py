@@ -36,7 +36,7 @@ from app.domains.iam import service as iam_service
 from app.domains.items import models as _items_models  # noqa: F401
 from app.domains.notifications import models as _notifications_models  # noqa: F401
 from app.domains.notifications.constants import NOTIFICATION_TYPES
-from app.domains.users import models as _users_models  # noqa: F401
+from app.domains.users import models as _users_models
 from app.domains.users import service as users_service
 from app.main import app
 
@@ -87,6 +87,15 @@ async def grant(db: AsyncSession):
     """
 
     async def _grant(user_id: uuid.UUID, action: str) -> None:
+        if await users_service.get_active_user(db, user_id) is None:
+            db.add(
+                _users_models.User(
+                    id=user_id,
+                    email=f"{user_id}@example.com",
+                    password_hash="test-fixture-only",
+                )
+            )
+            await db.commit()
         permission = await iam_service.create_permission(db, action=action)
         policy = await iam_service.create_policy(
             db, name=f"policy-{action}", permission_actions=[action]

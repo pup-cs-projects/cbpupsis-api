@@ -163,19 +163,3 @@ that already holds a previous run's records without a reset.
   `environments/README.md`), and running the suite repeatedly in quick
   succession can still exhaust even that raised budget. `docker compose restart
   api` clears the counters instantly, since they die with the process.
-
-## Known defects this suite reports
-
-One test fails on purpose. It is a defect report, not a broken test — the
-assertion encodes the correct requirement, and it will pass unchanged once the
-defect is fixed.
-
-- **`04-iam-journey/08-unknown-user-rejected`** — `POST /iam/groups/{id}/users`
-  returns **204** for a `user_id` that belongs to no user, creating a
-  `user_groups` row that references nothing. `iam_service.add_user_to_group()`
-  checks membership and inserts without ever resolving the user, and because
-  cross-domain ids are bare UUIDs with no foreign key (deliberately), the
-  database does not catch it either. Group membership is an authorization
-  primitive: a typo'd id looks like success to whoever is granting access, and
-  if that id is later issued to a real user they inherit a grant nobody made.
-  The fix belongs in `app/domains/iam/service.py`.
