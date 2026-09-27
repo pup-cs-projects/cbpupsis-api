@@ -182,6 +182,15 @@ def _admin_error(
     }
     if code is not None:
         content["code"] = code
+    logger.warning(
+        "admin.authorization_refused",
+        extra={
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": status_code,
+            "error_code": code,
+        },
+    )
     return JSONResponse(
         status_code=status_code,
         content=content,

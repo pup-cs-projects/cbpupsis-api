@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -10,7 +11,9 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.events import event_bus
 from app.core.outbox import OutboxMessage
+from app.domains.audit import service as audit_service
 from app.domains.auth import repository as auth_repository
 from app.domains.auth import service as auth_service
 from app.domains.auth.dependencies import CurrentUser
@@ -20,6 +23,7 @@ from app.domains.iam import service as iam_service
 from app.domains.iam.constants import ADMIN_GROUP
 from app.domains.iam.exceptions import ScopedResourceNotFoundError
 from app.domains.users import service as users_service
+from app.domains.users.constants import MANAGE_USER
 
 PASSWORD = "correct-horse-battery-staple"
 
@@ -179,13 +183,26 @@ class TestAdministrativeMfa:
         )
 
     async def test_ac_003_4_admin_namespace_refuses_an_ordinary_session(
-        self, client: AsyncClient, auth_headers: dict[str, str]
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        response = await client.post(
-            "/api/v1/admin/backups/restore", headers=auth_headers
-        )
+        with caplog.at_level(logging.WARNING, logger="app.core.middleware.http"):
+            response = await client.post(
+                "/api/v1/admin/backups/restore", headers=auth_headers
+            )
+
         assert response.status_code == 403
         assert response.json()["code"] == "AUTH_INSUFFICIENT_ROLE"
+        refusal = next(
+            record
+            for record in caplog.records
+            if record.message == "admin.authorization_refused"
+        )
+        assert refusal.path == "/api/v1/admin/backups/restore"
+        assert refusal.status_code == 403
+        assert refusal.error_code == "AUTH_INSUFFICIENT_ROLE"
 
     def test_ac_003_5_out_of_scope_resources_are_hidden_as_not_found(self) -> None:
         admin = CurrentUser(
@@ -199,6 +216,26 @@ class TestAdministrativeMfa:
             admin.require_resource_scope(department_id="CAF", college_id=None)
         assert raised.value.status_code == 404
         assert raised.value.code == "RESOURCE_NOT_FOUND"
+        admin.require_resource_scope(department_id="CCIS", college_id=None)
+
+        dean = CurrentUser(
+            id=uuid.uuid4(),
+            email="dean@example.com",
+            role="admin",
+            position="dean",
+            college_id="COE",
+        )
+        with pytest.raises(ScopedResourceNotFoundError):
+            dean.require_resource_scope(department_id=None, college_id="CAF")
+        dean.require_resource_scope(department_id=None, college_id="COE")
+
+        registrar = CurrentUser(
+            id=uuid.uuid4(),
+            email="registrar@example.com",
+            role="admin",
+            position="registrar",
+        )
+        registrar.require_resource_scope(department_id="CAF", college_id="COE")
 
     async def test_ac_003_6_unenrolled_challenge_reaches_only_enrollment(
         self, client: AsyncClient, db: AsyncSession
@@ -218,6 +255,48 @@ class TestAdministrativeMfa:
         assert denied.status_code == 403
         assert denied.json()["code"] == "AUTH_MFA_ENROLLMENT_REQUIRED"
         assert enrolled.status_code == 200
+
+    async def test_ac_003_7_admin_action_writes_immutable_before_after_audit(
+        self,
+        client: AsyncClient,
+        db: AsyncSession,
+        grant,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        actor_id = await _make_admin(client, db)
+        await grant(actor_id, MANAGE_USER)
+        challenge = await _challenge(client)
+        _, session, _, _ = await _enroll_totp(client, challenge["challenge_token"])
+
+        target = await client.post(
+            "/api/v1/auth/register",
+            json={"email": "target@example.com", "password": PASSWORD},
+        )
+        assert target.status_code == 201, target.text
+        target_id = target.json()["id"]
+
+        async def record_on_test_session(event) -> None:
+            await audit_service.record_event_on(db, event)
+
+        monkeypatch.setattr(event_bus, "publish", record_on_test_session)
+        response = await client.post(
+            f"/api/v1/users/{target_id}/deactivate",
+            headers={"Authorization": f"Bearer {session['access_token']}"},
+        )
+
+        assert response.status_code == 200, response.text
+        page = await audit_service.list_entries(db, action="user.deactivated")
+        assert page.total == 1
+        entry = page.items[0]
+        assert entry.actor_id == actor_id
+        assert entry.target_id == target_id
+        assert entry.prior_state == {"is_active": True}
+        assert entry.new_state == {"is_active": False}
+
+        await db.delete(entry)
+        with pytest.raises(PermissionError, match="append-only"):
+            await db.commit()
+        await db.rollback()
 
     async def test_ac_003_8_lockout_counts_password_and_factor_failures_together(
         self, client: AsyncClient, db: AsyncSession
