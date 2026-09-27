@@ -70,6 +70,9 @@ NOTIFICATION_TYPES: dict[str, NotificationTypeSpec] = {
     "auth.password_changed": NotificationTypeSpec(
         default_channels=(Channel.EMAIL, Channel.IN_APP), optional=False
     ),
+    "auth.account_locked": NotificationTypeSpec(
+        default_channels=(Channel.EMAIL, Channel.IN_APP), optional=False
+    ),
     #: The periodic summary. Optional, unlike the security notices — a digest
     #: is a convenience, and a user who does not want one should be able to say
     #: so.

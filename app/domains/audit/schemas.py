@@ -25,4 +25,6 @@ class AuditEntryRead(BaseModel):
     target_type: str | None
     target_id: str | None
     payload: dict[str, Any]
+    prior_state: dict[str, Any] | None
+    new_state: dict[str, Any] | None
     occurred_at: datetime

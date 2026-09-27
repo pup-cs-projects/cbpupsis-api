@@ -14,6 +14,10 @@ dependencies = [
     "pydantic-settings",
     "pyjwt",
     "passlib[argon2]",
+    # AES-256-GCM protects MFA secrets at rest; py_webauthn performs complete
+    # origin, challenge, RP id, signature, and sign-counter verification.
+    "cryptography>=46.0.0",
+    "webauthn>=2.2.0",
     "sqladmin",
     # Signs the admin panel's session cookie. A transitive-in-name-only
     # dependency: Starlette's SessionMiddleware imports it but does not require

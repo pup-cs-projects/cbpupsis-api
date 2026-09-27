@@ -16,7 +16,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, String
+from sqlalchemy import DateTime, Enum, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -56,6 +56,21 @@ class TokenPurpose(enum.StrEnum):
 
     email_verification = "email_verification"
     password_reset = "password_reset"
+
+
+class AdminPosition(enum.StrEnum):
+    """The data-reach position carried by a single Admin-role session."""
+
+    chairperson = "chairperson"
+    dean = "dean"
+    registrar = "registrar"
+
+
+class AuthFailureStep(enum.StrEnum):
+    """Which half of sign-in failed; both count toward one lockout window."""
+
+    credentials = "credentials"
+    mfa = "mfa"
 
 
 class OneTimeToken(UUIDMixin, TimestampMixin, Base):
@@ -104,3 +119,82 @@ class OneTimeToken(UUIDMixin, TimestampMixin, Base):
     consumed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
+
+
+class AdminAuthProfile(TimestampMixin, Base):
+    """Administrative position, scope, and encrypted MFA material.
+
+    The primary key is the user id without a cross-domain foreign key, matching
+    the refresh-token boundary. Membership in IAM's ``Admins`` group remains
+    the source of the role; this row supplies the position and factor only.
+    """
+
+    __tablename__ = "admin_auth_profiles"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    position: Mapped[AdminPosition] = mapped_column(
+        Enum(
+            AdminPosition,
+            native_enum=False,
+            length=32,
+            create_constraint=True,
+            name="ck_admin_auth_profiles_position",
+        )
+    )
+    department_id: Mapped[str | None] = mapped_column(String(100), default=None)
+    college_id: Mapped[str | None] = mapped_column(String(100), default=None)
+    #: Only the latest password-step challenge may complete MFA. Clearing it
+    #: on success makes the signed challenge single-use rather than replayable.
+    active_mfa_challenge_jti: Mapped[str | None] = mapped_column(
+        String(JTI_LENGTH), default=None
+    )
+
+    #: AES-256-GCM envelope (nonce + ciphertext + tag), never a raw TOTP secret.
+    totp_secret_encrypted: Mapped[str | None] = mapped_column(String(512), default=None)
+    totp_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    #: Highest accepted TOTP time-step. Persisting it prevents a code that
+    #: completed one challenge from being replayed through a fresh challenge.
+    totp_last_used_counter: Mapped[int | None] = mapped_column(default=None)
+
+    #: WebAuthn material is encrypted under the same authenticated envelope.
+    #: A stable digest preserves uniqueness without storing a lookup identifier
+    #: in plaintext (GCM ciphertext is deliberately randomized).
+    webauthn_credential_id_hash: Mapped[str | None] = mapped_column(
+        String(64), default=None, unique=True, index=True
+    )
+    webauthn_credential_id_encrypted: Mapped[str | None] = mapped_column(
+        String(2048), default=None
+    )
+    webauthn_public_key_encrypted: Mapped[str | None] = mapped_column(
+        Text, default=None
+    )
+    webauthn_sign_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class AuthenticationFailure(UUIDMixin, Base):
+    """One failed credential or MFA attempt in the rolling lockout window."""
+
+    __tablename__ = "authentication_failures"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    step: Mapped[AuthFailureStep] = mapped_column(
+        Enum(
+            AuthFailureStep,
+            native_enum=False,
+            length=32,
+            create_constraint=True,
+            name="ck_authentication_failures_step",
+        )
+    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class AuthenticationLockout(Base):
+    """Current account lock, shared by the password and MFA steps."""
+
+    __tablename__ = "authentication_lockouts"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    locked_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

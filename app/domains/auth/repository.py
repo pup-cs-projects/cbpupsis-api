@@ -30,10 +30,19 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domains.auth.models import OneTimeToken, RefreshToken, TokenPurpose
+from app.domains.auth.models import (
+    AdminAuthProfile,
+    AdminPosition,
+    AuthenticationFailure,
+    AuthenticationLockout,
+    AuthFailureStep,
+    OneTimeToken,
+    RefreshToken,
+    TokenPurpose,
+)
 
 # --------------------------------------------------------------------------- #
 # Refresh tokens
@@ -256,3 +265,185 @@ async def consume_one_time_token(
         .returning(OneTimeToken.user_id)
     )
     return result.scalar_one_or_none()
+
+
+# --------------------------------------------------------------------------- #
+# Administrative MFA and lockout
+# --------------------------------------------------------------------------- #
+
+
+async def get_admin_profile(
+    db: AsyncSession, user_id: uuid.UUID
+) -> AdminAuthProfile | None:
+    """Return the administrative auth profile for ``user_id``, if configured.
+
+    SQL::
+
+        SELECT admin_auth_profiles.*
+        FROM admin_auth_profiles
+        WHERE admin_auth_profiles.user_id = :user_id_1::UUID
+    """
+    return await db.scalar(
+        select(AdminAuthProfile).where(AdminAuthProfile.user_id == user_id)
+    )
+
+
+def add_admin_profile(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    position: AdminPosition,
+    department_id: str | None,
+    college_id: str | None,
+) -> AdminAuthProfile:
+    """Stage a new administrative auth profile.
+
+    On the service's commit::
+
+        INSERT INTO admin_auth_profiles
+            (user_id, position, department_id, college_id, webauthn_sign_count)
+        VALUES (:user_id::UUID, :position, :department_id, :college_id, 0)
+    """
+    profile = AdminAuthProfile(
+        user_id=user_id,
+        position=position,
+        department_id=department_id,
+        college_id=college_id,
+    )
+    db.add(profile)
+    return profile
+
+
+def update_admin_profile(
+    db: AsyncSession, profile: AdminAuthProfile, **fields: object
+) -> AdminAuthProfile:
+    """Stage changes to a loaded administrative auth profile.
+
+    On the service's commit, with the supplied fields as the SET list::
+
+        UPDATE admin_auth_profiles
+        SET position=:position, updated_at=now()
+        WHERE admin_auth_profiles.user_id = :user_id_1::UUID
+    """
+    for name, value in fields.items():
+        setattr(profile, name, value)
+    return profile
+
+
+def add_authentication_failure(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    step: AuthFailureStep,
+    occurred_at: datetime,
+) -> AuthenticationFailure:
+    """Stage one failed sign-in step.
+
+    On the service's commit::
+
+        INSERT INTO authentication_failures (user_id, step, occurred_at, id)
+        VALUES (:user_id::UUID, :step, :occurred_at, :id::UUID)
+    """
+    failure = AuthenticationFailure(user_id=user_id, step=step, occurred_at=occurred_at)
+    db.add(failure)
+    return failure
+
+
+async def count_authentication_failures_since(
+    db: AsyncSession, *, user_id: uuid.UUID, since: datetime
+) -> int:
+    """Count both credential and MFA failures in the rolling window.
+
+    SQL::
+
+        SELECT count(*)
+        FROM authentication_failures
+        WHERE authentication_failures.user_id = :user_id_1::UUID
+          AND authentication_failures.occurred_at >= :occurred_at_1
+    """
+    count = await db.scalar(
+        select(func.count())
+        .select_from(AuthenticationFailure)
+        .where(
+            AuthenticationFailure.user_id == user_id,
+            AuthenticationFailure.occurred_at >= since,
+        )
+    )
+    return count or 0
+
+
+async def clear_authentication_failures(
+    db: AsyncSession, *, user_id: uuid.UUID
+) -> None:
+    """Delete obsolete counters after a completed sign-in.
+
+    SQL::
+
+        DELETE FROM authentication_failures
+        WHERE authentication_failures.user_id = :user_id_1::UUID
+    """
+    await db.execute(
+        delete(AuthenticationFailure).where(AuthenticationFailure.user_id == user_id)
+    )
+
+
+async def get_authentication_lockout(
+    db: AsyncSession, user_id: uuid.UUID
+) -> AuthenticationLockout | None:
+    """Return the current lock row for ``user_id``, if one exists.
+
+    SQL::
+
+        SELECT authentication_lockouts.*
+        FROM authentication_lockouts
+        WHERE authentication_lockouts.user_id = :user_id_1::UUID
+    """
+    return await db.scalar(
+        select(AuthenticationLockout).where(AuthenticationLockout.user_id == user_id)
+    )
+
+
+def add_authentication_lockout(
+    db: AsyncSession, *, user_id: uuid.UUID, locked_until: datetime
+) -> AuthenticationLockout:
+    """Stage a new account lock.
+
+    On the service's commit::
+
+        INSERT INTO authentication_lockouts (user_id, locked_until)
+        VALUES (:user_id::UUID, :locked_until)
+    """
+    lockout = AuthenticationLockout(user_id=user_id, locked_until=locked_until)
+    db.add(lockout)
+    return lockout
+
+
+def update_authentication_lockout(
+    db: AsyncSession,
+    lockout: AuthenticationLockout,
+    *,
+    locked_until: datetime,
+) -> AuthenticationLockout:
+    """Stage a changed lock expiry.
+
+    On the service's commit::
+
+        UPDATE authentication_lockouts
+        SET locked_until=:locked_until
+        WHERE authentication_lockouts.user_id = :user_id_1::UUID
+    """
+    lockout.locked_until = locked_until
+    return lockout
+
+
+async def clear_authentication_lockout(db: AsyncSession, *, user_id: uuid.UUID) -> None:
+    """Remove a lock after successful authentication or expiry.
+
+    SQL::
+
+        DELETE FROM authentication_lockouts
+        WHERE authentication_lockouts.user_id = :user_id_1::UUID
+    """
+    await db.execute(
+        delete(AuthenticationLockout).where(AuthenticationLockout.user_id == user_id)
+    )

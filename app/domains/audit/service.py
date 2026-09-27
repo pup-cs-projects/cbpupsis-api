@@ -84,6 +84,7 @@ async def record_event_on(db: AsyncSession, event: Event) -> AuditEntry:
     target_id = event.payload.get(target_key) if target_key else None
 
     actor = event.payload.get("actor_id")
+    prior_state, new_state = _event_states(event)
 
     entry = repository.add_entry(
         db,
@@ -93,6 +94,8 @@ async def record_event_on(db: AsyncSession, event: Event) -> AuditEntry:
         target_type=target_type,
         target_id=str(target_id) if target_id is not None else None,
         payload=dict(event.payload),
+        prior_state=prior_state,
+        new_state=new_state,
     )
     await db.commit()
     return entry
@@ -105,6 +108,8 @@ async def record(
     target_type: str | None = None,
     target_id: str | None = None,
     payload: dict[str, Any] | None = None,
+    prior_state: dict[str, Any] | None = None,
+    new_state: dict[str, Any] | None = None,
 ) -> AuditEntry:
     """Write one entry on a caller-supplied session, and commit.
 
@@ -120,9 +125,32 @@ async def record(
         target_type=target_type,
         target_id=target_id,
         payload=payload,
+        prior_state=prior_state,
+        new_state=new_state,
     )
     await db.commit()
     return entry
+
+
+def _event_states(event: Event) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Return explicit snapshots, with safe defaults for existing IAM events."""
+    prior = event.payload.get("prior_state")
+    new = event.payload.get("new_state")
+    if isinstance(prior, dict) or isinstance(new, dict):
+        return (
+            dict(prior) if isinstance(prior, dict) else None,
+            dict(new) if isinstance(new, dict) else None,
+        )
+
+    if "_attached_" in event.name or event.name.endswith("user_added_to_group"):
+        return {"attached": False}, {"attached": True}
+    if "_detached_" in event.name or event.name.endswith("user_removed_from_group"):
+        return {"attached": True}, {"attached": False}
+    if event.name.endswith("_created"):
+        return None, {
+            key: value for key, value in event.payload.items() if key != "actor_id"
+        }
+    return None, None
 
 
 async def list_entries(

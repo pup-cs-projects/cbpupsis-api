@@ -327,7 +327,11 @@ async def list_users_for(
 
 
 async def deactivate_as_admin(
-    db: AsyncSession, *, actor_id: uuid.UUID, user_id: uuid.UUID
+    db: AsyncSession,
+    *,
+    actor_id: uuid.UUID,
+    user_id: uuid.UUID,
+    actor_position: str | None = None,
 ) -> User:
     """Deactivate someone else's account, as a holder of ``ManageUser``.
 
@@ -349,19 +353,31 @@ async def deactivate_as_admin(
     if actor_id == user_id:
         raise CannotAdministerSelfError
 
+    before = await get_by_id(db, user_id)
+    prior_state = {"is_active": before.is_active}
     user = await deactivate(db, user_id)
     await auth_client.revoke_all_sessions(db, user_id)
     await event_bus.publish(
         Event(
             name="user.deactivated",
-            payload={"user_id": str(user_id), "actor_id": str(actor_id)},
+            payload={
+                "user_id": str(user_id),
+                "actor_id": str(actor_id),
+                "actor_position": actor_position,
+                "prior_state": prior_state,
+                "new_state": {"is_active": user.is_active},
+            },
         )
     )
     return user
 
 
 async def reactivate_as_admin(
-    db: AsyncSession, *, actor_id: uuid.UUID, user_id: uuid.UUID
+    db: AsyncSession,
+    *,
+    actor_id: uuid.UUID,
+    user_id: uuid.UUID,
+    actor_position: str | None = None,
 ) -> User:
     """Restore an account someone deactivated, as a holder of ``ManageUser``.
 
@@ -372,11 +388,19 @@ async def reactivate_as_admin(
     if MANAGE_USER not in granted:
         raise ProfileAccessDeniedError(MANAGE_USER)
 
+    before = await get_by_id(db, user_id)
+    prior_state = {"is_active": before.is_active}
     user = await reactivate(db, user_id)
     await event_bus.publish(
         Event(
             name="user.reactivated",
-            payload={"user_id": str(user_id), "actor_id": str(actor_id)},
+            payload={
+                "user_id": str(user_id),
+                "actor_id": str(actor_id),
+                "actor_position": actor_position,
+                "prior_state": prior_state,
+                "new_state": {"is_active": user.is_active},
+            },
         )
     )
     return user

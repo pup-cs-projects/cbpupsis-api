@@ -124,3 +124,58 @@ class UnverifiedEmailError(AuthError, EmailNotVerifiedError):
 
     def __init__(self, detail: str) -> None:
         super().__init__(detail)
+
+
+class InvalidMfaError(AuthError, UnauthorizedError):
+    """A TOTP or hardware-key assertion failed (HTTP 401)."""
+
+    code = "AUTH_MFA_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__("The security code or hardware-key response is invalid")
+
+
+class MfaCodeReusedError(AuthError, UnauthorizedError):
+    """A valid TOTP time-step was already spent on an earlier challenge."""
+
+    code = "AUTH_MFA_CODE_REUSED"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "That security code has already been used; enter the current code"
+        )
+
+
+class MfaEnrollmentRequiredError(AuthError):
+    """An admin attempted normal access before enrolling a factor (HTTP 403)."""
+
+    status_code = 403
+    code = "AUTH_MFA_ENROLLMENT_REQUIRED"
+
+    def __init__(self) -> None:
+        super().__init__("Set up multi-factor authentication to continue")
+
+
+class AccountLockedError(AuthError):
+    """Too many failures locked both administrative sign-in steps (HTTP 423)."""
+
+    status_code = 423
+    code = "AUTH_ACCOUNT_LOCKED"
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        retry_after = max(1, retry_after_seconds)
+        super().__init__(
+            "Account temporarily locked after repeated sign-in failures",
+            response_fields={"retry_after_seconds": retry_after},
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
+class AdminProfileRequiredError(AuthError):
+    """An Admin-group member has not been assigned a position and scope."""
+
+    status_code = 403
+    code = "AUTH_ADMIN_PROFILE_REQUIRED"
+
+    def __init__(self) -> None:
+        super().__init__("An administrator position must be assigned before sign-in")

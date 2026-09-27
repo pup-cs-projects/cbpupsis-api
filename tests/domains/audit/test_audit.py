@@ -18,6 +18,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +30,27 @@ from app.domains.iam import service as iam_service
 
 
 class TestRecording:
+    async def test_ac_003_7_records_state_and_cannot_be_deleted(
+        self, db: AsyncSession
+    ) -> None:
+        actor = uuid.uuid4()
+        entry = await audit_service.record(
+            db,
+            action="user.deactivated",
+            actor_id=actor,
+            target_type="user",
+            target_id="target",
+            prior_state={"is_active": True},
+            new_state={"is_active": False},
+        )
+
+        assert entry.prior_state == {"is_active": True}
+        assert entry.new_state == {"is_active": False}
+        await db.delete(entry)
+        with pytest.raises(PermissionError, match="append-only"):
+            await db.commit()
+        await db.rollback()
+
     async def test_records_an_entry_with_its_actor_and_target(
         self, db: AsyncSession
     ) -> None:

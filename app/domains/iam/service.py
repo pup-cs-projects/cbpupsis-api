@@ -85,6 +85,13 @@ async def get_effective_permissions(db: AsyncSession, user_id: uuid.UUID) -> set
     return set(from_groups) | set(from_direct)
 
 
+async def is_user_in_group(
+    db: AsyncSession, user_id: uuid.UUID, group_name: str
+) -> bool:
+    """Return whether a user currently belongs to one named role/group."""
+    return await repository.is_user_in_group_named(db, user_id, group_name)
+
+
 # --------------------------------------------------------------------------- #
 # Management operations (create the building blocks; wire them together).
 # --------------------------------------------------------------------------- #

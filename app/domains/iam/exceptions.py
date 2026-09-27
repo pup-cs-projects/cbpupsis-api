@@ -75,3 +75,21 @@ class GroupNotFoundError(IAMError, NotFoundError):
 
     def __init__(self, group_id: int) -> None:
         super().__init__(f"Group {group_id} not found")
+
+
+class InsufficientAdminRoleError(IAMError, ForbiddenError):
+    """A non-admin session reached an administrative route."""
+
+    code = "AUTH_INSUFFICIENT_ROLE"
+
+    def __init__(self) -> None:
+        super().__init__("This action is not available to your role")
+
+
+class ScopedResourceNotFoundError(IAMError, NotFoundError):
+    """A resource is absent or outside the administrator's data reach."""
+
+    code = "RESOURCE_NOT_FOUND"
+
+    def __init__(self) -> None:
+        super().__init__("Resource not found")

@@ -151,7 +151,7 @@ async def deactivate_user(
     422 if the caller aims it at themselves — see the service for why.
     """
     record = await users_service.deactivate_as_admin(
-        db, actor_id=user.id, user_id=user_id
+        db, actor_id=user.id, user_id=user_id, actor_position=user.position
     )
     return UserRead.model_validate(record)
 
@@ -168,7 +168,7 @@ async def reactivate_user(
     left to restore.
     """
     record = await users_service.reactivate_as_admin(
-        db, actor_id=user.id, user_id=user_id
+        db, actor_id=user.id, user_id=user_id, actor_position=user.position
     )
     return UserRead.model_validate(record)
 

@@ -36,6 +36,7 @@ never constructed here. ``auth.dependencies`` takes the same approach.
 from __future__ import annotations
 
 import logging
+import math
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -58,26 +59,47 @@ from app.core.exceptions import (
 from app.core.outbox import publish_transactional
 from app.domains.auth import repository
 from app.domains.auth.exceptions import (
+    AccountLockedError,
+    AdminProfileRequiredError,
     EmailAlreadyRegisteredError,
     InactiveUserError,
     IncorrectCurrentPasswordError,
     InvalidAuthTokenError,
     InvalidCredentialsError,
+    InvalidMfaError,
     InvalidTokenError,
+    MfaCodeReusedError,
+    MfaEnrollmentRequiredError,
     RefreshTokenReusedError,
     UnverifiedEmailError,
 )
-from app.domains.auth.models import TokenPurpose
-from app.domains.auth.schemas import TokenPair
+from app.domains.auth.models import AdminPosition, AuthFailureStep, TokenPurpose
+from app.domains.auth.schemas import (
+    AdminLoginChallenge,
+    AdminTokenPair,
+    TokenPair,
+    TotpEnrollmentRead,
+)
 from app.domains.auth.security import (
     create_access_token,
+    create_mfa_challenge_token,
     create_refresh_token,
     decode_token,
+    decrypt_mfa_secret,
+    encrypt_mfa_secret,
     generate_one_time_token,
+    generate_totp_secret,
+    hash_mfa_identifier,
     hash_one_time_token,
     hash_password,
+    matching_totp_counter,
+    totp_provisioning_uri,
+    verify_mfa_identifier,
     verify_password,
+    verify_webauthn_assertion,
 )
+from app.domains.iam import service as iam_service
+from app.domains.iam.constants import ADMIN_GROUP
 from app.domains.users import service as users_service
 
 logger = logging.getLogger(__name__)
@@ -117,7 +139,9 @@ async def register(
     return user
 
 
-async def login(db: AsyncSession, email: str, password: str) -> TokenPair:
+async def login(
+    db: AsyncSession, email: str, password: str
+) -> TokenPair | AdminLoginChallenge:
     """Verify credentials and issue a token pair.
 
     The checks run in a deliberate order, and the order is the security
@@ -145,12 +169,341 @@ async def login(db: AsyncSession, email: str, password: str) -> TokenPair:
     is a 403 with a stable code and not a fourth flavour of the 401.
     """
     user = await users_service.get_by_email(db, email.lower())
+    if user is not None:
+        await _require_not_locked(db, user.id)
     if user is None or not verify_password(password, user.password_hash):
+        if user is not None:
+            await _record_failure(db, user.id, AuthFailureStep.credentials)
         raise InvalidCredentialsError
     if not user.is_active or user.deleted_at is not None:
+        await _record_failure(db, user.id, AuthFailureStep.credentials)
         raise InvalidCredentialsError
     _require_verified_email(user)
+
+    if await iam_service.is_user_in_group(db, user.id, ADMIN_GROUP):
+        profile = await repository.get_admin_profile(db, user.id)
+        if profile is None:
+            raise AdminProfileRequiredError
+        enrollment_required = not _has_enrolled_factor(profile)
+        challenge_token, challenge, challenge_jti = create_mfa_challenge_token(
+            user.id, enrollment_required=enrollment_required
+        )
+        repository.update_admin_profile(
+            db, profile, active_mfa_challenge_jti=challenge_jti
+        )
+        await db.commit()
+        methods: list[str] = []
+        if profile.totp_confirmed_at is not None:
+            methods.append("totp")
+        if profile.webauthn_public_key_encrypted is not None:
+            methods.append("webauthn")
+        return AdminLoginChallenge(
+            challenge_token=challenge_token,
+            enrollment_required=enrollment_required,
+            methods=methods,
+            webauthn_challenge=challenge,
+            webauthn_rp_id=settings.webauthn_rp_id,
+            webauthn_credential_id=(
+                decrypt_mfa_secret(profile.webauthn_credential_id_encrypted)
+                if profile.webauthn_credential_id_encrypted is not None
+                else None
+            ),
+        )
+
+    await _clear_failure_state(db, user.id)
     return await _issue_pair(db, user.id)
+
+
+def _has_enrolled_factor(profile) -> bool:
+    return bool(
+        profile.totp_confirmed_at is not None
+        or (
+            profile.webauthn_credential_id_hash is not None
+            and profile.webauthn_credential_id_encrypted is not None
+            and profile.webauthn_public_key_encrypted is not None
+        )
+    )
+
+
+def _utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+async def _require_not_locked(db: AsyncSession, user_id: uuid.UUID) -> None:
+    lockout = await repository.get_authentication_lockout(db, user_id)
+    if lockout is None:
+        return
+    remaining = math.ceil(
+        (_utc(lockout.locked_until) - datetime.now(UTC)).total_seconds()
+    )
+    if remaining > 0:
+        raise AccountLockedError(remaining)
+    await repository.clear_authentication_lockout(db, user_id=user_id)
+    await db.commit()
+
+
+async def _record_failure(
+    db: AsyncSession, user_id: uuid.UUID, step: AuthFailureStep
+) -> None:
+    now = datetime.now(UTC)
+    prior = await repository.count_authentication_failures_since(
+        db,
+        user_id=user_id,
+        since=now - timedelta(minutes=settings.mfa_lockout_window_minutes),
+    )
+    repository.add_authentication_failure(
+        db, user_id=user_id, step=step, occurred_at=now
+    )
+    if prior + 1 >= settings.mfa_lockout_threshold:
+        locked_until = now + timedelta(minutes=settings.mfa_lockout_minutes)
+        lockout = await repository.get_authentication_lockout(db, user_id)
+        if lockout is None:
+            repository.add_authentication_lockout(
+                db, user_id=user_id, locked_until=locked_until
+            )
+            publish_transactional(
+                db,
+                Event(
+                    name="auth.account_locked",
+                    payload={
+                        "user_id": str(user_id),
+                        "locked_until": locked_until.isoformat(),
+                    },
+                ),
+            )
+        else:
+            repository.update_authentication_lockout(
+                db, lockout, locked_until=locked_until
+            )
+    await db.commit()
+
+
+async def _clear_failure_state(db: AsyncSession, user_id: uuid.UUID) -> None:
+    await repository.clear_authentication_failures(db, user_id=user_id)
+    await repository.clear_authentication_lockout(db, user_id=user_id)
+    await db.commit()
+
+
+async def configure_admin_profile(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    position: AdminPosition,
+    department_id: str | None = None,
+    college_id: str | None = None,
+):
+    """Assign an Admin-group member's position and corresponding data scope."""
+    if not await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP):
+        raise AdminProfileRequiredError
+    if position is AdminPosition.chairperson and not department_id:
+        raise ValueError("chairperson requires department_id")
+    if position is AdminPosition.dean and not college_id:
+        raise ValueError("dean requires college_id")
+    if position is AdminPosition.dean:
+        department_id = None
+    if position is AdminPosition.registrar:
+        department_id = None
+        college_id = None
+
+    profile = await repository.get_admin_profile(db, user_id)
+    if profile is None:
+        profile = repository.add_admin_profile(
+            db,
+            user_id=user_id,
+            position=position,
+            department_id=department_id,
+            college_id=college_id,
+        )
+    else:
+        repository.update_admin_profile(
+            db,
+            profile,
+            position=position,
+            department_id=department_id,
+            college_id=college_id,
+        )
+    await db.commit()
+    await db.refresh(profile)
+    return profile
+
+
+async def configure_webauthn_factor(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    credential_id: str,
+    credential_public_key: str,
+    sign_count: int = 0,
+):
+    """Store the verified output of a WebAuthn registration ceremony.
+
+    Registration verification owns attestation/origin checks and passes only
+    its verified credential output here. Both values are AES-256-GCM encrypted;
+    a keyed digest is retained solely to enforce credential-id uniqueness.
+    """
+    profile = await repository.get_admin_profile(db, user_id)
+    if profile is None or not await iam_service.is_user_in_group(
+        db, user_id, ADMIN_GROUP
+    ):
+        raise AdminProfileRequiredError
+    repository.update_admin_profile(
+        db,
+        profile,
+        webauthn_credential_id_hash=hash_mfa_identifier(credential_id),
+        webauthn_credential_id_encrypted=encrypt_mfa_secret(credential_id),
+        webauthn_public_key_encrypted=encrypt_mfa_secret(credential_public_key),
+        webauthn_sign_count=sign_count,
+    )
+    await db.commit()
+    await db.refresh(profile)
+    return profile
+
+
+async def begin_totp_enrollment(
+    db: AsyncSession, *, challenge_token: str
+) -> TotpEnrollmentRead:
+    """Create and persist an encrypted pending TOTP seed for one admin."""
+    claims = decode_token(challenge_token, expected_type="mfa_challenge")
+    user_id = uuid.UUID(claims["sub"])
+    await _require_not_locked(db, user_id)
+    if claims.get("enrollment_required") is not True:
+        raise MfaEnrollmentRequiredError
+    profile = await repository.get_admin_profile(db, user_id)
+    if profile is None or not await iam_service.is_user_in_group(
+        db, user_id, ADMIN_GROUP
+    ):
+        raise AdminProfileRequiredError
+    _require_current_challenge(profile, claims)
+    user = await users_service.get_active_user(db, user_id)
+    if user is None:
+        raise InactiveUserError
+
+    secret = generate_totp_secret()
+    repository.update_admin_profile(
+        db,
+        profile,
+        totp_secret_encrypted=encrypt_mfa_secret(secret),
+        totp_confirmed_at=None,
+        totp_last_used_counter=None,
+    )
+    await db.commit()
+    return TotpEnrollmentRead(
+        secret=secret, provisioning_uri=totp_provisioning_uri(secret, user.email)
+    )
+
+
+async def confirm_totp_enrollment(
+    db: AsyncSession, *, challenge_token: str, code: str
+) -> AdminTokenPair:
+    """Activate a pending TOTP seed only after a valid first code."""
+    claims = decode_token(challenge_token, expected_type="mfa_challenge")
+    user_id = uuid.UUID(claims["sub"])
+    await _require_not_locked(db, user_id)
+    profile = await repository.get_admin_profile(db, user_id)
+    if (
+        profile is None
+        or profile.totp_secret_encrypted is None
+        or not await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP)
+    ):
+        raise MfaEnrollmentRequiredError
+    _require_current_challenge(profile, claims)
+    user = await users_service.get_active_user(db, user_id)
+    if user is None:
+        raise InactiveUserError
+    counter = matching_totp_counter(
+        decrypt_mfa_secret(profile.totp_secret_encrypted), code
+    )
+    if counter is None:
+        await _record_failure(db, user_id, AuthFailureStep.mfa)
+        raise InvalidMfaError
+    repository.update_admin_profile(
+        db,
+        profile,
+        totp_confirmed_at=datetime.now(UTC),
+        totp_last_used_counter=counter,
+        active_mfa_challenge_jti=None,
+    )
+    await db.commit()
+    await _clear_failure_state(db, user_id)
+    return await _issue_admin_pair(db, user_id, profile, method="totp")
+
+
+async def verify_mfa(
+    db: AsyncSession,
+    *,
+    challenge_token: str,
+    code: str | None,
+    assertion: dict[str, object] | None,
+) -> AdminTokenPair:
+    """Complete the second factor and mint the only administrative session."""
+    claims = decode_token(challenge_token, expected_type="mfa_challenge")
+    user_id = uuid.UUID(claims["sub"])
+    await _require_not_locked(db, user_id)
+    profile = await repository.get_admin_profile(db, user_id)
+    if profile is None or not await iam_service.is_user_in_group(
+        db, user_id, ADMIN_GROUP
+    ):
+        raise AdminProfileRequiredError
+    _require_current_challenge(profile, claims)
+    user = await users_service.get_active_user(db, user_id)
+    if user is None:
+        raise InactiveUserError
+    if not _has_enrolled_factor(profile):
+        raise MfaEnrollmentRequiredError
+
+    method: str
+    valid = False
+    if code is not None and profile.totp_confirmed_at is not None:
+        method = "totp"
+        counter = matching_totp_counter(
+            decrypt_mfa_secret(profile.totp_secret_encrypted), code
+        )
+        if (
+            counter is not None
+            and profile.totp_last_used_counter is not None
+            and counter <= profile.totp_last_used_counter
+        ):
+            await _record_failure(db, user_id, AuthFailureStep.mfa)
+            raise MfaCodeReusedError
+        valid = counter is not None
+        if valid:
+            repository.update_admin_profile(db, profile, totp_last_used_counter=counter)
+    elif (
+        assertion is not None
+        and profile.webauthn_credential_id_hash is not None
+        and profile.webauthn_public_key_encrypted is not None
+        and isinstance(assertion.get("id"), str)
+        and verify_mfa_identifier(assertion["id"], profile.webauthn_credential_id_hash)
+    ):
+        method = "webauthn"
+        new_count = verify_webauthn_assertion(
+            assertion=assertion,
+            challenge=claims["challenge"],
+            credential_public_key=decrypt_mfa_secret(
+                profile.webauthn_public_key_encrypted
+            ),
+            current_sign_count=profile.webauthn_sign_count,
+        )
+        valid = new_count is not None
+        if valid:
+            repository.update_admin_profile(db, profile, webauthn_sign_count=new_count)
+    else:
+        method = "totp" if code is not None else "webauthn"
+
+    if not valid:
+        await _record_failure(db, user_id, AuthFailureStep.mfa)
+        raise InvalidMfaError
+
+    repository.update_admin_profile(db, profile, active_mfa_challenge_jti=None)
+    await db.commit()
+    await _clear_failure_state(db, user_id)
+    return await _issue_admin_pair(db, user_id, profile, method=method)
+
+
+def _require_current_challenge(profile, claims: dict[str, object]) -> None:
+    """Reject replaced or already-consumed password-step challenges."""
+    if profile.active_mfa_challenge_jti != claims.get("jti"):
+        raise InvalidAuthTokenError
 
 
 def _require_verified_email(user) -> None:
@@ -167,7 +520,7 @@ def _require_verified_email(user) -> None:
         )
 
 
-async def refresh(db: AsyncSession, refresh_token: str) -> TokenPair:
+async def refresh(db: AsyncSession, refresh_token: str) -> TokenPair | AdminTokenPair:
     """Rotate a refresh token, returning a fresh pair.
 
     Raises :class:`UnauthorizedError` if the token is invalid, expired, or has
@@ -208,6 +561,22 @@ async def refresh(db: AsyncSession, refresh_token: str) -> TokenPair:
     await db.commit()
     _require_verified_email(user)
 
+    if claims.get("role") == "admin":
+        if claims.get("mfa") is not True or not await iam_service.is_user_in_group(
+            db, user_id, ADMIN_GROUP
+        ):
+            raise InvalidAuthTokenError
+        profile = await repository.get_admin_profile(db, user_id)
+        if profile is None or not _has_enrolled_factor(profile):
+            raise MfaEnrollmentRequiredError
+        amr = claims.get("amr")
+        method = (
+            amr[-1]
+            if isinstance(amr, list) and amr and amr[-1] in {"totp", "webauthn"}
+            else "totp"
+        )
+        return await _issue_admin_pair(db, user_id, profile, method=method)
+
     return await _issue_pair(db, user_id)
 
 
@@ -244,6 +613,31 @@ async def _issue_pair(db: AsyncSession, user_id: uuid.UUID) -> TokenPair:
     await db.commit()
 
     return TokenPair(access_token=access_token, refresh_token=refresh_token)
+
+
+async def _issue_admin_pair(
+    db: AsyncSession, user_id: uuid.UUID, profile, *, method: str
+) -> AdminTokenPair:
+    """Mint an MFA-authenticated Admin session carrying position and scope."""
+    claims = {
+        "role": "admin",
+        "mfa": True,
+        "amr": ["pwd", method],
+        "position": profile.position.value,
+        "department_id": profile.department_id,
+        "college_id": profile.college_id,
+    }
+    access_token = create_access_token(user_id, claims=claims)
+    refresh_token, jti, expires_at = create_refresh_token(user_id, claims=claims)
+    repository.add_refresh_token(db, user_id, jti, expires_at)
+    await db.commit()
+    return AdminTokenPair(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        position=profile.position,
+        department_id=profile.department_id,
+        college_id=profile.college_id,
+    )
 
 
 # --------------------------------------------------------------------------- #

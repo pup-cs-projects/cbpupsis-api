@@ -12,23 +12,30 @@ anyone test an email list against the user base.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.middleware import rate_limit
 from app.database import get_db
 from app.domains.auth import service as auth_service
 from app.domains.auth.dependencies import CurrentUser, get_current_user
 from app.domains.auth.schemas import (
+    AdminLoginChallenge,
+    AdminTokenPair,
     ChangePasswordRequest,
     CurrentUserRead,
     ForgotPasswordRequest,
     LoginRequest,
+    MfaVerifyRequest,
     RefreshRequest,
     RegisterRequest,
     ResendVerificationRequest,
     ResetPasswordRequest,
     TokenPair,
+    TotpEnrollmentConfirmRequest,
+    TotpEnrollmentRead,
+    TotpEnrollmentRequest,
     VerifyEmailRequest,
 )
 from app.domains.users.schemas import UserRead
@@ -55,13 +62,13 @@ async def register(
     return UserRead.model_validate(user)
 
 
-@router.post("/login", response_model=TokenPair)
+@router.post("/login", response_model=TokenPair | AdminLoginChallenge)
 @rate_limit("login")
 async def login(
     request: Request,
     data: LoginRequest,
     db: AsyncSession = Depends(get_db),
-) -> TokenPair:
+) -> TokenPair | AdminLoginChallenge:
     """Exchange email and password for an access/refresh token pair.
 
     Rate limited against credential stuffing.
@@ -79,10 +86,65 @@ async def login(
     return await auth_service.login(db, email=data.email, password=data.password)
 
 
-@router.post("/refresh", response_model=TokenPair)
+def _set_admin_cookie(response: Response, token: str) -> None:
+    """Put the administrative bearer in a hardened, path-limited cookie."""
+    response.set_cookie(
+        key="admin_session",
+        value=token,
+        max_age=settings.access_token_ttl_minutes * 60,
+        path="/api/v1/admin",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
+
+
+@router.post("/mfa/verify", response_model=AdminTokenPair)
+async def verify_mfa(
+    data: MfaVerifyRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> AdminTokenPair:
+    """Complete an admin sign-in with TOTP or a WebAuthn hardware key."""
+    pair = await auth_service.verify_mfa(
+        db,
+        challenge_token=data.challenge_token,
+        code=data.code,
+        assertion=data.assertion,
+    )
+    _set_admin_cookie(response, pair.access_token)
+    return pair
+
+
+@router.post("/mfa/totp/enroll", response_model=TotpEnrollmentRead)
+async def enroll_totp(
+    data: TotpEnrollmentRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TotpEnrollmentRead:
+    """Start the only route reachable with an unenrolled admin challenge."""
+    return await auth_service.begin_totp_enrollment(
+        db, challenge_token=data.challenge_token
+    )
+
+
+@router.post("/mfa/totp/confirm", response_model=AdminTokenPair)
+async def confirm_totp(
+    data: TotpEnrollmentConfirmRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> AdminTokenPair:
+    """Confirm TOTP enrollment and issue the first administrative session."""
+    pair = await auth_service.confirm_totp_enrollment(
+        db, challenge_token=data.challenge_token, code=data.code
+    )
+    _set_admin_cookie(response, pair.access_token)
+    return pair
+
+
+@router.post("/refresh", response_model=TokenPair | AdminTokenPair)
 async def refresh(
     data: RefreshRequest, db: AsyncSession = Depends(get_db)
-) -> TokenPair:
+) -> TokenPair | AdminTokenPair:
     """Exchange a refresh token for a new pair, invalidating the old token."""
     return await auth_service.refresh(db, data.refresh_token)
 

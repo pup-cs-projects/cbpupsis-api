@@ -292,6 +292,9 @@ column. The authorization half is untouched either way.
 | `POST /auth/forgot-password` | Always 204, registered or not. Rate limited. |
 | `POST /auth/reset-password` | Consumes a token, then revokes **all** refresh tokens. |
 | `POST /auth/change-password` | Needs the current password; returns a fresh pair. |
+| `POST /auth/mfa/verify` | Completes an admin challenge with TOTP or WebAuthn and sets the secure admin cookie. |
+| `POST /auth/mfa/totp/enroll` | Starts factor enrollment with an enrollment-only challenge. |
+| `POST /auth/mfa/totp/confirm` | Proves the seed and creates the first admin session. |
 | `PATCH /users/me` | Partial profile update (`extra="forbid"`). |
 | `POST /users/me/complete-onboarding` | 422 listing whatever is still missing. |
 | `POST /users/me/deactivate` | Reversible; revokes all refresh tokens. |
@@ -330,6 +333,32 @@ important assertion in `tests/domains/auth/test_email_flows.py`.
 
 Clients branch on `code`, never on the prose in `detail`, and send the user to a
 resend-verification screen rather than back to the login form.
+
+### Administrative MFA and scope
+
+Membership in IAM's `Admins` group is one role. Each member additionally has a
+`chairperson`, `dean`, or `registrar` position. Valid credentials return a
+five-minute, non-privileged challenge rather than access/refresh tokens. Only a
+valid TOTP code or WebAuthn assertion creates an admin session; its access and
+refresh JWTs carry `role`, `position`, `department_id`, and `college_id` so
+downstream scope queries do not perform a second profile lookup.
+
+TOTP seeds and WebAuthn credential material are stored only as AES-256-GCM
+envelopes. WebAuthn verifies the RP
+id, origin, signed challenge, user-verification flag, credential public key,
+and monotonic sign counter. The completed access token is also set as
+`admin_session` with `HttpOnly`, `Secure`, `SameSite=Lax`, and an
+`/api/v1/admin` path.
+
+Every `/api/v1/admin/...` request is rejected by middleware before routing
+unless the signed token carries the Admin role, completed MFA, and a valid
+position. Resource services call `CurrentUser.require_resource_scope`: a
+Chairperson reaches their department, a Dean their college, and a Registrar the
+university. A scope miss is `404 RESOURCE_NOT_FOUND`, never a confirming 403.
+
+Credential and factor failures share one rolling counter. The fifth failure in
+15 minutes locks the account; subsequent calls return `423
+AUTH_ACCOUNT_LOCKED`, `Retry-After: 900`, and `retry_after_seconds: 900`.
 
 For endpoints that need verification *beyond* login — anything that mails other
 people, spends money, or is expensive to undo — declare
@@ -440,10 +469,11 @@ User --< user_groups >-- Group --< group_policies >-- Policy --< policy_permissi
 User --< user_policies >------------------------------------------ Policy   (direct grant)
 ```
 
-Endpoints check **permissions, never group names**, so "who can do what" changes
+Business endpoints check **permissions, never group names**, so "who can do what" changes
 by editing data rather than code. Permissions are resolved from the database on
 each request — never baked into a token — so a revoked grant takes effect at
-once.
+once. The administrative namespace additionally checks the single Admin role;
+its signed position/scope claims describe data reach, not function permission.
 
 ### The permission vocabulary is fixed
 

@@ -33,6 +33,7 @@ from app.domains.auth.exceptions import (
     UnverifiedEmailError,
 )
 from app.domains.auth.security import decode_token
+from app.domains.iam.exceptions import ScopedResourceNotFoundError
 from app.domains.users import service as users_service
 
 # auto_error=False so a MISSING header reaches our own code instead of raising
@@ -52,6 +53,34 @@ class CurrentUser:
 
     id: uuid.UUID
     email: str
+    role: str | None = None
+    position: str | None = None
+    department_id: str | None = None
+    college_id: str | None = None
+
+    def require_resource_scope(
+        self, *, department_id: str | None, college_id: str | None
+    ) -> None:
+        """Enforce the position's data reach without confirming an outside id.
+
+        Registrar reaches the university, Dean their college, and Chairperson
+        their department. A mismatch is intentionally a 404 rather than a 403.
+        """
+        allowed = self.role == "admin" and (
+            self.position == "registrar"
+            or (
+                self.position == "dean"
+                and self.college_id is not None
+                and self.college_id == college_id
+            )
+            or (
+                self.position == "chairperson"
+                and self.department_id is not None
+                and self.department_id == department_id
+            )
+        )
+        if not allowed:
+            raise ScopedResourceNotFoundError
 
 
 async def get_current_user(
@@ -65,9 +94,14 @@ async def get_current_user(
     so deactivating or deleting an account takes effect immediately instead of
     when the token happens to expire.
     """
-    if credentials is None:
+    raw_token = (
+        credentials.credentials
+        if credentials is not None
+        else request.cookies.get("admin_session")
+    )
+    if raw_token is None:
         raise NotAuthenticatedError
-    claims = decode_token(credentials.credentials, expected_type="access")
+    claims = decode_token(raw_token, expected_type="access")
     user = await users_service.get_active_user(db, uuid.UUID(claims["sub"]))
     if user is None:
         raise InactiveUserError
@@ -77,7 +111,14 @@ async def get_current_user(
     # each other's allowance. Set only after the token is verified and the
     # account confirmed live, so the value is never attacker-controlled.
     request.state.user_id = str(user.id)
-    return CurrentUser(id=user.id, email=user.email)
+    return CurrentUser(
+        id=user.id,
+        email=user.email,
+        role=claims.get("role"),
+        position=claims.get("position"),
+        department_id=claims.get("department_id"),
+        college_id=claims.get("college_id"),
+    )
 
 
 async def require_verified_email(

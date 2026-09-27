@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Index, String
+from sqlalchemy import DateTime, Index, String, event
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
@@ -70,6 +70,11 @@ class AuditEntry(UUIDMixin, Base):
     #: capture. JSONB so it stays queryable rather than becoming an opaque blob.
     payload: Mapped[dict[str, Any]] = mapped_column(_JSON_TYPE, default=dict)
 
+    #: Explicit state snapshots make a change reconstructible without parsing
+    #: action-specific payload shapes. ``None`` is valid for create/delete.
+    prior_state: Mapped[dict[str, Any] | None] = mapped_column(_JSON_TYPE, default=None)
+    new_state: Mapped[dict[str, Any] | None] = mapped_column(_JSON_TYPE, default=None)
+
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
     __table_args__ = (
@@ -79,3 +84,10 @@ class AuditEntry(UUIDMixin, Base):
         Index("ix_audit_target", "target_type", "target_id", "occurred_at"),
         Index("ix_audit_actor_time", "actor_id", "occurred_at"),
     )
+
+
+@event.listens_for(AuditEntry, "before_update")
+@event.listens_for(AuditEntry, "before_delete")
+def _refuse_audit_mutation(_mapper, _connection, _target) -> None:
+    """Fail ORM updates/deletes; the migration installs the same DB guard."""
+    raise PermissionError("audit entries are append-only")

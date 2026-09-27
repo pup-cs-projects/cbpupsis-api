@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.domains.auth.constants import (
     ONE_TIME_TOKEN_MAX_LENGTH,
     PASSWORD_MAX_LENGTH,
     PASSWORD_MIN_LENGTH,
 )
+from app.domains.auth.models import AdminPosition
 from app.domains.users.constants import FULL_NAME_MAX_LENGTH
 
 
@@ -51,6 +53,77 @@ class TokenPair(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+
+
+class AdminLoginChallenge(BaseModel):
+    """Password-step result for an administrator; never an API session."""
+
+    mfa_required: Literal[True] = True
+    challenge_token: str
+    enrollment_required: bool
+    methods: list[Literal["totp", "webauthn"]]
+    webauthn_challenge: str
+    webauthn_rp_id: str
+    webauthn_credential_id: str | None = None
+
+
+class AdminTokenPair(TokenPair):
+    """An MFA-completed administrative session response."""
+
+    role: Literal["admin"] = "admin"
+    position: AdminPosition
+    department_id: str | None = None
+    college_id: str | None = None
+
+
+class MfaVerifyRequest(BaseModel):
+    """Complete an admin challenge with exactly one supported factor."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    challenge_token: str
+    code: str | None = Field(default=None, min_length=6, max_length=6)
+    assertion: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_factor(self) -> MfaVerifyRequest:
+        if (self.code is None) == (self.assertion is None):
+            raise ValueError("provide exactly one of code or assertion")
+        return self
+
+
+class TotpEnrollmentRequest(BaseModel):
+    """Start TOTP enrollment using the restricted login challenge."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    challenge_token: str
+
+
+class TotpEnrollmentRead(BaseModel):
+    """TOTP seed returned once for entry or QR rendering by the client."""
+
+    secret: str
+    provisioning_uri: str
+
+
+class TotpEnrollmentConfirmRequest(BaseModel):
+    """Prove the newly enrolled TOTP seed before activating it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    challenge_token: str
+    code: str = Field(min_length=6, max_length=6)
+
+
+class AdminProfileConfigureRequest(BaseModel):
+    """Assign one admin position and its data scope."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    position: AdminPosition
+    department_id: str | None = Field(default=None, max_length=100)
+    college_id: str | None = Field(default=None, max_length=100)
 
 
 class CurrentUserRead(BaseModel):

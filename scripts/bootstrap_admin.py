@@ -25,6 +25,8 @@ import sys
 from sqlalchemy import select
 
 from app.database import AsyncSessionLocal
+from app.domains.auth import service as auth_service
+from app.domains.auth.models import AdminPosition
 from app.domains.iam import service as iam_service
 from app.domains.iam.constants import ADMIN_GROUP
 from app.domains.iam.models import Group
@@ -37,7 +39,13 @@ from app.domains.users.models import User
 __all__ = ["ADMIN_GROUP", "bootstrap_admin", "main"]
 
 
-async def bootstrap_admin(email: str) -> int:
+async def bootstrap_admin(
+    email: str,
+    *,
+    position: AdminPosition = AdminPosition.registrar,
+    department_id: str | None = None,
+    college_id: str | None = None,
+) -> int:
     """Add the user with ``email`` to the admin group. Returns an exit code."""
     async with AsyncSessionLocal() as session:
         user = await session.scalar(
@@ -61,6 +69,13 @@ async def bootstrap_admin(email: str) -> int:
             return 1
 
         await iam_service.add_user_to_group(session, user.id, group.id)
+        await auth_service.configure_admin_profile(
+            session,
+            user_id=user.id,
+            position=position,
+            department_id=department_id,
+            college_id=college_id,
+        )
 
         granted = await iam_service.get_effective_permissions(session, user.id)
         print(f"{email} added to {ADMIN_GROUP}.")
@@ -71,8 +86,25 @@ async def bootstrap_admin(email: str) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("email", help="Email of an already-registered user.")
+    parser.add_argument(
+        "--position",
+        type=AdminPosition,
+        choices=list(AdminPosition),
+        default=AdminPosition.registrar,
+    )
+    parser.add_argument("--department-id")
+    parser.add_argument("--college-id")
     args = parser.parse_args()
-    raise SystemExit(asyncio.run(bootstrap_admin(args.email)))
+    raise SystemExit(
+        asyncio.run(
+            bootstrap_admin(
+                args.email,
+                position=args.position,
+                department_id=args.department_id,
+                college_id=args.college_id,
+            )
+        )
+    )
 
 
 if __name__ == "__main__":

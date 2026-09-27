@@ -41,6 +41,14 @@ def _password_changed(event: Event) -> tuple[str, str]:
     )
 
 
+def _account_locked(event: Event) -> tuple[str, str]:
+    return (
+        "Your account was temporarily locked",
+        "Your account was locked for 15 minutes after repeated failed sign-in "
+        "attempts. If this was not you, contact support immediately.",
+    )
+
+
 def _digest(event: Event) -> tuple[str, str]:
     return (
         "Your periodic summary",
@@ -56,6 +64,7 @@ _RENDERERS = {
     "user.deactivated": _user_deactivated,
     "user.reactivated": _user_reactivated,
     "auth.password_changed": _password_changed,
+    "auth.account_locked": _account_locked,
     "notifications.digest": _digest,
 }
 

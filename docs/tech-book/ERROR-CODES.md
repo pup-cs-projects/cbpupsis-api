@@ -62,6 +62,7 @@ registry below.
 | 404 | `NotFoundError` | the resource does not exist **or the caller may not know it does** |
 | 409 | `ConflictError` | the request conflicts with existing state (duplicate, already-consumed token) |
 | 422 | — | the body failed schema validation (raised by FastAPI, not by you) |
+| 423 | `AccountLockedError` | repeated sign-in failures temporarily locked the account |
 | 429 | — | the caller exceeded a rate limit (raised by slowapi, rendered by our handler) |
 
 **404 over 403 for someone else's resource.** Returning 403 confirms the id
@@ -98,6 +99,11 @@ this maintainable: it is how you find the code when the copy needs changing.
 | 401 | Refresh token already used | A rotated token was replayed. Revokes the user's whole token family. | `auth/service.py` |
 | 409 | Email already registered | Registration hit the unique constraint on `users.email`. | `auth/service.py` |
 | 429 | Too many requests. Please try again in N seconds. (`code: rate_limited`) | A rate limit was exceeded on `/login`, `/register`, `/forgot-password`, or `/resend-verification`. Carries a `Retry-After` header, in seconds. | `core/exceptions.py` |
+| 401 | The security code or hardware-key response is invalid (`code: AUTH_MFA_INVALID`) | A TOTP or WebAuthn assertion failed; the shared failure counter is incremented. | `auth/service.py` |
+| 401 | That security code has already been used; enter the current code (`code: AUTH_MFA_CODE_REUSED`) | A valid TOTP time-step was already accepted through an earlier challenge; the replay is refused and counted. | `auth/service.py` |
+| 403 | Set up multi-factor authentication to continue (`code: AUTH_MFA_ENROLLMENT_REQUIRED`) | An Admin has no enrolled factor and attempted anything other than enrollment. | `auth/service.py`, admin middleware |
+| 403 | An administrator position must be assigned before sign-in (`code: AUTH_ADMIN_PROFILE_REQUIRED`) | An Admin-group member has no position/scope profile. | `auth/service.py`, admin middleware |
+| 423 | Account temporarily locked after repeated sign-in failures (`code: AUTH_ACCOUNT_LOCKED`) | Five credential/MFA failures occurred inside 15 minutes. Includes `Retry-After` and `retry_after_seconds`. | `auth/service.py` |
 
 **Why the 403 is safe.** It sits *after* the password check, so it only ever
 tells a caller who already holds valid credentials that their own address is
@@ -119,6 +125,8 @@ resend-verification screen rather than back to the login form.
 | 404 | Permission {id} not found | `GET /iam/permissions/{id}` for an id that does not exist. | `iam/exceptions.py` |
 | 404 | Policy {id} not found | `GET /iam/policies/{id}` for an id that does not exist. | `iam/exceptions.py` |
 | 404 | Group {id} not found | `GET /iam/groups/{id}` for an id that does not exist. | `iam/exceptions.py` |
+| 403 | This action is not available to your role (`code: AUTH_INSUFFICIENT_ROLE`) | A non-Admin session reached `/api/v1/admin`. | admin middleware |
+| 404 | Resource not found (`code: RESOURCE_NOT_FOUND`) | The id is absent or beyond the administrator's department/college reach. | `auth/dependencies.py` |
 
 ### users
 
@@ -146,8 +154,10 @@ resend-verification screen rather than back to the login form.
 | 403 | Missing required permission(s): ['ReadAllAuditEntry'] | `GET /audit` without the permission. Deliberately **not** implied by `ManageIAM`: reading the trail and reshaping authorization are different powers, and an auditor should not be able to grant. | `iam/exceptions.py` |
 
 The audit trail is append-only and has no write endpoint at all — a trail a
-client can write to is not evidence of anything. Entries arrive through the
-event bus; see `app/domains/audit/service.py`.
+client can write to is not evidence of anything. ORM guards and a PostgreSQL
+trigger refuse UPDATE/DELETE, while each administrative record carries explicit
+`prior_state` and `new_state`. Entries arrive through the event bus; see
+`app/domains/audit/service.py`.
 
 ### notifications
 
