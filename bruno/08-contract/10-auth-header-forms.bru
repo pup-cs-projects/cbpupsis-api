@@ -47,7 +47,6 @@ tests {
     ["", "an empty header"],
     ["Bearer", "the scheme with no token"],
     ["Bearer ", "the scheme with an empty token"],
-    ["bearer " + (bru.getVar("owner_access_token") || "x"), "a lowercase scheme"],
     ["Basic dXNlcjpwYXNz", "the wrong auth scheme entirely"],
     ["Bearer not.a.jwt", "a token that is not a JWT"],
     ["Bearer a.b.c", "three segments of non-base64"],
@@ -74,13 +73,12 @@ tests {
     });
   }
 
-  test("a lowercase bearer scheme is handled consistently", async function () {
-    // RFC 7235 says the scheme is case-insensitive. Whichever way this API
-    // decides, it must not be a 500 — that is covered above. This records which
-    // choice is in force so a change is visible in the diff rather than
-    // discovered by a client whose HTTP library lowercases.
+  test("a lowercase bearer scheme is accepted", async function () {
+    // RFC 7235 defines authentication schemes as case-insensitive. A valid
+    // token therefore remains valid when an HTTP client lowercases `Bearer`.
     const r = await probe("bearer " + (bru.getVar("owner_access_token") || "x"));
-    expect([200, 401, 403]).to.include(r.status);
+    expect(r.status).to.equal(200);
+    expect(r.data.email).to.equal("e2e-owner@example.com");
   });
 }
 

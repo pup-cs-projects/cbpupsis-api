@@ -24,9 +24,10 @@ Three accounts are seeded, all pre-verified and sharing one password:
     Holds ``ManageIAM``, for exercising the IAM endpoints.
 
 Idempotent: existing accounts are reused, verification is re-applied, and group
-membership is re-added as a no-op. Re-running only ever adds, never removes —
-in particular it does NOT reset the password of an account that already exists,
-so an environment seeded with a different ``--password`` keeps the old one.
+membership is re-added as a no-op. It does NOT reset the password of an account
+that already exists, so an environment seeded with a different ``--password``
+keeps the old one. The test administrator's MFA state is reset deliberately so
+the Bruno suite can exercise enrollment on every run.
 """
 
 from __future__ import annotations
@@ -40,8 +41,10 @@ from sqlalchemy import select
 
 from app.core.exceptions import ConflictError
 from app.database import AsyncSessionLocal
+from app.domains.auth import repository as auth_repository
 from app.domains.auth import service as auth_service
 from app.domains.auth.constants import PASSWORD_MIN_LENGTH
+from app.domains.auth.models import AdminPosition
 from app.domains.iam import service as iam_service
 from app.domains.iam.constants import ADMIN_GROUP
 from app.domains.iam.models import Group
@@ -140,6 +143,26 @@ async def seed_e2e(password: str, quiet: bool) -> int:
 
             for name in group_names:
                 await iam_service.add_user_to_group(session, user_id, group_ids[name])
+
+            if ADMIN_GROUP in group_names:
+                profile = await auth_service.configure_admin_profile(
+                    session,
+                    user_id=user_id,
+                    position=AdminPosition.registrar,
+                )
+                auth_repository.update_admin_profile(
+                    session,
+                    profile,
+                    active_mfa_challenge_jti=None,
+                    totp_secret_encrypted=None,
+                    totp_confirmed_at=None,
+                    totp_last_used_counter=None,
+                    webauthn_credential_id_hash=None,
+                    webauthn_credential_id_encrypted=None,
+                    webauthn_public_key_encrypted=None,
+                    webauthn_sign_count=0,
+                )
+                await session.commit()
 
             if not quiet:
                 granted = await iam_service.get_effective_permissions(session, user_id)

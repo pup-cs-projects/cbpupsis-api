@@ -26,15 +26,76 @@ assert {
 }
 
 tests {
-  test("returns a bearer token pair", function () {
-    expect(res.getBody().access_token).to.be.a("string").and.not.be.empty;
+  const challenge = res.getBody();
+
+  test("password alone returns only an MFA enrollment challenge", function () {
+    expect(challenge.mfa_required).to.equal(true);
+    expect(challenge.enrollment_required).to.equal(true);
+    expect(challenge.challenge_token).to.be.a("string").and.not.be.empty;
+    expect(challenge).not.to.have.property("access_token");
   });
 
-  bru.setVar("admin_access_token", res.getBody().access_token);
+  const enrollment = await bru.sendRequest({
+    method: "POST",
+    url: `${bru.getEnvVar("api")}/auth/mfa/totp/enroll`,
+    headers: { "Content-Type": "application/json" },
+    data: { challenge_token: challenge.challenge_token },
+  });
+
+  const decodeBase32 = (encoded) => {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    let bits = "";
+    for (const character of encoded.replace(/=+$/, "").toUpperCase()) {
+      const value = alphabet.indexOf(character);
+      if (value < 0) throw new Error("Invalid Base32 TOTP secret");
+      bits += value.toString(2).padStart(5, "0");
+    }
+    const bytes = [];
+    for (let offset = 0; offset + 8 <= bits.length; offset += 8) {
+      bytes.push(parseInt(bits.slice(offset, offset + 8), 2));
+    }
+    return Buffer.from(bytes);
+  };
+
+  const currentTotp = (secret) => {
+    const crypto = require("crypto");
+    const counter = Math.floor(Date.now() / 1000 / 30);
+    const message = Buffer.alloc(8);
+    message.writeBigUInt64BE(BigInt(counter));
+    const digest = crypto
+      .createHmac("sha1", decodeBase32(secret))
+      .update(message)
+      .digest();
+    const offset = digest[digest.length - 1] & 0x0f;
+    const value = digest.readUInt32BE(offset) & 0x7fffffff;
+    return String(value % 1000000).padStart(6, "0");
+  };
+
+  const confirmation = await bru.sendRequest({
+    method: "POST",
+    url: `${bru.getEnvVar("api")}/auth/mfa/totp/confirm`,
+    headers: { "Content-Type": "application/json" },
+    data: {
+      challenge_token: challenge.challenge_token,
+      code: currentTotp(enrollment.data.secret),
+    },
+  });
+
+  test("TOTP enrollment completes the administrative sign-in", function () {
+    expect(enrollment.status).to.equal(200);
+    expect(confirmation.status).to.equal(200);
+    expect(confirmation.data.access_token).to.be.a("string").and.not.be.empty;
+    expect(confirmation.data.role).to.equal("admin");
+    expect(confirmation.data.position).to.equal("registrar");
+  });
+
+  bru.setVar("admin_access_token", confirmation.data.access_token);
+  bru.setVar("admin_refresh_token", confirmation.data.refresh_token);
 }
 
 docs {
-  Establishes the `admin` principal, which holds `ManageIAM`. Seeded by script
-  because that permission cannot be self-granted through the API — the IAM
-  endpoints that would grant it are themselves gated behind it.
+  Establishes the `admin` principal, which holds `ManageIAM`. The seed script
+  grants its position but intentionally leaves MFA unenrolled, so this request
+  proves that the password step issues no session before enrolling and
+  confirming a TOTP factor.
 }
