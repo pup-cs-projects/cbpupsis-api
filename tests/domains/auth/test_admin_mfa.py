@@ -55,7 +55,7 @@ async def _make_admin(
 
 async def _challenge(client: AsyncClient, email: str = "admin@example.com") -> dict:
     response = await client.post(
-        "/api/v1/auth/login", json={"email": email, "password": PASSWORD}
+        "/api/v1/auth/admin/login", json={"email": email, "password": PASSWORD}
     )
     assert response.status_code == 200, response.text
     return response.json()
@@ -69,14 +69,14 @@ async def _enroll_totp(
     client: AsyncClient, challenge_token: str
 ) -> tuple[str, dict, str, str]:
     enrollment = await client.post(
-        "/api/v1/auth/mfa/totp/enroll",
+        "/api/v1/auth/admin/mfa/totp/enroll",
         json={"challenge_token": challenge_token},
     )
     assert enrollment.status_code == 200, enrollment.text
     secret = enrollment.json()["secret"]
     code = _current_code(secret)
     confirmation = await client.post(
-        "/api/v1/auth/mfa/totp/confirm",
+        "/api/v1/auth/admin/mfa/totp/confirm",
         json={"challenge_token": challenge_token, "code": code},
     )
     assert confirmation.status_code == 200, confirmation.text
@@ -84,6 +84,33 @@ async def _enroll_totp(
 
 
 class TestAdministrativeMfa:
+    async def test_admin_credentials_are_refused_at_ordinary_login(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        await _make_admin(client, db)
+
+        response = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@example.com", "password": PASSWORD},
+        )
+
+        assert response.status_code == 401
+        assert "access_token" not in response.json()
+
+    async def test_non_admin_credentials_are_refused_at_admin_login(
+        self, client: AsyncClient, registered_user: dict[str, str]
+    ) -> None:
+        response = await client.post(
+            "/api/v1/auth/admin/login",
+            json={
+                "email": registered_user["email"],
+                "password": registered_user["password"],
+            },
+        )
+
+        assert response.status_code == 401
+        assert "challenge_token" not in response.json()
+
     async def test_ac_003_1_password_step_issues_only_a_challenge(
         self, client: AsyncClient, db: AsyncSession
     ) -> None:
@@ -128,7 +155,7 @@ class TestAdministrativeMfa:
         assert "samesite=lax" in set_cookie.lower()
 
         replay = await client.post(
-            "/api/v1/auth/mfa/totp/confirm",
+            "/api/v1/auth/admin/mfa/totp/confirm",
             json={
                 "challenge_token": challenge["challenge_token"],
                 "code": _current_code(secret),
@@ -145,7 +172,7 @@ class TestAdministrativeMfa:
         challenge = await _challenge(client)
 
         replay = await client.post(
-            "/api/v1/auth/mfa/verify",
+            "/api/v1/auth/admin/mfa/verify",
             json={
                 "challenge_token": challenge["challenge_token"],
                 "code": spent_code,
@@ -165,7 +192,7 @@ class TestAdministrativeMfa:
         challenge = await _challenge(client)
 
         response = await client.post(
-            "/api/v1/auth/mfa/verify",
+            "/api/v1/auth/admin/mfa/verify",
             json={"challenge_token": challenge["challenge_token"], "code": "000000"},
         )
 
@@ -248,7 +275,7 @@ class TestAdministrativeMfa:
             headers={"Authorization": f"Bearer {challenge['challenge_token']}"},
         )
         enrolled = await client.post(
-            "/api/v1/auth/mfa/totp/enroll",
+            "/api/v1/auth/admin/mfa/totp/enroll",
             json={"challenge_token": challenge["challenge_token"]},
         )
 
@@ -308,13 +335,13 @@ class TestAdministrativeMfa:
 
         for _ in range(3):
             failed = await client.post(
-                "/api/v1/auth/login",
+                "/api/v1/auth/admin/login",
                 json={"email": "admin@example.com", "password": "wrong-password"},
             )
             assert failed.status_code == 401
         for _ in range(2):
             failed = await client.post(
-                "/api/v1/auth/mfa/verify",
+                "/api/v1/auth/admin/mfa/verify",
                 json={
                     "challenge_token": challenge["challenge_token"],
                     "code": "000000",
@@ -323,7 +350,7 @@ class TestAdministrativeMfa:
             assert failed.status_code == 401
 
         sixth = await client.post(
-            "/api/v1/auth/login",
+            "/api/v1/auth/admin/login",
             json={"email": "admin@example.com", "password": PASSWORD},
         )
         assert sixth.status_code == 423
@@ -368,7 +395,7 @@ class TestHardwareKeyPath:
         challenge = await _challenge(client, email="key@example.com")
 
         response = await client.post(
-            "/api/v1/auth/mfa/verify",
+            "/api/v1/auth/admin/mfa/verify",
             json={
                 "challenge_token": challenge["challenge_token"],
                 "assertion": {"id": "credential-id"},

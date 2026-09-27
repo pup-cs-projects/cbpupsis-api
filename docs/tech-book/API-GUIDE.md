@@ -287,14 +287,16 @@ column. The authorization half is untouched either way.
 | Endpoint | Notes |
 |---|---|
 | `POST /auth/register` | Creates the account and mails a verification link. Rate limited. |
+| `POST /auth/login` | Creates a non-admin session; admin accounts must use `/auth/admin/login`. |
 | `POST /auth/verify-email` | Consumes a single-use token. |
 | `POST /auth/resend-verification` | Always 204; invalidates any earlier token. Rate limited. |
 | `POST /auth/forgot-password` | Always 204, registered or not. Rate limited. |
 | `POST /auth/reset-password` | Consumes a token, then revokes **all** refresh tokens. |
 | `POST /auth/change-password` | Needs the current password; returns a fresh pair. |
-| `POST /auth/mfa/verify` | Completes an admin challenge with TOTP or WebAuthn and sets the secure admin cookie. |
-| `POST /auth/mfa/totp/enroll` | Starts factor enrollment with an enrollment-only challenge. |
-| `POST /auth/mfa/totp/confirm` | Proves the seed and creates the first admin session. |
+| `POST /auth/admin/login` | Verifies admin credentials and returns an MFA challenge, never a session. |
+| `POST /auth/admin/mfa/verify` | Completes an admin challenge with TOTP or WebAuthn and sets the secure admin cookie. |
+| `POST /auth/admin/mfa/totp/enroll` | Starts factor enrollment with an enrollment-only challenge. |
+| `POST /auth/admin/mfa/totp/confirm` | Proves the seed and creates the first admin session. |
 | `PATCH /users/me` | Partial profile update (`extra="forbid"`). |
 | `POST /users/me/complete-onboarding` | 422 listing whatever is still missing. |
 | `POST /users/me/deactivate` | Reversible; revokes all refresh tokens. |
@@ -375,7 +377,7 @@ the decorators) so they can be retuned without a code change:
 |---|---|---|
 | `POST /auth/resend-verification` | 3/hour | sends mail to an address the caller names |
 | `POST /auth/forgot-password` | 3/hour | same — mail-bombing a stranger, on your SES bill |
-| `POST /auth/login` | 10/minute | credential stuffing |
+| `POST /auth/login`, `POST /auth/admin/login` | 10/minute | credential stuffing |
 | `POST /auth/register` | 5/hour | signup spam |
 
 Callers are keyed by **user id when authenticated, client IP otherwise**, so

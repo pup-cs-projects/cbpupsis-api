@@ -62,13 +62,13 @@ async def register(
     return UserRead.model_validate(user)
 
 
-@router.post("/login", response_model=TokenPair | AdminLoginChallenge)
+@router.post("/login", response_model=TokenPair)
 @rate_limit("login")
 async def login(
     request: Request,
     data: LoginRequest,
     db: AsyncSession = Depends(get_db),
-) -> TokenPair | AdminLoginChallenge:
+) -> TokenPair:
     """Exchange email and password for an access/refresh token pair.
 
     Rate limited against credential stuffing.
@@ -82,8 +82,22 @@ async def login(
       the address is unverified. Branch on the code, not the message, and send
       the user to a resend-verification screen rather than back to login.
     - **200** — a token pair.
+
+    Administrative accounts use ``/admin/login`` instead. They are refused at
+    this endpoint so a password can never create an admin session without MFA.
     """
     return await auth_service.login(db, email=data.email, password=data.password)
+
+
+@router.post("/admin/login", response_model=AdminLoginChallenge)
+@rate_limit("login")
+async def login_admin(
+    request: Request,
+    data: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+) -> AdminLoginChallenge:
+    """Verify admin credentials and return a non-privileged MFA challenge."""
+    return await auth_service.login_admin(db, email=data.email, password=data.password)
 
 
 def _set_admin_cookie(response: Response, token: str) -> None:
@@ -99,7 +113,7 @@ def _set_admin_cookie(response: Response, token: str) -> None:
     )
 
 
-@router.post("/mfa/verify", response_model=AdminTokenPair)
+@router.post("/admin/mfa/verify", response_model=AdminTokenPair)
 async def verify_mfa(
     data: MfaVerifyRequest,
     response: Response,
@@ -116,7 +130,7 @@ async def verify_mfa(
     return pair
 
 
-@router.post("/mfa/totp/enroll", response_model=TotpEnrollmentRead)
+@router.post("/admin/mfa/totp/enroll", response_model=TotpEnrollmentRead)
 async def enroll_totp(
     data: TotpEnrollmentRequest,
     db: AsyncSession = Depends(get_db),
@@ -127,7 +141,7 @@ async def enroll_totp(
     )
 
 
-@router.post("/mfa/totp/confirm", response_model=AdminTokenPair)
+@router.post("/admin/mfa/totp/confirm", response_model=AdminTokenPair)
 async def confirm_totp(
     data: TotpEnrollmentConfirmRequest,
     response: Response,

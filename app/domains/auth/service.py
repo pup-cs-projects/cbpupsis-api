@@ -139,10 +139,8 @@ async def register(
     return user
 
 
-async def login(
-    db: AsyncSession, email: str, password: str
-) -> TokenPair | AdminLoginChallenge:
-    """Verify credentials and issue a token pair.
+async def _authenticate_login_credentials(db: AsyncSession, email: str, password: str):
+    """Verify the credentials shared by ordinary and administrative login.
 
     The checks run in a deliberate order, and the order is the security
     property:
@@ -152,7 +150,7 @@ async def login(
        401. An attacker who guesses a password must not learn from the response
        that the address exists but is disabled.
     3. Correct password, email not verified -> 403 ``email_not_verified``.
-    4. Correct password, verified -> a token pair.
+    4. Correct password, verified -> the role-specific login flow continues.
 
     **Why the 403 does not enable enumeration.** It is unreachable until the
     password has already been verified, so it only ever tells a caller who
@@ -179,39 +177,61 @@ async def login(
         await _record_failure(db, user.id, AuthFailureStep.credentials)
         raise InvalidCredentialsError
     _require_verified_email(user)
+    return user
 
+
+async def login(db: AsyncSession, email: str, password: str) -> TokenPair:
+    """Issue an ordinary session from the non-admin login entry point.
+
+    Admin credentials are refused here rather than silently issuing a session
+    without MFA. Administrative callers must use ``login_admin``.
+    """
+    user = await _authenticate_login_credentials(db, email, password)
     if await iam_service.is_user_in_group(db, user.id, ADMIN_GROUP):
-        profile = await repository.get_admin_profile(db, user.id)
-        if profile is None:
-            raise AdminProfileRequiredError
-        enrollment_required = not _has_enrolled_factor(profile)
-        challenge_token, challenge, challenge_jti = create_mfa_challenge_token(
-            user.id, enrollment_required=enrollment_required
-        )
-        repository.update_admin_profile(
-            db, profile, active_mfa_challenge_jti=challenge_jti
-        )
-        await db.commit()
-        methods: list[str] = []
-        if profile.totp_confirmed_at is not None:
-            methods.append("totp")
-        if profile.webauthn_public_key_encrypted is not None:
-            methods.append("webauthn")
-        return AdminLoginChallenge(
-            challenge_token=challenge_token,
-            enrollment_required=enrollment_required,
-            methods=methods,
-            webauthn_challenge=challenge,
-            webauthn_rp_id=settings.webauthn_rp_id,
-            webauthn_credential_id=(
-                decrypt_mfa_secret(profile.webauthn_credential_id_encrypted)
-                if profile.webauthn_credential_id_encrypted is not None
-                else None
-            ),
-        )
+        raise InvalidCredentialsError
 
     await _clear_failure_state(db, user.id)
     return await _issue_pair(db, user.id)
+
+
+async def login_admin(
+    db: AsyncSession, email: str, password: str
+) -> AdminLoginChallenge:
+    """Begin an administrative login and issue only an MFA challenge.
+
+    Non-admin credentials receive the same generic refusal as invalid
+    credentials so the endpoint cannot be used to enumerate privileged users.
+    """
+    user = await _authenticate_login_credentials(db, email, password)
+
+    if not await iam_service.is_user_in_group(db, user.id, ADMIN_GROUP):
+        raise InvalidCredentialsError
+    profile = await repository.get_admin_profile(db, user.id)
+    if profile is None:
+        raise AdminProfileRequiredError
+    enrollment_required = not _has_enrolled_factor(profile)
+    challenge_token, challenge, challenge_jti = create_mfa_challenge_token(
+        user.id, enrollment_required=enrollment_required
+    )
+    repository.update_admin_profile(db, profile, active_mfa_challenge_jti=challenge_jti)
+    await db.commit()
+    methods: list[str] = []
+    if profile.totp_confirmed_at is not None:
+        methods.append("totp")
+    if profile.webauthn_public_key_encrypted is not None:
+        methods.append("webauthn")
+    return AdminLoginChallenge(
+        challenge_token=challenge_token,
+        enrollment_required=enrollment_required,
+        methods=methods,
+        webauthn_challenge=challenge,
+        webauthn_rp_id=settings.webauthn_rp_id,
+        webauthn_credential_id=(
+            decrypt_mfa_secret(profile.webauthn_credential_id_encrypted)
+            if profile.webauthn_credential_id_encrypted is not None
+            else None
+        ),
+    )
 
 
 def _has_enrolled_factor(profile) -> bool:

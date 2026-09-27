@@ -5,7 +5,7 @@ meta {
 }
 
 post {
-  url: {{api}}/auth/login
+  url: {{api}}/auth/admin/login
   body: json
   auth: none
 }
@@ -37,7 +37,7 @@ tests {
 
   const enrollment = await bru.sendRequest({
     method: "POST",
-    url: `${bru.getEnvVar("api")}/auth/mfa/totp/enroll`,
+    url: `${bru.getEnvVar("api")}/auth/admin/mfa/totp/enroll`,
     headers: { "Content-Type": "application/json" },
     data: { challenge_token: challenge.challenge_token },
   });
@@ -73,7 +73,7 @@ tests {
 
   const confirmation = await bru.sendRequest({
     method: "POST",
-    url: `${bru.getEnvVar("api")}/auth/mfa/totp/confirm`,
+    url: `${bru.getEnvVar("api")}/auth/admin/mfa/totp/confirm`,
     headers: { "Content-Type": "application/json" },
     data: {
       challenge_token: challenge.challenge_token,
