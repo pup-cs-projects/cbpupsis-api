@@ -101,12 +101,12 @@ async def login_admin(
 
 
 def _set_admin_cookie(response: Response, token: str) -> None:
-    """Put the administrative bearer in a hardened, path-limited cookie."""
+    """Put the administrative bearer in a hardened API-scoped cookie."""
     response.set_cookie(
         key="admin_session",
         value=token,
         max_age=settings.access_token_ttl_minutes * 60,
-        path="/api/v1/admin",
+        path="/api/v1",
         secure=True,
         httponly=True,
         samesite="lax",
@@ -157,16 +157,41 @@ async def confirm_totp(
 
 @router.post("/refresh", response_model=TokenPair | AdminTokenPair)
 async def refresh(
-    data: RefreshRequest, db: AsyncSession = Depends(get_db)
+    data: RefreshRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
 ) -> TokenPair | AdminTokenPair:
     """Exchange a refresh token for a new pair, invalidating the old token."""
-    return await auth_service.refresh(db, data.refresh_token)
+    pair = await auth_service.refresh(db, data.refresh_token)
+    if isinstance(pair, AdminTokenPair):
+        _set_admin_cookie(response, pair.access_token)
+    return pair
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(data: RefreshRequest, db: AsyncSession = Depends(get_db)) -> None:
+async def logout(
+    data: RefreshRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> None:
     """Revoke a refresh token. Idempotent: always succeeds."""
     await auth_service.logout(db, data.refresh_token)
+    response.delete_cookie(
+        "admin_session",
+        path="/api/v1",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
+    # Clear the path used by pre-release builds as well, so local upgrades do
+    # not leave a second stale cookie competing with the current one.
+    response.delete_cookie(
+        "admin_session",
+        path="/api/v1/admin",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
 
 
 @router.get("/whoami", response_model=CurrentUserRead)

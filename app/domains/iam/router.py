@@ -20,7 +20,7 @@ from app.database import get_db
 from app.domains.auth.dependencies import CurrentUser
 from app.domains.iam import service as iam_service
 from app.domains.iam.constants import MANAGE_IAM
-from app.domains.iam.dependencies import require_permission
+from app.domains.iam.dependencies import require_admin_permission
 from app.domains.iam.schemas import (
     AddUserToGroupRequest,
     AttachPolicyRequest,
@@ -37,7 +37,7 @@ from app.shared.pagination import Page
 router = APIRouter()
 
 # Every management endpoint requires this permission. Declared once and reused.
-_manage = Depends(require_permission(MANAGE_IAM))
+_manage = Depends(require_admin_permission(MANAGE_IAM))
 
 
 @router.post(

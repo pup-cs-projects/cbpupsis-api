@@ -156,6 +156,15 @@ class MfaEnrollmentRequiredError(AuthError):
         super().__init__("Set up multi-factor authentication to continue")
 
 
+class MfaRequiredError(AuthError, UnauthorizedError):
+    """An MFA challenge was presented where a completed session is required."""
+
+    code = "AUTH_MFA_REQUIRED"
+
+    def __init__(self) -> None:
+        super().__init__("A second factor is required")
+
+
 class AccountLockedError(AuthError):
     """Too many failures locked both administrative sign-in steps (HTTP 423)."""
 

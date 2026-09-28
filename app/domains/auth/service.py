@@ -250,6 +250,9 @@ def _utc(value: datetime) -> datetime:
 
 
 async def _require_not_locked(db: AsyncSession, user_id: uuid.UUID) -> None:
+    # Held until this sign-in transaction commits or rolls back, so concurrent
+    # password and MFA failures cannot both read the same prior count.
+    await repository.acquire_authentication_lock(db, user_id)
     lockout = await repository.get_authentication_lockout(db, user_id)
     if lockout is None:
         return
@@ -259,7 +262,6 @@ async def _require_not_locked(db: AsyncSession, user_id: uuid.UUID) -> None:
     if remaining > 0:
         raise AccountLockedError(remaining)
     await repository.clear_authentication_lockout(db, user_id=user_id)
-    await db.commit()
 
 
 async def _record_failure(
@@ -299,6 +301,7 @@ async def _record_failure(
 
 
 async def _clear_failure_state(db: AsyncSession, user_id: uuid.UUID) -> None:
+    await repository.acquire_authentication_lock(db, user_id)
     await repository.clear_authentication_failures(db, user_id=user_id)
     await repository.clear_authentication_lockout(db, user_id=user_id)
     await db.commit()
@@ -443,7 +446,6 @@ async def confirm_totp_enrollment(
         totp_last_used_counter=counter,
         active_mfa_challenge_jti=None,
     )
-    await db.commit()
     await _clear_failure_state(db, user_id)
     return await _issue_admin_pair(db, user_id, profile, method="totp")
 
@@ -515,7 +517,6 @@ async def verify_mfa(
         raise InvalidMfaError
 
     repository.update_admin_profile(db, profile, active_mfa_challenge_jti=None)
-    await db.commit()
     await _clear_failure_state(db, user_id)
     return await _issue_admin_pair(db, user_id, profile, method=method)
 
@@ -620,8 +621,17 @@ async def revoke_all_for_user(db: AsyncSession, user_id: uuid.UUID) -> None:
     Used on suspected token theft, and the right call after a password change
     or account deactivation.
     """
-    await repository.revoke_all_refresh_tokens_for_user(db, user_id, datetime.now(UTC))
+    await stage_revoke_all_for_user(db, user_id)
     await db.commit()
+
+
+async def stage_revoke_all_for_user(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Stage revocation of every live refresh token without committing.
+
+    Administrative account changes use this form so the user state, token
+    revocations, and audit outbox message commit atomically.
+    """
+    await repository.revoke_all_refresh_tokens_for_user(db, user_id, datetime.now(UTC))
 
 
 async def _issue_pair(db: AsyncSession, user_id: uuid.UUID) -> TokenPair:

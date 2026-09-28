@@ -173,21 +173,23 @@ class TestUserAdministration:
         self,
         auth_headers: dict[str, str],
         registered_user: dict[str, str],
+        admin_session_headers,
         grant,
     ) -> dict[str, str]:
         await grant(uuid.UUID(registered_user["id"]), "ReadAllUser")
-        return auth_headers
+        return await admin_session_headers(uuid.UUID(registered_user["id"]))
 
     @pytest.fixture
     async def admin_headers(
         self,
         auth_headers: dict[str, str],
         registered_user: dict[str, str],
+        admin_session_headers,
         grant,
     ) -> dict[str, str]:
         await grant(uuid.UUID(registered_user["id"]), "ReadAllUser")
         await grant(uuid.UUID(registered_user["id"]), "ManageUser")
-        return auth_headers
+        return await admin_session_headers(uuid.UUID(registered_user["id"]))
 
     async def test_list_is_refused_without_read_all_user(
         self, client: AsyncClient, auth_headers: dict[str, str]

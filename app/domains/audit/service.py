@@ -1,19 +1,9 @@
-"""Business logic for the audit domain — recording and reading the trail.
+"""Business logic for recording and reading the append-only audit trail.
 
-This domain is a **subscriber**, not a caller: IAM and users emit events saying
-what changed, and :func:`record_event` turns those into rows. Neither of those
-domains imports this one, which is the property that matters — auditing must not
-be something a future change to IAM can forget to do, and it must not be able to
-fail an IAM operation either.
-
-That independence is also the honest limitation. Dispatch is in-process and in
-the background (see ``app.core.events``), so a crash between the commit of an
-IAM change and the write of its audit row loses the row. For a template that is
-the right trade: the alternative that closes it — a transactional outbox, or
-audit columns written in the same transaction — costs every domain a coupling to
-this one. When an audit gap becomes a compliance problem rather than an
-inconvenience, the outbox is the upgrade, and it goes here rather than in the
-emitting domains.
+Administrative domains stage events through the transactional outbox. The
+worker calls :func:`record_event` after the business transaction commits, and a
+delivery receipt makes retries idempotent. This preserves domain separation
+without leaving a crash window between a state change and its audit obligation.
 """
 
 from __future__ import annotations
@@ -22,9 +12,11 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import Event
+from app.core.outbox import add_receipt, already_delivered
 from app.database import AsyncSessionLocal
 from app.domains.audit import repository
 from app.domains.audit.models import AuditEntry
@@ -48,8 +40,8 @@ _TARGETS: dict[str, tuple[str, str]] = {
 }
 
 
-async def record_event(event: Event) -> None:
-    """Persist one event as an audit entry. The subscriber's entry point.
+async def record_event(event: Event, *, message_id: uuid.UUID) -> None:
+    """Persist one outbox event as an audit entry. The worker entry point.
 
     Opens its **own** session rather than taking one, because it runs after the
     emitting request has returned: the session that produced the change is
@@ -58,10 +50,8 @@ async def record_event(event: Event) -> None:
     ``InterfaceError``/``MissingGreenlet`` under load rather than a clean
     failure.
 
-    Never raises. The event bus already isolates handler failures, but an audit
-    write that fails must additionally not look like it succeeded, so the
-    exception is logged by the bus and the trail simply lacks the row — a gap
-    the module docstring is explicit about.
+    Failures propagate so the worker retries instead of marking an unwritten
+    audit event as delivered.
 
     The write itself is :func:`record_event_on`, which takes a session. Opening
     the session and doing the work were one function until it became clear that
@@ -70,16 +60,27 @@ async def record_event(event: Event) -> None:
     assertion available was "it did not raise".
     """
     async with AsyncSessionLocal() as db:
-        await record_event_on(db, event)
+        await record_event_on(db, event, message_id=message_id)
 
 
-async def record_event_on(db: AsyncSession, event: Event) -> AuditEntry:
-    """Write one event as an audit entry on ``db``, and commit.
+async def record_event_on(
+    db: AsyncSession,
+    event: Event,
+    *,
+    message_id: uuid.UUID | None = None,
+) -> AuditEntry | None:
+    """Write one event as an audit entry on ``db``, and commit atomically.
 
     The half of :func:`record_event` that does the work. Split out so it can be
     driven against a test session — and so the outbox worker, which already owns
     a session per batch, can call it without opening a second one.
+    When ``message_id`` is supplied, the audit row and an ``audit`` delivery
+    receipt share one transaction. A redelivery therefore returns without
+    creating a duplicate row.
     """
+    if message_id is not None and await already_delivered(db, message_id, "audit"):
+        return None
+
     target_type, target_key = _TARGETS.get(event.name, (None, None))
     target_id = event.payload.get(target_key) if target_key else None
 
@@ -97,7 +98,15 @@ async def record_event_on(db: AsyncSession, event: Event) -> AuditEntry:
         prior_state=prior_state,
         new_state=new_state,
     )
-    await db.commit()
+    if message_id is not None:
+        add_receipt(db, message_id, "audit")
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        if message_id is not None and await already_delivered(db, message_id, "audit"):
+            return None
+        raise
     return entry
 
 

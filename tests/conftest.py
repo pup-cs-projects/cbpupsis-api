@@ -29,10 +29,15 @@ from sqlalchemy.ext.asyncio import (
 from app.core.outbox import models as _outbox_models  # noqa: F401
 from app.database import Base, get_db
 from app.domains.audit import models as _audit_models  # noqa: F401
+from app.domains.audit import service as audit_service
+from app.domains.audit.constants import AUDITED_EVENTS
 from app.domains.auth import models as _auth_models  # noqa: F401
 from app.domains.auth import service as auth_service
+from app.domains.auth.models import AdminPosition
+from app.domains.auth.security import create_access_token
 from app.domains.iam import models as _iam_models  # noqa: F401
 from app.domains.iam import service as iam_service
+from app.domains.iam.constants import ADMIN_GROUP
 from app.domains.items import models as _items_models  # noqa: F401
 from app.domains.notifications import models as _notifications_models  # noqa: F401
 from app.domains.notifications.constants import NOTIFICATION_TYPES
@@ -109,6 +114,48 @@ async def grant(db: AsyncSession):
 
 
 @pytest.fixture
+async def admin_session_headers(db: AsyncSession):
+    """Return a helper that issues a scoped MFA-completed Admin bearer.
+
+    Endpoint tests outside the authentication domain use this narrow fixture so
+    they exercise the real live-group guard without repeating the MFA ceremony
+    whose acceptance coverage lives in ``test_admin_mfa.py``.
+    """
+
+    async def _headers(
+        user_id: uuid.UUID,
+        *,
+        position: AdminPosition = AdminPosition.registrar,
+    ) -> dict[str, str]:
+        groups = await iam_service.list_groups(db, limit=200)
+        admin_group = next(
+            (group for group in groups.items if group.name == ADMIN_GROUP), None
+        )
+        if admin_group is None:
+            admin_group = await iam_service.create_group(db, name=ADMIN_GROUP)
+        await iam_service.add_user_to_group(db, user_id, admin_group.id)
+        await auth_service.configure_admin_profile(
+            db,
+            user_id=user_id,
+            position=position,
+        )
+        token = create_access_token(
+            user_id,
+            claims={
+                "role": "admin",
+                "mfa": True,
+                "amr": ["pwd", "totp"],
+                "position": position.value,
+                "department_id": None,
+                "college_id": None,
+            },
+        )
+        return {"Authorization": f"Bearer {token}"}
+
+    return _headers
+
+
+@pytest.fixture
 def make_user(db: AsyncSession):
     """Return a helper that registers a user through the auth service.
 
@@ -147,13 +194,18 @@ def drain_outbox(db: AsyncSession):
         from app import worker
         from app.domains.notifications import handlers
 
-        async def _handle(event, *, message_id):
+        async def _notify(event, *, message_id):
             await handlers.deliver_event_on(db, event, message_id=message_id)
+
+        async def _audit(event, *, message_id):
+            await audit_service.record_event_on(db, event, message_id=message_id)
 
         previous = dict(worker._HANDLERS)
         worker._HANDLERS.clear()
         for name in NOTIFICATION_TYPES:
-            worker.register_handler(name, _handle)
+            worker.register_handler(name, _notify)
+        for name in AUDITED_EVENTS:
+            worker.register_handler(name, _audit)
         try:
             return await worker.process_batch(db)
         finally:

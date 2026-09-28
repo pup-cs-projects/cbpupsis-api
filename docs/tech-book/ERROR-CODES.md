@@ -101,8 +101,9 @@ this maintainable: it is how you find the code when the copy needs changing.
 | 429 | Too many requests. Please try again in N seconds. (`code: rate_limited`) | A rate limit was exceeded on `/login`, `/register`, `/forgot-password`, or `/resend-verification`. Carries a `Retry-After` header, in seconds. | `core/exceptions.py` |
 | 401 | The security code or hardware-key response is invalid (`code: AUTH_MFA_INVALID`) | A TOTP or WebAuthn assertion failed; the shared failure counter is incremented. | `auth/service.py` |
 | 401 | That security code has already been used; enter the current code (`code: AUTH_MFA_CODE_REUSED`) | A valid TOTP time-step was already accepted through an earlier challenge; the replay is refused and counted. | `auth/service.py` |
-| 403 | Set up multi-factor authentication to continue (`code: AUTH_MFA_ENROLLMENT_REQUIRED`) | An Admin has no enrolled factor and attempted anything other than enrollment. | `auth/service.py`, admin middleware |
-| 403 | An administrator position must be assigned before sign-in (`code: AUTH_ADMIN_PROFILE_REQUIRED`) | An Admin-group member has no position/scope profile. | `auth/service.py`, admin middleware |
+| 401 | A second factor is required (`code: AUTH_MFA_REQUIRED`) | A privileged route received an MFA challenge instead of a completed Admin session. | `auth/dependencies.py` |
+| 403 | Set up multi-factor authentication to continue (`code: AUTH_MFA_ENROLLMENT_REQUIRED`) | An Admin has no enrolled factor and attempted anything other than enrollment. | `auth/service.py`, `auth/dependencies.py` |
+| 403 | An administrator position must be assigned before sign-in (`code: AUTH_ADMIN_PROFILE_REQUIRED`) | An Admin-group member has no position/scope profile. | `auth/service.py`, `auth/dependencies.py` |
 | 423 | Account temporarily locked after repeated sign-in failures (`code: AUTH_ACCOUNT_LOCKED`) | Five credential/MFA failures occurred inside 15 minutes. Includes `Retry-After` and `retry_after_seconds`. | `auth/service.py` |
 
 **Why the 403 is safe.** It sits *after* the password check, so it only ever
@@ -125,7 +126,7 @@ resend-verification screen rather than back to the login form.
 | 404 | Permission {id} not found | `GET /iam/permissions/{id}` for an id that does not exist. | `iam/exceptions.py` |
 | 404 | Policy {id} not found | `GET /iam/policies/{id}` for an id that does not exist. | `iam/exceptions.py` |
 | 404 | Group {id} not found | `GET /iam/groups/{id}` for an id that does not exist. | `iam/exceptions.py` |
-| 403 | This action is not available to your role (`code: AUTH_INSUFFICIENT_ROLE`) | A non-Admin session reached `/api/v1/admin`. | admin middleware |
+| 403 | This action is not available to your role (`code: AUTH_INSUFFICIENT_ROLE`) | A non-Admin session reached an IAM, user-management, or audit handler reserved for Admins. | `auth/dependencies.py`, `iam/dependencies.py` |
 | 404 | Resource not found (`code: RESOURCE_NOT_FOUND`) | The id is absent or beyond the administrator's department/college reach. | `auth/dependencies.py` |
 
 ### users
@@ -156,7 +157,8 @@ resend-verification screen rather than back to the login form.
 The audit trail is append-only and has no write endpoint at all — a trail a
 client can write to is not evidence of anything. ORM guards and a PostgreSQL
 trigger refuse UPDATE/DELETE, while each administrative record carries explicit
-`prior_state` and `new_state`. Entries arrive through the event bus; see
+`prior_state` and `new_state`. Each obligation is staged transactionally with
+the administrative change and delivered idempotently by the outbox worker; see
 `app/domains/audit/service.py`.
 
 ### notifications

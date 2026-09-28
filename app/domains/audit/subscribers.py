@@ -1,4 +1,4 @@
-"""Wire the audit domain to the event bus.
+"""Wire the audit domain to the durable outbox worker.
 
 Kept in its own module, and called once from ``main.py``, so that importing the
 audit service has no side effect. A ``subscribe()`` executed at import time
@@ -8,18 +8,25 @@ event producing N rows, and the count depending on collection order.
 
 from __future__ import annotations
 
-from app.core.events import event_bus
+import uuid
+
+from app import worker
+from app.core.events import Event
 from app.domains.audit import service
 from app.domains.audit.constants import AUDITED_EVENTS
 
 
+async def _handle(event: Event, *, message_id: uuid.UUID) -> None:
+    """Adapter matching the worker's idempotent handler signature."""
+    await service.record_event(event, message_id=message_id)
+
+
 def register_audit_subscribers() -> None:
-    """Subscribe the audit recorder to every event worth keeping.
+    """Register the audit recorder for every event worth keeping.
 
     Idempotent: re-registering the same handler for an event is skipped, so
     calling this twice (an app rebuilt in a test, a reload in development) does
     not double every audit row.
     """
     for event_name in AUDITED_EVENTS:
-        if service.record_event not in event_bus.handlers_for(event_name):
-            event_bus.subscribe(event_name, service.record_event)
+        worker.register_handler(event_name, _handle)

@@ -19,6 +19,7 @@ should not run for an unproven address.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 
@@ -28,18 +29,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.domains.auth.exceptions import (
+    AdminProfileRequiredError,
     InactiveUserError,
+    InvalidAuthTokenError,
+    MfaEnrollmentRequiredError,
+    MfaRequiredError,
     NotAuthenticatedError,
     UnverifiedEmailError,
 )
 from app.domains.auth.security import decode_token
-from app.domains.iam.exceptions import ScopedResourceNotFoundError
+from app.domains.iam.exceptions import (
+    InsufficientAdminRoleError,
+    ScopedResourceNotFoundError,
+)
 from app.domains.users import service as users_service
 
 # auto_error=False so a MISSING header reaches our own code instead of raising
 # Starlette's 403. A missing credential is 401 ("who are you?"), not 403 ("I
 # know who you are and you may not"); the default conflates the two.
 _bearer_scheme = HTTPBearer(auto_error=False)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -57,6 +67,7 @@ class CurrentUser:
     position: str | None = None
     department_id: str | None = None
     college_id: str | None = None
+    mfa: bool = False
 
     def require_resource_scope(
         self, *, department_id: str | None, college_id: str | None
@@ -94,14 +105,80 @@ async def get_current_user(
     so deactivating or deleting an account takes effect immediately instead of
     when the token happens to expire.
     """
-    raw_token = (
+    raw_token = _request_token(request, credentials)
+    if raw_token is None:
+        raise NotAuthenticatedError
+    claims = decode_token(raw_token, expected_type="access")
+    return await _load_current_user(request, db, claims)
+
+
+async def require_admin_session(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> CurrentUser:
+    """Require a completed, scoped administrative MFA session.
+
+    Administrative entry points use this dependency rather than a URL-prefix
+    middleware. The guard therefore sits beside every real handler it protects,
+    including IAM, user-management, and audit routes that do not share one path
+    namespace.
+    """
+    raw_token = _request_token(request, credentials)
+    if raw_token is None:
+        error = NotAuthenticatedError()
+        _log_admin_refusal(request, error)
+        raise error
+
+    try:
+        claims = decode_token(raw_token, expected_type="access")
+    except InvalidAuthTokenError as access_error:
+        try:
+            challenge = decode_token(raw_token, expected_type="mfa_challenge")
+        except InvalidAuthTokenError:
+            _log_admin_refusal(request, access_error)
+            raise access_error from None
+        error = (
+            MfaEnrollmentRequiredError()
+            if challenge.get("enrollment_required") is True
+            else MfaRequiredError()
+        )
+        _log_admin_refusal(request, error)
+        raise error from access_error
+
+    user = await _load_current_user(request, db, claims)
+    if user.role != "admin" or user.mfa is not True:
+        error = InsufficientAdminRoleError()
+        _log_admin_refusal(request, error)
+        raise error
+
+    scope_is_invalid = (
+        user.position not in {"chairperson", "dean", "registrar"}
+        or (user.position == "chairperson" and not user.department_id)
+        or (user.position == "dean" and not user.college_id)
+    )
+    if scope_is_invalid:
+        error = AdminProfileRequiredError()
+        _log_admin_refusal(request, error)
+        raise error
+    return user
+
+
+def _request_token(
+    request: Request, credentials: HTTPAuthorizationCredentials | None
+) -> str | None:
+    """Prefer an explicit bearer token, then the hardened admin cookie."""
+    return (
         credentials.credentials
         if credentials is not None
         else request.cookies.get("admin_session")
     )
-    if raw_token is None:
-        raise NotAuthenticatedError
-    claims = decode_token(raw_token, expected_type="access")
+
+
+async def _load_current_user(
+    request: Request, db: AsyncSession, claims: dict[str, object]
+) -> CurrentUser:
+    """Resolve verified access-token claims to a live local user."""
     user = await users_service.get_active_user(db, uuid.UUID(claims["sub"]))
     if user is None:
         raise InactiveUserError
@@ -118,6 +195,20 @@ async def get_current_user(
         position=claims.get("position"),
         department_id=claims.get("department_id"),
         college_id=claims.get("college_id"),
+        mfa=claims.get("mfa") is True,
+    )
+
+
+def _log_admin_refusal(request: Request, error: Exception) -> None:
+    """Emit the structured refusal record required for administrative access."""
+    logger.warning(
+        "admin.authorization_refused",
+        extra={
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": getattr(error, "status_code", 500),
+            "error_code": getattr(error, "code", None),
+        },
     )
 
 

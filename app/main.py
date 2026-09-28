@@ -24,7 +24,6 @@ from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.middleware import limiter, register_middleware
 from app.database import engine
-from app.domains.audit.subscribers import register_audit_subscribers
 
 # Before anything else: a logger used before configuration silently keeps the
 # default handler and ignores everything set up here.
@@ -77,10 +76,6 @@ app.state.limiter = limiter
 register_middleware(app)
 # Registered after the limiter is attached, since it installs the 429 handler.
 register_exception_handlers(app)
-
-# Subscribed here rather than at import of the audit package, so importing a
-# module never has the side effect of registering a handler twice.
-register_audit_subscribers()
 
 app.include_router(v1_router, prefix="/api/v1")
 

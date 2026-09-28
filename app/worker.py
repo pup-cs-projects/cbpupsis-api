@@ -212,10 +212,14 @@ async def run() -> None:
     """The worker loop. Runs until SIGTERM, then finishes cleanly."""
     # Imported here rather than at module scope: subscribers.py imports this
     # module to register handlers, so a top-level import would be circular.
+    from app.domains.audit.subscribers import (  # noqa: PLC0415
+        register_audit_subscribers,
+    )
     from app.domains.notifications.subscribers import (  # noqa: PLC0415
         register_notification_subscribers,
     )
 
+    register_audit_subscribers()
     register_notification_subscribers()
 
     shutdown = asyncio.Event()

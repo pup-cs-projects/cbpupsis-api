@@ -7,21 +7,22 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from httpx import AsyncClient
+from fastapi import Depends, FastAPI
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.events import event_bus
+from app.core.exceptions import register_exception_handlers
 from app.core.outbox import OutboxMessage
+from app.database import get_db
 from app.domains.audit import service as audit_service
 from app.domains.auth import repository as auth_repository
 from app.domains.auth import service as auth_service
-from app.domains.auth.dependencies import CurrentUser
 from app.domains.auth.models import AdminPosition
 from app.domains.auth.security import _totp_at, decode_token
 from app.domains.iam import service as iam_service
 from app.domains.iam.constants import ADMIN_GROUP
-from app.domains.iam.exceptions import ScopedResourceNotFoundError
+from app.domains.iam.dependencies import require_admin_scope
 from app.domains.users import service as users_service
 from app.domains.users.constants import MANAGE_USER
 
@@ -153,6 +154,7 @@ class TestAdministrativeMfa:
         assert "httponly" in set_cookie.lower()
         assert "secure" in set_cookie.lower()
         assert "samesite=lax" in set_cookie.lower()
+        assert "path=/api/v1" in set_cookie.lower()
 
         replay = await client.post(
             "/api/v1/auth/admin/mfa/totp/confirm",
@@ -209,16 +211,51 @@ class TestAdministrativeMfa:
             == 1
         )
 
-    async def test_ac_003_4_admin_namespace_refuses_an_ordinary_session(
+    async def test_completed_admin_cookie_reaches_real_management_routes(
+        self, client: AsyncClient, db: AsyncSession, grant
+    ) -> None:
+        user_id = await _make_admin(client, db)
+        await grant(user_id, "ManageIAM")
+        challenge = await _challenge(client)
+        _, session, _, _ = await _enroll_totp(client, challenge["challenge_token"])
+
+        response = await client.get(
+            "/api/v1/iam/groups",
+            headers={"Cookie": f"admin_session={session['access_token']}"},
+        )
+
+        assert response.status_code == 200, response.text
+
+    async def test_admin_group_removal_revokes_a_completed_session_immediately(
+        self, client: AsyncClient, db: AsyncSession, grant
+    ) -> None:
+        user_id = await _make_admin(client, db)
+        await grant(user_id, "ManageIAM")
+        challenge = await _challenge(client)
+        _, session, _, _ = await _enroll_totp(client, challenge["challenge_token"])
+        groups = await iam_service.list_groups(db, limit=200)
+        admin_group = next(group for group in groups.items if group.name == ADMIN_GROUP)
+        await iam_service.remove_user_from_group(db, user_id, admin_group.id)
+
+        response = await client.get(
+            "/api/v1/iam/groups",
+            headers={"Authorization": f"Bearer {session['access_token']}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["code"] == "AUTH_INSUFFICIENT_ROLE"
+
+    async def test_ac_003_4_real_admin_route_refuses_an_ordinary_session(
         self,
         client: AsyncClient,
         auth_headers: dict[str, str],
+        registered_user: dict[str, str],
+        grant,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        with caplog.at_level(logging.WARNING, logger="app.core.middleware.http"):
-            response = await client.post(
-                "/api/v1/admin/backups/restore", headers=auth_headers
-            )
+        await grant(uuid.UUID(registered_user["id"]), "ManageIAM")
+        with caplog.at_level(logging.WARNING, logger="app.domains.auth.dependencies"):
+            response = await client.get("/api/v1/iam/groups", headers=auth_headers)
 
         assert response.status_code == 403
         assert response.json()["code"] == "AUTH_INSUFFICIENT_ROLE"
@@ -227,42 +264,45 @@ class TestAdministrativeMfa:
             for record in caplog.records
             if record.message == "admin.authorization_refused"
         )
-        assert refusal.path == "/api/v1/admin/backups/restore"
+        assert refusal.path == "/api/v1/iam/groups"
         assert refusal.status_code == 403
         assert refusal.error_code == "AUTH_INSUFFICIENT_ROLE"
 
-    def test_ac_003_5_out_of_scope_resources_are_hidden_as_not_found(self) -> None:
-        admin = CurrentUser(
-            id=uuid.uuid4(),
-            email="chair@example.com",
-            role="admin",
-            position="chairperson",
-            department_id="CCIS",
-        )
-        with pytest.raises(ScopedResourceNotFoundError) as raised:
-            admin.require_resource_scope(department_id="CAF", college_id=None)
-        assert raised.value.status_code == 404
-        assert raised.value.code == "RESOURCE_NOT_FOUND"
-        admin.require_resource_scope(department_id="CCIS", college_id=None)
+    async def test_ac_003_5_scope_dependency_hides_resource_before_handler(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        await _make_admin(client, db)
+        challenge = await _challenge(client)
+        _, session, _, _ = await _enroll_totp(client, challenge["challenge_token"])
 
-        dean = CurrentUser(
-            id=uuid.uuid4(),
-            email="dean@example.com",
-            role="admin",
-            position="dean",
-            college_id="COE",
-        )
-        with pytest.raises(ScopedResourceNotFoundError):
-            dean.require_resource_scope(department_id=None, college_id="CAF")
-        dean.require_resource_scope(department_id=None, college_id="COE")
+        scope_app = FastAPI()
+        register_exception_handlers(scope_app)
+        scope_app.dependency_overrides[get_db] = lambda: db
+        reached: list[str] = []
 
-        registrar = CurrentUser(
-            id=uuid.uuid4(),
-            email="registrar@example.com",
-            role="admin",
-            position="registrar",
-        )
-        registrar.require_resource_scope(department_id="CAF", college_id="COE")
+        @scope_app.get("/departments/{department_id}/records")
+        async def scoped_records(
+            department_id: str,
+            _user=Depends(require_admin_scope),
+        ) -> dict[str, str]:
+            reached.append(department_id)
+            return {"department_id": department_id}
+
+        headers = {"Authorization": f"Bearer {session['access_token']}"}
+        async with AsyncClient(
+            transport=ASGITransport(app=scope_app), base_url="http://test"
+        ) as scoped_client:
+            denied = await scoped_client.get(
+                "/departments/CAF/records", headers=headers
+            )
+            allowed = await scoped_client.get(
+                "/departments/CCIS/records", headers=headers
+            )
+
+        assert denied.status_code == 404
+        assert denied.json()["code"] == "RESOURCE_NOT_FOUND"
+        assert reached == ["CCIS"]
+        assert allowed.status_code == 200
 
     async def test_ac_003_6_unenrolled_challenge_reaches_only_enrollment(
         self, client: AsyncClient, db: AsyncSession
@@ -271,7 +311,7 @@ class TestAdministrativeMfa:
         challenge = await _challenge(client)
 
         denied = await client.get(
-            "/api/v1/admin/users",
+            "/api/v1/iam/groups",
             headers={"Authorization": f"Bearer {challenge['challenge_token']}"},
         )
         enrolled = await client.post(
@@ -288,7 +328,7 @@ class TestAdministrativeMfa:
         client: AsyncClient,
         db: AsyncSession,
         grant,
-        monkeypatch: pytest.MonkeyPatch,
+        drain_outbox,
     ) -> None:
         actor_id = await _make_admin(client, db)
         await grant(actor_id, MANAGE_USER)
@@ -302,16 +342,13 @@ class TestAdministrativeMfa:
         assert target.status_code == 201, target.text
         target_id = target.json()["id"]
 
-        async def record_on_test_session(event) -> None:
-            await audit_service.record_event_on(db, event)
-
-        monkeypatch.setattr(event_bus, "publish", record_on_test_session)
         response = await client.post(
             f"/api/v1/users/{target_id}/deactivate",
             headers={"Authorization": f"Bearer {session['access_token']}"},
         )
 
         assert response.status_code == 200, response.text
+        await drain_outbox()
         page = await audit_service.list_entries(db, action="user.deactivated")
         assert page.total == 1
         entry = page.items[0]
@@ -324,6 +361,31 @@ class TestAdministrativeMfa:
         with pytest.raises(PermissionError, match="append-only"):
             await db.commit()
         await db.rollback()
+
+    async def test_admin_refresh_renews_cookie_and_logout_clears_it(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        await _make_admin(client, db)
+        challenge = await _challenge(client)
+        _, session, _, _ = await _enroll_totp(client, challenge["challenge_token"])
+
+        refreshed = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": session["refresh_token"]},
+        )
+        assert refreshed.status_code == 200, refreshed.text
+        assert refreshed.json()["role"] == "admin"
+        assert "path=/api/v1" in refreshed.headers["set-cookie"].lower()
+        assert client.cookies.get("admin_session") == refreshed.json()["access_token"]
+
+        logged_out = await client.post(
+            "/api/v1/auth/logout",
+            json={"refresh_token": refreshed.json()["refresh_token"]},
+        )
+        assert logged_out.status_code == 204, logged_out.text
+        cookies = "\n".join(logged_out.headers.get_list("set-cookie")).lower()
+        assert "admin_session=" in cookies
+        assert "max-age=0" in cookies
 
     async def test_ac_003_8_lockout_counts_password_and_factor_failures_together(
         self, client: AsyncClient, db: AsyncSession

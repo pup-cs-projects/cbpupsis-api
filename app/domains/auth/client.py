@@ -29,6 +29,11 @@ async def revoke_all_sessions(db: AsyncSession, user_id: uuid.UUID) -> None:
     await service.revoke_all_for_user(db, user_id)
 
 
+async def stage_revoke_all_sessions(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Stage session revocation for a transaction owned by another domain."""
+    await service.stage_revoke_all_for_user(db, user_id)
+
+
 def check_password(raw_password: str, password_hash: str) -> bool:
     """Return whether a raw password matches a stored hash.
 

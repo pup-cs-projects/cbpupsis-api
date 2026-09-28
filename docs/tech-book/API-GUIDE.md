@@ -350,17 +350,21 @@ envelopes. WebAuthn verifies the RP
 id, origin, signed challenge, user-verification flag, credential public key,
 and monotonic sign counter. The completed access token is also set as
 `admin_session` with `HttpOnly`, `Secure`, `SameSite=Lax`, and an
-`/api/v1/admin` path.
+`/api/v1` path. Admin refresh rotates that cookie, and logout deletes it.
 
-Every `/api/v1/admin/...` request is rejected by middleware before routing
-unless the signed token carries the Admin role, completed MFA, and a valid
-position. Resource services call `CurrentUser.require_resource_scope`: a
-Chairperson reaches their department, a Dean their college, and a Registrar the
-university. A scope miss is `404 RESOURCE_NOT_FOUND`, never a confirming 403.
+Administrative dependencies guard the real IAM, user-management, and audit
+handlers before their bodies run. They require a signed token carrying the
+Admin role, completed MFA, a valid position, current membership in `Admins`,
+and the endpoint's permission. Resource routes additionally declare
+`require_admin_scope`: a Chairperson reaches their department, a Dean their
+college, and a Registrar the university. A scope miss is `404
+RESOURCE_NOT_FOUND`, never a confirming 403.
 
 Credential and factor failures share one rolling counter. The fifth failure in
 15 minutes locks the account; subsequent calls return `423
 AUTH_ACCOUNT_LOCKED`, `Retry-After: 900`, and `retry_after_seconds: 900`.
+PostgreSQL serializes each account's sign-in transaction with an advisory lock,
+so concurrent password and MFA failures cannot under-count the rolling window.
 
 For endpoints that need verification *beyond* login — anything that mails other
 people, spends money, or is expensive to undo — declare

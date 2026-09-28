@@ -6,11 +6,11 @@ and that the entry names the actor. An audit feature that silently records
 nothing looks exactly like one that works — every endpoint still returns its
 usual status.
 
-The subscriber opens its own session (it runs after the emitting request has
-returned), so these tests drive it directly rather than through the bus wherever
-the assertion is about the row's content. The end-to-end path — event published,
-handler invoked — is covered in ``TestTheTrailIsWiredUp``, and the write itself
-in ``TestTheHandlerActuallyWrites``.
+The outbox handler opens its own session after the emitting request has
+returned, so these tests drive its session-aware seam directly wherever the
+assertion is about row content. The transactional staging path is covered in
+``TestTheTrailIsWiredUp``, and the idempotent write in
+``TestTheHandlerActuallyWrites``.
 """
 
 from __future__ import annotations
@@ -20,9 +20,12 @@ from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.events import Event, event_bus
+from app import worker
+from app.core.events import Event
+from app.core.outbox import OutboxMessage
 from app.domains.audit import service as audit_service
 from app.domains.audit.constants import AUDITED_EVENTS
 from app.domains.audit.subscribers import register_audit_subscribers
@@ -112,64 +115,63 @@ class TestTheTrailIsWiredUp:
         while recording nothing."""
         register_audit_subscribers()
         for name in AUDITED_EVENTS:
-            assert event_bus.handlers_for(name), f"{name} has no subscriber"
+            assert worker.handlers_for(name), f"{name} has no subscriber"
 
     def test_registering_twice_does_not_double_the_handler(self) -> None:
         """An app rebuilt in a test, or reloaded in development, must not make
         one change produce two audit rows."""
         register_audit_subscribers()
-        before = len(event_bus.handlers_for("iam.group_created"))
+        before = len(worker.handlers_for("iam.group_created"))
         register_audit_subscribers()
-        assert len(event_bus.handlers_for("iam.group_created")) == before
+        assert len(worker.handlers_for("iam.group_created")) == before
 
     async def test_an_iam_change_reaches_the_handler(
         self, db: AsyncSession, make_user
     ) -> None:
-        """End to end through the bus, with the recorder stubbed.
-
-        The real recorder opens its own session against the application engine,
-        which in this suite points at a database that is not running — so what
-        is verified here is that the event carries the actor and target to a
-        subscriber, not the INSERT itself. The write is covered separately in
-        ``TestTheHandlerActuallyWrites``, which drives ``record_event_on``.
-        """
-        seen: list[Event] = []
-
-        async def spy(event: Event) -> None:
-            seen.append(event)
-
-        event_bus.subscribe("iam.user_added_to_group", spy)
-
+        """The business change and its complete audit payload share a commit."""
         actor = uuid.uuid4()
         subject = (await make_user("audited-member@example.com")).id
         group = await iam_service.create_group(db, name="Audited")
         await iam_service.add_user_to_group(db, subject, group.id, actor_id=actor)
-        await event_bus.drain()
+        messages = (
+            (
+                await db.execute(
+                    select(OutboxMessage).where(
+                        OutboxMessage.event_name == "iam.user_added_to_group"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
-        assert len(seen) == 1
-        assert seen[0].payload["user_id"] == str(subject)
-        assert seen[0].payload["actor_id"] == str(actor)
-        assert seen[0].payload["group_id"] == group.id
+        assert len(messages) == 1
+        assert messages[0].payload["user_id"] == str(subject)
+        assert messages[0].payload["actor_id"] == str(actor)
+        assert messages[0].payload["group_id"] == group.id
 
     async def test_an_idempotent_no_op_records_nothing(
         self, db: AsyncSession, make_user
     ) -> None:
         """Re-adding an existing member changes nothing, so the trail must not
         claim a grant happened."""
-        seen: list[Event] = []
-
-        async def spy(event: Event) -> None:
-            seen.append(event)
-
-        event_bus.subscribe("iam.user_added_to_group", spy)
-
         subject = (await make_user("idempotent-member@example.com")).id
         group = await iam_service.create_group(db, name="Audited")
         await iam_service.add_user_to_group(db, subject, group.id)
         await iam_service.add_user_to_group(db, subject, group.id)
-        await event_bus.drain()
+        messages = (
+            (
+                await db.execute(
+                    select(OutboxMessage).where(
+                        OutboxMessage.event_name == "iam.user_added_to_group"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
-        assert len(seen) == 1, "the second, no-op call must not be recorded"
+        assert len(messages) == 1, "the second, no-op call must not be recorded"
 
 
 class TestAuditEndpoint:
@@ -188,6 +190,7 @@ class TestAuditEndpoint:
         client: AsyncClient,
         auth_headers: dict[str, str],
         registered_user: dict[str, str],
+        admin_session_headers,
         grant,
     ) -> None:
         """Reading the trail and reshaping authorization are different powers.
@@ -197,8 +200,9 @@ class TestAuditEndpoint:
         the ability to read who has been watching them.
         """
         await grant(uuid.UUID(registered_user["id"]), "ManageIAM")
+        headers = await admin_session_headers(uuid.UUID(registered_user["id"]))
 
-        response = await client.get("/api/v1/audit", headers=auth_headers)
+        response = await client.get("/api/v1/audit", headers=headers)
         assert response.status_code == 403, response.text
 
     async def test_returns_the_trail_with_the_permission(
@@ -207,14 +211,16 @@ class TestAuditEndpoint:
         db: AsyncSession,
         auth_headers: dict[str, str],
         registered_user: dict[str, str],
+        admin_session_headers,
         grant,
     ) -> None:
         await grant(uuid.UUID(registered_user["id"]), "ReadAllAuditEntry")
+        headers = await admin_session_headers(uuid.UUID(registered_user["id"]))
         await audit_service.record(
             db, action="iam.group_created", target_type="group", target_id="42"
         )
 
-        response = await client.get("/api/v1/audit", headers=auth_headers)
+        response = await client.get("/api/v1/audit", headers=headers)
         assert response.status_code == 200, response.text
         body = response.json()
         assert {"items", "total", "limit", "offset"} <= set(body)
@@ -225,27 +231,23 @@ class TestAuditEndpoint:
         client: AsyncClient,
         auth_headers: dict[str, str],
         registered_user: dict[str, str],
+        admin_session_headers,
         grant,
     ) -> None:
         """An audit trail a client can write to proves nothing."""
         await grant(uuid.UUID(registered_user["id"]), "ReadAllAuditEntry")
+        headers = await admin_session_headers(uuid.UUID(registered_user["id"]))
 
         response = await client.post(
             "/api/v1/audit",
             json={"action": "forged", "occurred_at": datetime.now(UTC).isoformat()},
-            headers=auth_headers,
+            headers=headers,
         )
         assert response.status_code == 405, response.text
 
 
 class TestTheHandlerActuallyWrites:
-    """The gap that existed until ``record_event_on`` was split out.
-
-    ``record_event`` opens a session from the application engine, which in this
-    suite points at a Postgres that is not running — so no test could observe
-    what it wrote, and the strongest available assertion was "it did not raise".
-    A handler that silently wrote nothing would have passed.
-    """
+    """Drive the worker handler's write and idempotency on the test session."""
 
     async def test_an_event_becomes_an_audit_row(self, db: AsyncSession) -> None:
         actor = uuid.uuid4()
@@ -295,3 +297,16 @@ class TestTheHandlerActuallyWrites:
         page = await audit_service.list_entries(db)
         assert page.total == 1
         assert page.items[0].target_type is None
+
+    async def test_outbox_redelivery_records_exactly_once(
+        self, db: AsyncSession
+    ) -> None:
+        message_id = uuid.uuid4()
+        event = Event(name="iam.group_created", payload={"group_id": 1})
+
+        first = await audit_service.record_event_on(db, event, message_id=message_id)
+        second = await audit_service.record_event_on(db, event, message_id=message_id)
+
+        assert first is not None
+        assert second is None
+        assert (await audit_service.list_entries(db)).total == 1

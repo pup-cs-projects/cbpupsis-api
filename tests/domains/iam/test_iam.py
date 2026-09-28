@@ -175,13 +175,15 @@ class TestManagementEndpoints:
         client: AsyncClient,
         auth_headers: dict[str, str],
         registered_user: dict[str, str],
+        admin_session_headers,
         grant,
     ) -> None:
         await grant(uuid.UUID(registered_user["id"]), "ManageIAM")
+        headers = await admin_session_headers(uuid.UUID(registered_user["id"]))
         response = await client.post(
             "/api/v1/iam/groups",
             json={"name": "Legitimate"},
-            headers=auth_headers,
+            headers=headers,
         )
         assert response.status_code == 201
         assert response.json()["name"] == "Legitimate"
@@ -198,15 +200,17 @@ class TestManagementEndpoints:
         db: AsyncSession,
         auth_headers: dict[str, str],
         registered_user: dict[str, str],
+        admin_session_headers,
         grant,
     ) -> None:
         await grant(uuid.UUID(registered_user["id"]), "ManageIAM")
+        headers = await admin_session_headers(uuid.UUID(registered_user["id"]))
         group = await iam_service.create_group(db, name="NoGhostMembers")
 
         response = await client.post(
             f"/api/v1/iam/groups/{group.id}/users",
             json={"user_id": str(uuid.UUID(int=0))},
-            headers=auth_headers,
+            headers=headers,
         )
 
         assert response.status_code == 404, response.text
@@ -276,10 +280,11 @@ class TestIAMReadEndpoints:
         self,
         auth_headers: dict[str, str],
         registered_user: dict[str, str],
+        admin_session_headers,
         grant,
     ) -> dict[str, str]:
         await grant(uuid.UUID(registered_user["id"]), "ManageIAM")
-        return auth_headers
+        return await admin_session_headers(uuid.UUID(registered_user["id"]))
 
     async def test_lists_permissions_in_the_page_envelope(
         self, client: AsyncClient, db: AsyncSession, admin_headers: dict[str, str]
@@ -433,10 +438,12 @@ class TestDetachingRevokesAccess:
         db: AsyncSession,
         auth_headers: dict[str, str],
         registered_user: dict[str, str],
+        admin_session_headers,
         grant,
         make_user,
     ) -> None:
         await grant(uuid.UUID(registered_user["id"]), "ManageIAM")
+        headers = await admin_session_headers(uuid.UUID(registered_user["id"]))
 
         subject = (await make_user("http-detach-policy@example.com")).id
         await iam_service.create_permission(db, action="ReadWidget")
@@ -449,7 +456,7 @@ class TestDetachingRevokesAccess:
 
         response = await client.delete(
             f"/api/v1/iam/groups/{group.id}/policies/{policy.id}",
-            headers=auth_headers,
+            headers=headers,
         )
         assert response.status_code == 204, response.text
         assert await iam_service.get_effective_permissions(db, subject) == set()
@@ -460,10 +467,12 @@ class TestDetachingRevokesAccess:
         db: AsyncSession,
         auth_headers: dict[str, str],
         registered_user: dict[str, str],
+        admin_session_headers,
         grant,
         make_user,
     ) -> None:
         await grant(uuid.UUID(registered_user["id"]), "ManageIAM")
+        headers = await admin_session_headers(uuid.UUID(registered_user["id"]))
 
         subject = (await make_user("http-remove-member@example.com")).id
         await iam_service.create_permission(db, action="ReadWidget")
@@ -475,7 +484,7 @@ class TestDetachingRevokesAccess:
         await iam_service.add_user_to_group(db, subject, group.id)
 
         response = await client.delete(
-            f"/api/v1/iam/groups/{group.id}/users/{subject}", headers=auth_headers
+            f"/api/v1/iam/groups/{group.id}/users/{subject}", headers=headers
         )
         assert response.status_code == 204, response.text
         assert await iam_service.get_effective_permissions(db, subject) == set()

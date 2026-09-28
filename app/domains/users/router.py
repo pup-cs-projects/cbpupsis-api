@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.domains.auth.dependencies import CurrentUser, get_current_user
-from app.domains.iam.dependencies import require_permission
+from app.domains.iam.dependencies import require_admin_permission
 from app.domains.users import service as users_service
 from app.domains.users.constants import MANAGE_USER, READ_ALL_USER
 from app.domains.users.schemas import DeleteAccountRequest, UserRead, UserUpdate
@@ -112,7 +112,7 @@ async def list_users(
     ),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    user: CurrentUser = Depends(require_permission(READ_ALL_USER)),
+    user: CurrentUser = Depends(require_admin_permission(READ_ALL_USER)),
     db: AsyncSession = Depends(get_db),
 ) -> Page[UserRead]:
     """List user accounts, newest first. Requires ``ReadAllUser``.
@@ -139,7 +139,7 @@ async def list_users(
 @router.post("/{user_id}/deactivate", response_model=UserRead)
 async def deactivate_user(
     user_id: uuid.UUID,
-    user: CurrentUser = Depends(require_permission(MANAGE_USER)),
+    user: CurrentUser = Depends(require_admin_permission(MANAGE_USER)),
     db: AsyncSession = Depends(get_db),
 ) -> UserRead:
     """Suspend another user's account. Requires ``ManageUser``.
@@ -159,7 +159,7 @@ async def deactivate_user(
 @router.post("/{user_id}/reactivate", response_model=UserRead)
 async def reactivate_user(
     user_id: uuid.UUID,
-    user: CurrentUser = Depends(require_permission(MANAGE_USER)),
+    user: CurrentUser = Depends(require_admin_permission(MANAGE_USER)),
     db: AsyncSession = Depends(get_db),
 ) -> UserRead:
     """Restore a suspended account. Requires ``ManageUser``.

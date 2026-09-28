@@ -30,7 +30,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.auth.models import (
@@ -347,6 +347,30 @@ def add_authentication_failure(
     failure = AuthenticationFailure(user_id=user_id, step=step, occurred_at=occurred_at)
     db.add(failure)
     return failure
+
+
+async def acquire_authentication_lock(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Serialize one account's sign-in state for the current transaction.
+
+    PostgreSQL advisory transaction locks cover the first-failure case where no
+    lockout row exists yet. SQLite is used only by the isolated test suite and
+    has no equivalent, so it deliberately skips the dialect-specific statement.
+
+    SQL::
+
+        SELECT pg_advisory_xact_lock(
+            hashtextextended(CAST(:user_id AS text), 0)
+        )
+    """
+    bind = db.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+    await db.execute(
+        text(
+            "SELECT pg_advisory_xact_lock(hashtextextended(CAST(:user_id AS text), 0))"
+        ),
+        {"user_id": str(user_id)},
+    )
 
 
 async def count_authentication_failures_since(

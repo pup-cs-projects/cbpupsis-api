@@ -92,9 +92,10 @@ it.
   - **Remove every level.** A rule enforced in both the router and the service
     stays green when you break only one, so the test proves less than it appears
     to.
-- **Drain the event bus before asserting on a side-effect.** Dispatch is in the
-  background, so `publish` returning does not mean the handler ran — an
-  assertion without `await event_bus.drain()` passes or fails on scheduling luck.
+- **Drive the mechanism that owns the side-effect.** Drain the event bus for
+  best-effort events. For durable side effects, claim and dispatch the outbox
+  (the shared `drain_outbox` fixture does this); `publish_transactional` only
+  stages work and intentionally does not run a handler inline.
 
 ## Always worth testing
 

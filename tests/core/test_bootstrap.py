@@ -90,7 +90,11 @@ class TestBootstrapAdmin:
         assert await bootstrap_admin("twice@example.com") == 0
 
     async def test_the_bootstrapped_admin_can_then_use_the_iam_api(
-        self, db: AsyncSession, client: AsyncClient, monkeypatch
+        self,
+        db: AsyncSession,
+        client: AsyncClient,
+        monkeypatch,
+        admin_session_headers,
     ) -> None:
         """The end-to-end point: after bootstrap, the circularity is broken and
         every further grant happens through the API."""
@@ -119,7 +123,8 @@ class TestBootstrapAdmin:
         )
         assert await bootstrap_admin("root@example.com") == 0
 
-        # Same token, now authorized.
+        # A completed administrative session is now authorized.
+        headers = await admin_session_headers(uuid.UUID(registered.json()["id"]))
         after = await client.post(
             "/api/v1/iam/groups", json={"name": "Editors"}, headers=headers
         )
