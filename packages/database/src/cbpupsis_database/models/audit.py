@@ -16,7 +16,8 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Index, String
+from sqlalchemy import Boolean, DateTime, Index, String, Text, func
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
@@ -76,4 +77,58 @@ class AuditEntry(UUIDMixin, Base):
         # newest-first, hence the descending time component.
         Index("ix_audit_target", "target_type", "target_id", "occurred_at"),
         Index("ix_audit_actor_time", "actor_id", "occurred_at"),
+    )
+
+
+_INET_TYPE = postgresql.INET().with_variant(String(45), "sqlite")
+
+
+class AuthAuditLog(Base):
+    """Authentication audit log partitioned by created_at."""
+
+    __tablename__ = "auth_audit_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(default=None)
+    attempted_id: Mapped[str] = mapped_column(String(50))
+    ip_address: Mapped[str | None] = mapped_column(_INET_TYPE, default=None)
+    user_agent: Mapped[str | None] = mapped_column(Text, default=None)
+    success: Mapped[bool] = mapped_column(Boolean)
+    failure_reason: Mapped[str | None] = mapped_column(String(100), default=None)
+    is_suspicious: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    mfa_used: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        primary_key=True,
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
+class AdminAuditTrail(Base):
+    """Administrative action audit trail partitioned by created_at."""
+
+    __tablename__ = "admin_audit_trails"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column()
+    module: Mapped[str] = mapped_column(String(50))
+    action_type: Mapped[str] = mapped_column(String(50))
+    target_entity: Mapped[str] = mapped_column(String(100))
+    target_entity_id: Mapped[uuid.UUID] = mapped_column()
+    previous_state: Mapped[dict[str, Any] | None] = mapped_column(
+        _JSON_TYPE, default=None
+    )
+    updated_state: Mapped[dict[str, Any] | None] = mapped_column(
+        _JSON_TYPE, default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        primary_key=True,
+        server_default=func.now(),
+        nullable=False,
     )
