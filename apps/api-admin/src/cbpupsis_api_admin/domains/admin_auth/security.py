@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import secrets
 import struct
 import uuid
@@ -14,8 +15,18 @@ from urllib.parse import quote
 
 import jwt
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from webauthn import base64url_to_bytes, verify_authentication_response
-from webauthn.helpers.exceptions import InvalidAuthenticationResponse
+from webauthn import (
+    base64url_to_bytes,
+    generate_registration_options,
+    options_to_json,
+    verify_authentication_response,
+    verify_registration_response,
+)
+from webauthn.helpers.exceptions import InvalidAuthenticationResponse, WebAuthnException
+from webauthn.helpers.structs import (
+    AuthenticatorSelectionCriteria,
+    UserVerificationRequirement,
+)
 
 from cbpupsis_core.config import settings
 from cbpupsis_shared.domains.auth.exceptions import InvalidAuthTokenError
@@ -140,6 +151,44 @@ def matching_totp_counter(
         if hmac.compare_digest(totp_at(secret, candidate), code):
             return candidate
     return None
+
+
+def webauthn_registration_options(
+    *, user_id: uuid.UUID, email: str, challenge: str
+) -> dict[str, Any]:
+    """Build browser registration options bound to the password challenge."""
+    options = generate_registration_options(
+        rp_id=settings.webauthn_rp_id,
+        rp_name="CBPUPSIS",
+        user_id=user_id.bytes,
+        user_name=email,
+        challenge=base64url_to_bytes(challenge),
+        authenticator_selection=AuthenticatorSelectionCriteria(
+            user_verification=UserVerificationRequirement.REQUIRED
+        ),
+    )
+    return json.loads(options_to_json(options))
+
+
+def verify_webauthn_registration(
+    *, credential: dict[str, Any], challenge: str
+) -> tuple[str, str, int] | None:
+    """Verify browser registration before any credential material is stored."""
+    try:
+        verified = verify_registration_response(
+            credential=credential,
+            expected_challenge=base64url_to_bytes(challenge),
+            expected_rp_id=settings.webauthn_rp_id,
+            expected_origin=settings.webauthn_origin,
+            require_user_verification=True,
+        )
+    except (WebAuthnException, ValueError, TypeError, KeyError):
+        return None
+    return (
+        _base64url(verified.credential_id),
+        _base64url(verified.credential_public_key),
+        verified.sign_count,
+    )
 
 
 def verify_webauthn_assertion(

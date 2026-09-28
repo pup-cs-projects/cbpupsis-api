@@ -260,7 +260,7 @@ async def refresh(
     from the token, which is what makes the gate take effect immediately.
     """
     token_claims = decode_token(refresh_token, expected_type="refresh")
-    if token_claims.get("role") == "superadmin" and session_claims is None:
+    if token_claims.get("role") in {"admin", "superadmin"} and session_claims is None:
         raise InvalidAuthTokenError
     user_id = uuid.UUID(token_claims["sub"])
 

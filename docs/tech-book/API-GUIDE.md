@@ -308,6 +308,8 @@ column. The authorization half is untouched either way.
 | `POST /auth/admin/mfa/verify` | Completes an admin challenge with TOTP or WebAuthn and sets the secure admin cookie. |
 | `POST /auth/admin/mfa/totp/enroll` | Starts Google Authenticator-compatible TOTP enrollment and returns an `otpauth://` URI. |
 | `POST /auth/admin/mfa/totp/confirm` | Proves the seed and creates the first admin session. |
+| `POST /auth/admin/mfa/webauthn/enroll` | Takes `{ "challenge_token": "..." }` and returns browser `public_key` registration options for first-time hardware-key setup. |
+| `POST /auth/admin/mfa/webauthn/confirm` | Takes the challenge token and browser `credential`, verifies registration, and creates the first admin session. |
 | `POST /auth/admin/refresh` | Rotates an Admin refresh token while retaining role, position, and scope claims. |
 | `POST /auth/admin/logout` | Revokes the Admin refresh token and clears the Admin cookie. |
 | `GET /admin/me` | Requires a live MFA-completed Admin session and returns its current position and data scope. |
@@ -371,6 +373,11 @@ WebAuthn assertion creates an admin session; its access and refresh JWTs carry
 queries do not perform another profile lookup after the pre-handler guard.
 Google Authenticator is a TOTP client: the API generates the seed and standard
 `otpauth://` URI and makes no Google service call.
+An Admin with no enrolled factor may instead register a hardware key using the
+same password challenge. Registration verifies the browser response against the
+server challenge, configured RP ID and origin, and user verification before
+storing the credential or issuing a session. Adding a second factor after initial
+enrollment is not part of this API.
 
 TOTP seeds and WebAuthn credential material are stored only as AES-256-GCM
 envelopes. A keyed credential-id digest enforces uniqueness without indexing
@@ -379,6 +386,8 @@ user-verification flag, credential public key, and monotonic sign counter. The
 completed access token is also set as
 `admin_session` with `HttpOnly`, `Secure`, `SameSite=Lax`, and an
 `/api/v1/admin` path. Admin refresh rotates that cookie, and logout deletes it.
+Generic `/auth/refresh` rejects Admin refresh tokens; clients must use
+`/auth/admin/refresh` so live membership and profile scope are rechecked.
 
 The reusable `require_admin_session` dependency runs before an Admin handler.
 It requires a signed token carrying the Admin role, completed MFA, a valid

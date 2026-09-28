@@ -6,7 +6,9 @@ import hmac
 import math
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_api_admin.domains.admin_auth import repository
@@ -22,6 +24,7 @@ from cbpupsis_api_admin.domains.admin_auth.schemas import (
     AdminTokenPair,
     SuperadminTokenPair,
     TotpEnrollmentRead,
+    WebAuthnEnrollmentRead,
 )
 from cbpupsis_api_admin.domains.admin_auth.security import (
     create_challenge_token,
@@ -33,6 +36,8 @@ from cbpupsis_api_admin.domains.admin_auth.security import (
     matching_totp_counter,
     totp_provisioning_uri,
     verify_webauthn_assertion,
+    verify_webauthn_registration,
+    webauthn_registration_options,
 )
 from cbpupsis_core.config import settings
 from cbpupsis_core.events import Event
@@ -184,6 +189,65 @@ async def confirm_totp_enrollment(
     repository.update_admin_profile(db, profile, active_mfa_challenge_jti=None)
     await _clear_failure_state(db, user_id)
     return await _issue_admin_pair(db, user_id, profile)
+
+
+async def begin_webauthn_enrollment(
+    db: AsyncSession, *, challenge_token: str
+) -> WebAuthnEnrollmentRead:
+    """Return hardware-key options bound to an unenrolled Admin challenge."""
+    claims, user_id, _profile = await _challenge_context(db, challenge_token)
+    if claims.get("enrollment_required") is not True:
+        raise MfaEnrollmentRequiredError
+    user = await users_service.get_active_user(db, user_id)
+    if user is None:
+        raise InactiveUserError
+    return WebAuthnEnrollmentRead(
+        public_key=webauthn_registration_options(
+            user_id=user_id, email=user.email, challenge=str(claims["challenge"])
+        )
+    )
+
+
+async def confirm_webauthn_enrollment(
+    db: AsyncSession, *, challenge_token: str, credential: dict[str, Any]
+) -> AdminTokenPair:
+    """Verify the registration ceremony and issue the first Admin session."""
+    claims, user_id, profile = await _challenge_context(db, challenge_token)
+    if claims.get("enrollment_required") is not True:
+        raise MfaEnrollmentRequiredError
+    verified = verify_webauthn_registration(
+        credential=credential, challenge=str(claims["challenge"])
+    )
+    if verified is None:
+        await _record_failure(db, user_id, AuthFailureStep.mfa)
+        raise InvalidMfaError
+
+    credential_id, public_key, sign_count = verified
+    existing = await repository.get_mfa_credential(
+        db, user_id=user_id, mfa_type=MfaType.webauthn
+    )
+    try:
+        _stage_webauthn_factor(
+            db,
+            user_id=user_id,
+            existing=existing,
+            credential_id=credential_id,
+            credential_public_key=public_key,
+            sign_count=sign_count,
+        )
+        repository.update_admin_profile(db, profile, active_mfa_challenge_jti=None)
+        await _clear_failure_state(db, user_id)
+        return await _issue_admin_pair(db, user_id, profile)
+    except IntegrityError as exc:
+        await db.rollback()
+        duplicate = await repository.get_mfa_credential_by_digest(
+            db, credential_id_digest(credential_id)
+        )
+        if duplicate is None or duplicate.user_id == user_id:
+            raise
+        await repository.acquire_authentication_lock(db, user_id)
+        await _record_failure(db, user_id, AuthFailureStep.mfa)
+        raise InvalidMfaError from exc
 
 
 async def verify_mfa(
@@ -628,6 +692,29 @@ async def configure_webauthn_factor(
     credential = await repository.get_mfa_credential(
         db, user_id=user_id, mfa_type=MfaType.webauthn
     )
+    credential = _stage_webauthn_factor(
+        db,
+        user_id=user_id,
+        existing=credential,
+        credential_id=credential_id,
+        credential_public_key=credential_public_key,
+        sign_count=sign_count,
+    )
+    await db.commit()
+    await db.refresh(credential)
+    return credential
+
+
+def _stage_webauthn_factor(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    existing: MfaCredential | None,
+    credential_id: str,
+    credential_public_key: str,
+    sign_count: int,
+) -> MfaCredential:
+    """Stage one verified credential within the caller's transaction."""
     fields = {
         "credential_id": encrypt_secret(credential_id),
         "credential_id_digest": credential_id_digest(credential_id),
@@ -635,15 +722,11 @@ async def configure_webauthn_factor(
         "sign_count": sign_count,
         "is_enrolled": True,
     }
-    if credential is None:
-        credential = repository.add_mfa_credential(
+    if existing is None:
+        return repository.add_mfa_credential(
             db, user_id=user_id, mfa_type=MfaType.webauthn, **fields
         )
-    else:
-        repository.update_mfa_credential(db, credential, **fields)
-    await db.commit()
-    await db.refresh(credential)
-    return credential
+    return repository.update_mfa_credential(db, existing, **fields)
 
 
 async def _factor_credentials(

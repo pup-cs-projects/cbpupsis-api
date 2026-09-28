@@ -24,7 +24,7 @@ tests {
   // a stack trace from a header has found the cheapest possible probe: no
   // account, no valid token, one request.
   //
-  // Every probe below expects a non-2xx, so each must unwrap err.response —
+  // Malformed probes below expect non-2xx, so each must unwrap err.response —
   // bru.sendRequest throws on those, and an unhandled throw would abort this
   // script with zero tests registered.
   const api = bru.getEnvVar("student_api");
@@ -47,7 +47,6 @@ tests {
     ["", "an empty header"],
     ["Bearer", "the scheme with no token"],
     ["Bearer ", "the scheme with an empty token"],
-    ["bearer " + (bru.getVar("owner_access_token") || "x"), "a lowercase scheme"],
     ["Basic dXNlcjpwYXNz", "the wrong auth scheme entirely"],
     ["Bearer not.a.jwt", "a token that is not a JWT"],
     ["Bearer a.b.c", "three segments of non-base64"],
@@ -76,13 +75,11 @@ tests {
     }
   }
 
-  test("a lowercase bearer scheme is handled consistently", async function () {
-    // RFC 7235 says the scheme is case-insensitive. Whichever way this API
-    // decides, it must not be a 500 — that is covered above. This records which
-    // choice is in force so a change is visible in the diff rather than
-    // discovered by a client whose HTTP library lowercases.
-    const r = await probe("bearer " + (bru.getVar("owner_access_token") || "x"));
-    expect([200, 401, 403]).to.include(r.status);
+  // Authentication scheme names are case-insensitive, so a valid token must
+  // keep working when the client's HTTP library lowercases Bearer.
+  const lower = await probe("bearer " + (bru.getVar("owner_access_token") || "x"));
+  test("a lowercase bearer scheme works with a valid token", function () {
+    expect(lower.status).to.equal(200);
   });
 }
 

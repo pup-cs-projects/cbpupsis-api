@@ -24,6 +24,9 @@ from cbpupsis_api_admin.domains.admin_auth.schemas import (
     TotpEnrollmentConfirmRequest,
     TotpEnrollmentRead,
     TotpEnrollmentRequest,
+    WebAuthnEnrollmentConfirmRequest,
+    WebAuthnEnrollmentRead,
+    WebAuthnEnrollmentRequest,
 )
 from cbpupsis_core.config import settings
 from cbpupsis_core.middleware import rate_limit
@@ -105,6 +108,31 @@ async def confirm_totp(
     """Prove the enrolled seed and issue the first Admin session."""
     pair = await service.confirm_totp_enrollment(
         db, challenge_token=data.challenge_token, code=data.code
+    )
+    _set_admin_cookie(response, pair.access_token)
+    return pair
+
+
+@router.post("/mfa/webauthn/enroll", response_model=WebAuthnEnrollmentRead)
+async def enroll_webauthn(
+    data: WebAuthnEnrollmentRequest,
+    db: AsyncSession = Depends(get_db),
+) -> WebAuthnEnrollmentRead:
+    """Start first-time hardware-key registration after the password step."""
+    return await service.begin_webauthn_enrollment(
+        db, challenge_token=data.challenge_token
+    )
+
+
+@router.post("/mfa/webauthn/confirm", response_model=AdminTokenPair)
+async def confirm_webauthn(
+    data: WebAuthnEnrollmentConfirmRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> AdminTokenPair:
+    """Verify registration and issue the first Admin session."""
+    pair = await service.confirm_webauthn_enrollment(
+        db, challenge_token=data.challenge_token, credential=data.credential
     )
     _set_admin_cookie(response, pair.access_token)
     return pair
