@@ -209,6 +209,10 @@ async def add_user_to_group(
     Idempotent: re-adding an existing member is a no-op rather than an
     integrity error, so callers need not check membership first.
     """
+    # Deferred because the users service also imports IAM for permission checks.
+    from cbpupsis_shared.domains.users import client as users_client  # noqa: PLC0415
+
+    await users_client.get_user(db, user_id)
     if await repository.exists_user_group(db, user_id, group_id):
         return
     repository.add_user_group(db, user_id, group_id)

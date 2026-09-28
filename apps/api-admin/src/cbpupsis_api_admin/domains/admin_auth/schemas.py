@@ -77,6 +77,23 @@ class TotpEnrollmentConfirmRequest(BaseModel):
     code: str = Field(min_length=6, max_length=6)
 
 
+class WebAuthnEnrollmentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    challenge_token: str
+
+
+class WebAuthnEnrollmentRead(BaseModel):
+    public_key: dict[str, Any]
+
+
+class WebAuthnEnrollmentConfirmRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    challenge_token: str
+    credential: dict[str, Any]
+
+
 class AdminProfileConfigureRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

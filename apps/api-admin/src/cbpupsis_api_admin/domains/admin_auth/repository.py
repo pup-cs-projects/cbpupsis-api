@@ -93,6 +93,21 @@ async def get_mfa_credential(
     )
 
 
+async def get_mfa_credential_by_digest(
+    db: AsyncSession, digest: str
+) -> MfaCredential | None:
+    """Resolve a registered hardware key by its unique keyed digest.
+
+    SQL::
+
+        SELECT * FROM user_mfa_credentials
+        WHERE credential_id_digest = :digest
+    """
+    return await db.scalar(
+        select(MfaCredential).where(MfaCredential.credential_id_digest == digest)
+    )
+
+
 def add_mfa_credential(
     db: AsyncSession,
     *,

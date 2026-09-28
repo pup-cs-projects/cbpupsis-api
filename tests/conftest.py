@@ -30,6 +30,7 @@ from cbpupsis_database import models as _models  # noqa: F401
 from cbpupsis_database.base import Base
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.auth.security import hash_password
 from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.notifications.constants import NOTIFICATION_TYPES
 from cbpupsis_shared.domains.users import service as users_service
@@ -82,6 +83,14 @@ async def grant(db: AsyncSession):
     """
 
     async def _grant(user_id: uuid.UUID, action: str) -> None:
+        if await users_service.get_active_user(db, user_id) is None:
+            user = users_service.stage_new_user(
+                db,
+                email=f"fixture-{user_id}@example.com",
+                password_hash=hash_password("a-long-enough-password"),
+            )
+            user.id = user_id
+            await db.commit()
         permission = await iam_service.create_permission(db, action=action)
         policy = await iam_service.create_policy(
             db, name=f"policy-{action}", permission_actions=[action]
