@@ -58,12 +58,13 @@ message check, and CI rejects the PR later.
 ### Configure your local environment
 
 ```bash
-mkdir -p env
-cp env.example env/env.dev
+mkdir -p env/student env/faculty env/admin
+for app in student faculty admin; do cp env.example env/$app/env.dev; done
 uv run python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Open `env/env.dev` and set:
+Each app reads its own file: `env/student/env.dev`, `env/faculty/env.dev`, and
+`env/admin/env.dev`. Open all three and set the same values in each:
 
 | Key | Local value |
 |---|---|
@@ -71,7 +72,8 @@ Open `env/env.dev` and set:
 | `DATABASE_URL` | `postgresql://postgres:postgres@db:5432/app` |
 | `DIRECT_DATABASE_URL` | `postgresql://postgres:postgres@db:5432/app` |
 
-`env/` is gitignored. Never commit it, and never paste its contents into an issue or chat.
+The three must match: the apps share one database, and a token issued by one
+app is checked by the others. `env/` is gitignored. Never commit it, and never paste its contents into an issue or chat.
 
 ### Prove it works
 
@@ -92,15 +94,23 @@ Without make:
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --build
-docker compose -f docker/docker-compose.yml exec api python -m scripts.seed_iam
+docker compose -f docker/docker-compose.yml run --rm api-admin python -m scripts.seed_iam
 ```
 
-Then open <http://localhost:8000/scalar> for the API reference. Compose applies migrations on
-start. Stop with `make down` (or `docker compose -f docker/docker-compose.yml down`).
+Compose runs the three apps as separate services. A one-shot `migrate` service applies
+migrations once before any app starts. Each app has its own API reference:
 
-To become an admin locally, register through `POST /api/v1/auth/register`, then run
-`make create-admin EMAIL=you@example.com` (or
-`docker compose -f docker/docker-compose.yml exec api python -m scripts.bootstrap_admin you@example.com`).
+| App | API reference | Serves |
+|---|---|---|
+| Student | <http://localhost:8001/scalar> | auth, users, notifications, items |
+| Faculty | <http://localhost:8002/scalar> | auth, users, notifications |
+| Admin | <http://localhost:8003/scalar> | auth, users, notifications, iam, audit, and the `/admin` panel |
+
+Stop with `make down` (or `docker compose -f docker/docker-compose.yml down`).
+
+To become an admin locally, register through `POST /api/v1/auth/register` on any app, then
+run `make create-admin EMAIL=you@example.com` (or
+`docker compose -f docker/docker-compose.yml run --rm api-admin python -m scripts.bootstrap_admin you@example.com`).
 
 ## 3. Daily workflow
 
@@ -178,7 +188,7 @@ Installed by `uv run pre-commit install`, configured in `.pre-commit-config.yaml
 | `no-commit-to-branch` | commit | refuses commits on `main` and `dev` |
 | `ruff-check --fix` | commit | lint (PEP 8, imports, bugbear, pyupgrade) and fixes what it can |
 | `ruff-format` | commit | formatting |
-| `bandit` | commit | security lint over `app/` and `scripts/` |
+| `bandit` | commit | security lint over `packages/`, `apps/`, `scripts/`, and `main.py` |
 | `conventional-pre-commit` | commit-msg | the message follows Conventional Commits |
 
 If a hook changes a file, the commit stops. Run `git add` on the changed files and commit again.
@@ -203,8 +213,12 @@ that nobody merges a PR with a red check.** To read a failure: `gh run view <id>
 [docs/tech-book/API-GUIDE.md](docs/tech-book/API-GUIDE.md) explains the reasoning. The
 non-negotiable ones:
 
-- Code for a feature lives in `app/domains/<name>/`, split into `models`, `schemas`,
-  `repository`, `service`, `router`. Its tests live in `tests/domains/<name>/`.
+- Tables live only in `packages/database/src/cbpupsis_database/models/<name>.py`. A feature's
+  other layers live in one domain folder: `schemas`, `repository`, `service`, `router`, in
+  `apps/api-<role>/src/cbpupsis_api_<role>/domains/<name>/` when one app owns it, or in
+  `packages/shared/src/cbpupsis_shared/domains/<name>/` when every app needs it. Its tests
+  live in `tests/domains/<name>/`.
+- An app never imports another app.
 - SQL only in `repository.py`. Rules only in `service.py`. Routers stay thin.
 - Every endpoint that takes an id checks both the permission and ownership.
 - Someone else's record answers 404, not 403.
@@ -257,7 +271,7 @@ Use the issue forms: **User story**, **Task**, **Bug report**, **Decision**. The
 | Commit refused by `conventional-pre-commit` | Rewrite the message as `type(scope): description` |
 | Hook changed files and the commit stopped | `git add` those files and commit again |
 | `make: command not found` on Windows | Use the plain commands shown next to each make target |
-| API container restarts in a loop | `docker compose -f docker/docker-compose.yml logs api`; usually a missing value in `env/env.dev` |
+| An app container restarts in a loop | `docker compose -f docker/docker-compose.yml logs api-student` (or `api-faculty`, `api-admin`, `migrate`); usually a missing value in that app's `env/<app>/env.dev` |
 | Tests pass locally but fail in CI | `gh run view <id> --log-failed`, then run the one failing test by node id |
 
 Still stuck? Comment on your issue with the exact command and output, and mention the product

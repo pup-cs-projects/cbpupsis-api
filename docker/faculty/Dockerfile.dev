@@ -1,0 +1,51 @@
+# syntax=docker/dockerfile:1
+#
+# Development image for the faculty app: optimised for the edit-reload loop, not
+# for shipping. Contains only this app and the kernel packages it depends on.
+#
+# Differences from the production image, all deliberate:
+#   - source is bind-mounted at runtime by compose, so an edit is live at once
+#   - --reload watches for changes
+#   - runs as root, because a bind-mounted volume from the host would otherwise
+#     hit uid mismatches on every write
+#
+# Never deploy this. Use docker/faculty/Dockerfile.prod.
+
+FROM python:3.12-slim AS dev
+
+COPY --from=ghcr.io/astral-sh/uv:0.9.9 /uv /uvx /bin/
+
+WORKDIR /app
+
+# UV_LINK_MODE=copy keeps the venv self-contained; UV_PROJECT_ENVIRONMENT puts it
+# outside /app so a bind mount over /app cannot shadow the installed packages,
+# the most common way a dev container ends up with "module not found".
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1
+
+# Third-party dependencies install from the lockfile alone, so a code edit does
+# not invalidate this layer. --frozen reads uv.lock as written: the workspace
+# members are not in the image yet, so it cannot be checked against them.
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-workspace --package cbpupsis-api-faculty
+
+# Workspace members install as editable links into /app, which compose then
+# bind-mounts with the live source.
+COPY packages/core ./packages/core
+COPY packages/database ./packages/database
+COPY packages/shared ./packages/shared
+COPY apps/api-faculty ./apps/api-faculty
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --package cbpupsis-api-faculty
+
+EXPOSE 8002
+
+# --reload-dir limits the watcher to the code this app runs: watching the whole
+# tree picks up .venv and __pycache__ and restarts on files nobody edited.
+CMD ["uvicorn", "cbpupsis_api_faculty.main:app", \
+     "--host", "0.0.0.0", "--port", "8002", \
+     "--reload", "--reload-dir", "packages", "--reload-dir", "apps/api-faculty"]

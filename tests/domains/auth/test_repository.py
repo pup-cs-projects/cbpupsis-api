@@ -23,8 +23,8 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domains.auth import repository as auth_repository
-from app.domains.auth.models import TokenPurpose
+from cbpupsis_database.models.auth import TokenPurpose
+from cbpupsis_shared.domains.auth import repository as auth_repository
 
 
 class TestAuthRepository:

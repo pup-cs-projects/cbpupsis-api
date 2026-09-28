@@ -218,7 +218,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 # --- cbpupsis-api ------------------------------------------------------------
-# Real per-environment values live in env/env.<environment> and are never
+# Real per-environment values live in env/<app>/env.<stage> and are never
 # committed. env.example is the committed shape to copy from.
 env/
 uploads/

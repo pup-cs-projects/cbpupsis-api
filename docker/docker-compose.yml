@@ -1,61 +1,104 @@
-# Local development stack: the API plus a Postgres to develop against.
+# Local development stack: the three API apps, the outbox worker, and a Postgres.
 #
-#   docker compose up            start everything (API on :8000)
-#   docker compose logs -f api   follow the API logs
-#   docker compose exec api sh   a shell inside the container
-#   docker compose down          stop; add -v to also drop the database
+#   docker compose up                   start everything
+#   docker compose logs -f api-student  follow one app's logs
+#   docker compose exec api-admin sh    a shell inside one app's container
+#   docker compose down                 stop; add -v to also drop the database
 #
-# The API is bind-mounted, so an edit on the host reloads the container. The
+#   api-student  http://localhost:8001   auth, users, notifications, items
+#   api-faculty  http://localhost:8002   auth, users, notifications
+#   api-admin    http://localhost:8003   auth, users, notifications, iam, audit
+#
+# The source is bind-mounted, so an edit on the host reloads the apps. The
 # database is a named volume, so it survives `down` but not `down -v`.
 #
 # Production and staging do NOT use this file — those images are deployed by an
 # orchestrator with its own configuration. See docker/README.md.
 
+name: cbpupsis-api
+
+# Each app reads its own file, env/<app>/env.<stage>, which is gitignored.
+# ENV_FILE is set by the Makefile from `env=dev|staging`, so one compose file
+# serves both. The migrate service and the worker run the admin image, so they
+# read the admin file. DATABASE_URL, DIRECT_DATABASE_URL, and JWT_SECRET must be
+# identical in all three files: the apps share one database, and a token issued
+# by one app is verified by the others.
+
+# What every container that runs workspace code shares.
+x-workspace: &workspace
+  volumes:
+    # Source is live-mounted; the venv lives at /opt/venv in the dev image so
+    # this mount cannot shadow it. Relative to THIS file, so `..` is the repo.
+    - ..:/app
+
+# The admin image also carries the migrations and scripts/, so the one-shot
+# migration, the outbox worker, and the Makefile's seed scripts run from it.
+x-admin-build: &admin-build
+  context: ..
+  dockerfile: docker/admin/Dockerfile.dev
+
+# Each app starts only after the one-shot migration has finished. Without that
+# you get containers that start and 500 on every request.
+x-app-depends: &app-depends
+  migrate:
+    condition: service_completed_successfully
+
 services:
-  api:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.dev
-    ports:
-      - "8000:8000"
-    env_file:
-      # Real values live in env/, which is gitignored. ENV_FILE is set by the
-      # Makefile from `env=dev|staging`, so one compose file serves both without
-      # duplicating the variable list.
-      - ../env/env.${ENV_FILE:-dev}
-    volumes:
-      # Source is live-mounted; the venv lives at /opt/venv in the dev image so
-      # this mount cannot shadow it. Relative to THIS file, so `..` is the app.
-      - ..:/app
+  migrate:
+    # Runs `alembic upgrade head` once and exits, so three app containers never
+    # race each other to migrate the same database. Also the container the
+    # Makefile runs one-off scripts in (seeds, create-admin), with the command
+    # overridden.
+    <<: *workspace
+    env_file: ../env/admin/env.${ENV_FILE:-dev}
+    build: *admin-build
     depends_on:
       db:
         condition: service_healthy
-    # Wait for Postgres to accept connections, run migrations, then serve. Without
-    # the migration step you get a container that starts and 500s on every request.
-    command: >
-      sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app"
+    command: alembic upgrade head
+
+  api-student:
+    <<: *workspace
+    env_file: ../env/student/env.${ENV_FILE:-dev}
+    build:
+      context: ..
+      dockerfile: docker/student/Dockerfile.dev
+    ports:
+      - "8001:8001"
+    depends_on: *app-depends
+
+  api-faculty:
+    <<: *workspace
+    env_file: ../env/faculty/env.${ENV_FILE:-dev}
+    build:
+      context: ..
+      dockerfile: docker/faculty/Dockerfile.dev
+    ports:
+      - "8002:8002"
+    depends_on: *app-depends
+
+  api-admin:
+    <<: *workspace
+    env_file: ../env/admin/env.${ENV_FILE:-dev}
+    build: *admin-build
+    ports:
+      - "8003:8003"
+    depends_on: *app-depends
 
   worker:
-    # The outbox relay. Same image and same code as the API — only the command
-    # differs, which is what makes "one worker, all handlers" cheap: a new
-    # handler is a new subscriber, not a new container.
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.dev
-    env_file:
-      - ../env/env.${ENV_FILE:-dev}
-    volumes:
-      - ..:/app
-    depends_on:
-      db:
-        condition: service_healthy
+    # The outbox relay, for every app: the handlers live in the shared package,
+    # so one worker delivers what any app staged. A new handler is a new
+    # subscriber, not a new container.
+    <<: *workspace
+    env_file: ../env/admin/env.${ENV_FILE:-dev}
+    build: *admin-build
+    depends_on: *app-depends
     # No port mapping and no health check: nothing connects to it. Liveness is
     # the process itself — if it exits, compose (and ECS) restart it — and the
     # signal to alert on is the `oldest_pending_seconds` field in its heartbeat
     # log, not whether it is up. A worker wedged on a poison message keeps
     # running and looks perfectly healthy.
-    command: python -m app.worker
+    command: python -m cbpupsis_shared.worker
 
   db:
     # PostgreSQL 16, the version SRS 5.3 requires and the one Aurora PostgreSQL
@@ -64,7 +107,7 @@ services:
     # behaviour, add reserved words, and alter what autogenerate emits.
     image: postgres:16-alpine
     # Inline, not env_file: these are the local container's own credentials, not
-    # application config. They must match the DATABASE_URL in env/env.$(env),
+    # application config. They must match the DATABASE_URL in env/<app>/env.<stage>,
     # and they are deliberately not secret, because this database exists only on your
     # machine and is destroyed by `make down wipe=1`.
     environment:
@@ -72,16 +115,9 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: app
     ports:
-      # Exposed so a GUI client on the host can connect. Drop this line if you
-      # do not need one.
       - "5432:5432"
     volumes:
-      # .../data is the data directory for Postgres 17 and earlier. The 18+
-      # images moved it to /var/lib/postgresql and refuse to start on the old
-      # path, so change this line together with the image major.
       - pgdata:/var/lib/postgresql/data
-    # depends_on alone only waits for the container to start, not for Postgres to
-    # be ready to accept connections, hence the healthcheck.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
       interval: 3s

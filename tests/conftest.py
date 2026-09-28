@@ -7,8 +7,8 @@ identically, so anything genuinely dialect-specific (JSONB operators, partial
 indexes) deserves an integration test against a real Neon branch.
 
 Environment defaults live in ``[tool.pytest.ini_options].env`` in pyproject.toml
-(via pytest-env), because ``app.config`` validates settings at import time and
-must see them before collection imports anything from ``app``.
+(via pytest-env), because ``cbpupsis_core.config`` validates settings at import
+time and must see them before collection imports any workspace package.
 """
 
 from __future__ import annotations
@@ -24,26 +24,16 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-# Import every domain's models so Base.metadata is complete before create_all —
-# the same footgun that migrations/env.py guards against.
-from app.core.outbox import models as _outbox_models  # noqa: F401
-from app.database import Base, get_db
-from app.domains.audit import models as _audit_models  # noqa: F401
-from app.domains.audit import service as audit_service
-from app.domains.audit.constants import AUDITED_EVENTS
-from app.domains.auth import models as _auth_models  # noqa: F401
-from app.domains.auth import service as auth_service
-from app.domains.auth.models import AdminPosition
-from app.domains.auth.security import create_access_token
-from app.domains.iam import models as _iam_models  # noqa: F401
-from app.domains.iam import service as iam_service
-from app.domains.iam.constants import ADMIN_GROUP
-from app.domains.items import models as _items_models  # noqa: F401
-from app.domains.notifications import models as _notifications_models  # noqa: F401
-from app.domains.notifications.constants import NOTIFICATION_TYPES
-from app.domains.users import models as _users_models
-from app.domains.users import service as users_service
-from app.main import app
+# Imported for its side effect: registering every table on Base.metadata before
+# create_all, the same way packages/migrations/env.py does.
+from cbpupsis_database import models as _models  # noqa: F401
+from cbpupsis_database.base import Base
+from cbpupsis_database.session import get_db
+from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.iam import service as iam_service
+from cbpupsis_shared.domains.notifications.constants import NOTIFICATION_TYPES
+from cbpupsis_shared.domains.users import service as users_service
+from main import app
 
 
 @pytest.fixture
@@ -92,15 +82,6 @@ async def grant(db: AsyncSession):
     """
 
     async def _grant(user_id: uuid.UUID, action: str) -> None:
-        if await users_service.get_active_user(db, user_id) is None:
-            db.add(
-                _users_models.User(
-                    id=user_id,
-                    email=f"{user_id}@example.com",
-                    password_hash="test-fixture-only",
-                )
-            )
-            await db.commit()
         permission = await iam_service.create_permission(db, action=action)
         policy = await iam_service.create_policy(
             db, name=f"policy-{action}", permission_actions=[action]
@@ -111,48 +92,6 @@ async def grant(db: AsyncSession):
         assert permission.id is not None
 
     return _grant
-
-
-@pytest.fixture
-async def admin_session_headers(db: AsyncSession):
-    """Return a helper that issues a scoped MFA-completed Admin bearer.
-
-    Endpoint tests outside the authentication domain use this narrow fixture so
-    they exercise the real live-group guard without repeating the MFA ceremony
-    whose acceptance coverage lives in ``test_admin_mfa.py``.
-    """
-
-    async def _headers(
-        user_id: uuid.UUID,
-        *,
-        position: AdminPosition = AdminPosition.registrar,
-    ) -> dict[str, str]:
-        groups = await iam_service.list_groups(db, limit=200)
-        admin_group = next(
-            (group for group in groups.items if group.name == ADMIN_GROUP), None
-        )
-        if admin_group is None:
-            admin_group = await iam_service.create_group(db, name=ADMIN_GROUP)
-        await iam_service.add_user_to_group(db, user_id, admin_group.id)
-        await auth_service.configure_admin_profile(
-            db,
-            user_id=user_id,
-            position=position,
-        )
-        token = create_access_token(
-            user_id,
-            claims={
-                "role": "admin",
-                "mfa": True,
-                "amr": ["pwd", "totp"],
-                "position": position.value,
-                "department_id": None,
-                "college_id": None,
-            },
-        )
-        return {"Authorization": f"Bearer {token}"}
-
-    return _headers
 
 
 @pytest.fixture
@@ -191,21 +130,16 @@ def drain_outbox(db: AsyncSession):
     """
 
     async def _drain() -> int:
-        from app import worker
-        from app.domains.notifications import handlers
+        from cbpupsis_shared import worker
+        from cbpupsis_shared.domains.notifications import handlers
 
-        async def _notify(event, *, message_id):
+        async def _handle(event, *, message_id):
             await handlers.deliver_event_on(db, event, message_id=message_id)
-
-        async def _audit(event, *, message_id):
-            await audit_service.record_event_on(db, event, message_id=message_id)
 
         previous = dict(worker._HANDLERS)
         worker._HANDLERS.clear()
         for name in NOTIFICATION_TYPES:
-            worker.register_handler(name, _notify)
-        for name in AUDITED_EVENTS:
-            worker.register_handler(name, _audit)
+            worker.register_handler(name, _handle)
         try:
             return await worker.process_batch(db)
         finally:
@@ -221,7 +155,7 @@ def sent_emails(monkeypatch) -> list[dict[str, str]]:
 
     Patches ``send_email`` where the auth service *looked it up*, not where it
     is defined: the service imported the name at module load, so patching
-    ``app.core.emails.send_email`` would leave that binding untouched.
+    ``cbpupsis_core.emails.send_email`` would leave that binding untouched.
 
     Tests use this to read the one-time token out of the message body, which is
     the only place it exists — by design, since only a digest is stored.
@@ -237,8 +171,10 @@ def sent_emails(monkeypatch) -> list[dict[str, str]]:
     # flow, and a reset link must not arrive a poll interval late), while
     # everything durable goes through the notifications channel. Patching only
     # one would silently miss half the mail.
-    monkeypatch.setattr("app.domains.auth.service.send_email", _capture)
-    monkeypatch.setattr("app.domains.notifications.channels.send_email", _capture)
+    monkeypatch.setattr("cbpupsis_shared.domains.auth.service.send_email", _capture)
+    monkeypatch.setattr(
+        "cbpupsis_shared.domains.notifications.channels.send_email", _capture
+    )
     return captured
 
 
@@ -259,7 +195,7 @@ async def registered_user(client: AsyncClient, db: AsyncSession) -> dict[str, st
     redeeming the mailed token, so this fixture does not depend on the
     ``sent_emails`` capture and stays usable by tests that never opt into it.
     The mailed-token path is exercised on its own in
-    ``tests/test_auth_email_flows.py``.
+    ``tests/domains/auth/test_email_flows.py``.
 
     Tests that specifically need an *unverified* account register one inline
     rather than using this fixture.

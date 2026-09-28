@@ -31,17 +31,27 @@ git clone https://github.com/pup-cs-projects/cbpupsis-api.git
 cd cbpupsis-api
 git checkout dev
 
-uv sync                            # virtualenv with the app and dev tools
+uv sync                            # virtualenv with every workspace member and dev tools
 uv run pre-commit install          # commit and commit-message hooks
-mkdir -p env && cp env.example env/env.dev
-# fill in JWT_SECRET and the two database URLs (see CONTRIBUTING.md)
+mkdir -p env/student env/faculty env/admin
+for app in student faculty admin; do cp env.example env/$app/env.dev; done
+# fill in JWT_SECRET and the two database URLs, the same in all three (see CONTRIBUTING.md)
 
 uv run pytest -q                   # should pass before you change anything
 make setup                         # build, start, migrate, and seed with Docker
 ```
 
-The API reference is at <http://localhost:8000/scalar> in development only. No `make` on
-Windows? `CONTRIBUTING.md` lists the plain commands.
+Compose runs the three apps as separate services. Each has its own API reference, in
+development only:
+
+| App | URL | API reference | Serves |
+|---|---|---|---|
+| Student | <http://localhost:8001> | <http://localhost:8001/scalar> | auth, users, notifications, items |
+| Faculty | <http://localhost:8002> | <http://localhost:8002/scalar> | auth, users, notifications |
+| Admin | <http://localhost:8003> | <http://localhost:8003/scalar> | auth, users, notifications, iam, audit, and the `/admin` panel |
+
+Sign-in, your own profile, and your own notifications work on every app, with the same
+paths. No `make` on Windows? `CONTRIBUTING.md` lists the plain commands.
 
 ## Common commands
 
@@ -60,19 +70,26 @@ Windows? `CONTRIBUTING.md` lists the plain commands.
 
 ## Layout
 
+A uv workspace: three apps over a shared kernel. The kernel owns every model and every
+migration; an app holds only its own schemas, services, and routers.
+
 ```
-app/
-  api/v1/router.py     mounts every domain router
-  core/                logging, errors, middleware, email, outbox
-  domains/<name>/      models, schemas, repository, service, router, client, exceptions
-  shared/              mixins and pagination
-  worker.py            outbox worker (its own process)
-tests/                 mirrors app/: tests/domains/<name>/, tests/core/
-bruno/                 end-to-end HTTP tests
-migrations/            Alembic revisions
-scripts/               seeds and scheduled jobs
-docker/                Dockerfiles and compose
-docs/                  specifications and the tech book
+packages/                  the shared kernel
+  core/                    settings, logging, errors, events, middleware, email
+  database/                the declarative base, the session, and every model
+  shared/                  cross-role domains (auth, users, iam, audit, notifications),
+                           the outbox and its worker, and the app factory
+  migrations/              the one Alembic history
+apps/
+  api-student/             the student app, and its own domains
+  api-faculty/             the faculty app
+  api-admin/               the admin app and the admin panel
+main.py                    all three apps in one process (what the test suite runs)
+tests/                     tests/domains/<name>/, tests/core/, tests/apps/
+bruno/                     end-to-end HTTP tests
+scripts/                   seeds and scheduled jobs
+docker/                    one Dockerfile per app per stage, and compose
+docs/                      specifications and the tech book
 ```
 
 ## Documentation

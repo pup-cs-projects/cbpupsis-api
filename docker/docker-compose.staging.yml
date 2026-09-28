@@ -1,39 +1,70 @@
 # Staging overlay: docker compose -f docker-compose.yml -f docker-compose.staging.yml
 #
-# Runs the SAME build as production against the local Postgres, so you can verify
-# the shipping artifact rather than the dev image. Differences from dev are all
-# configuration: docs closed, structured logs, no reload, non-root, no bind mount.
+# Runs the SAME builds as production against the local Postgres, so you can
+# verify the shipping artifacts rather than the dev images. Differences from dev
+# are all configuration: docs closed, structured logs, no reload, non-root, no
+# bind mount.
 #
 # The Makefile applies this automatically with `env=staging`.
 
+# No bind mount on any service: the image is the artifact under test, so a host
+# edit must not silently change what is running. `!reset` because a plain `[]`
+# is merged with the base file's list and removes nothing. It is repeated per
+# service because Compose does not apply it through a YAML merge key.
+
+# The overlay every app service gets.
+x-staging-app: &staging-app
+  depends_on:
+    redis:
+      condition: service_healthy
+
+# Rate limit counters in Redis, not in the process.
+#
+# With the default `memory://` each worker keeps its own counters, so a limit of
+# "10/minute" is really 10 x the worker count and resets on every deploy, so the
+# limit silently weakens exactly as you scale out. Staging runs the production
+# image with more than one worker, so it is the first place that divergence is
+# observable, which is why the override lives here and dev is left alone.
+#
+# Set after env_file, so it wins over whatever env/<app>/env.staging carries. Each app
+# shares the one Redis, so a caller's login attempts count across all three.
+x-redis-limits: &redis-limits
+  RATE_LIMIT_STORAGE_URI: redis://redis:6379/0
+
 services:
-  api:
+  migrate:
     build:
-      dockerfile: docker/Dockerfile.staging
-    # No bind mount: the image is the artifact under test, so a host edit must
-    # not silently change what is running.
-    volumes: []
+      dockerfile: docker/admin/Dockerfile.staging
+    volumes: !reset []
+
+  worker:
+    build:
+      dockerfile: docker/admin/Dockerfile.staging
+    volumes: !reset []
+
+  api-student:
+    <<: *staging-app
+    volumes: !reset []
+    build:
+      dockerfile: docker/student/Dockerfile.staging
     environment:
-      # Rate limit counters in Redis, not in the process.
-      #
-      # With the default `memory://` each worker keeps its own counters, so a
-      # limit of "10/minute" is really 10 x the worker count and resets on every
-      # deploy — the limit silently weakens exactly as you scale out. Staging
-      # runs the production image with more than one worker, so it is the first
-      # place that divergence is observable, which is why the override lives
-      # here and dev is left alone.
-      #
-      # Set after env_file, so it wins over whatever env/env.staging carries.
-      # The application already supports this: it is configuration, not code.
-      RATE_LIMIT_STORAGE_URI: redis://redis:6379/0
-    depends_on:
-      redis:
-        condition: service_healthy
-    # Migrations run as an explicit step (`make migrate env=staging`), matching
-    # how a real deploy does it — two containers starting at once would both try.
-    command: >
-      uvicorn app.main:app --host 0.0.0.0 --port 8000
-      --proxy-headers --forwarded-allow-ips "*"
+      <<: *redis-limits
+
+  api-faculty:
+    <<: *staging-app
+    volumes: !reset []
+    build:
+      dockerfile: docker/faculty/Dockerfile.staging
+    environment:
+      <<: *redis-limits
+
+  api-admin:
+    <<: *staging-app
+    volumes: !reset []
+    build:
+      dockerfile: docker/admin/Dockerfile.staging
+    environment:
+      <<: *redis-limits
 
   redis:
     image: redis:7-alpine

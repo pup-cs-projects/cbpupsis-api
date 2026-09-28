@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Last updated** | 2026-09-15 |
+| **Last updated** | 2026-09-28 |
 | **Related** | [API-GUIDE.md](API-GUIDE.md) · [ERROR-CODES.md](ERROR-CODES.md) · [TEST-NOTES.md](TEST-NOTES.md) · [WRITING-ISSUES.md](WRITING-ISSUES.md) · [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 
 The rules every change to `cbpupsis-api` follows. [API-GUIDE.md](API-GUIDE.md) explains the
@@ -33,8 +33,8 @@ against the scaffold as it is until the decision closes.
 
 | Topic | SRS says | Scaffold does today |
 |---|---|---|
-| Compute | AWS Lambda behind API Gateway (SRS 2.4) | Container image built for ECS Fargate; no deploy workflow until decided |
-| Background work | Lambda has no long-running process | Outbox worker runs as its own process (`app/worker.py`) |
+| Compute | AWS Lambda behind API Gateway (SRS 2.4) | One container image per app (student, faculty, admin), each buildable alone; `main.py` can also run all three in one process; no deploy workflow until decided |
+| Background work | Lambda has no long-running process | Outbox worker runs as its own process (`python -m cbpupsis_shared.worker`) |
 | Database | Aurora PostgreSQL, PostgreSQL 16 (SRS 2.4, 5.3) | Config written for Neon (pooled and direct URLs); local compose pinned to `postgres:16` |
 | Authentication | Institutional LDAP or Active Directory with local fallback; Cognito also mentioned (FR1, SRS 2.6) | Self-contained email and password with JWT |
 | Login identifier | Student number `YYYY-NNNNN-XX-N` or employee id (FR1) | Email address |
@@ -43,13 +43,30 @@ against the scaffold as it is until the decision closes.
 
 ## Code
 
-- **Organize by domain, not by file type.** A feature's code and its tests each live in one
-  folder: `app/domains/<name>/` and `tests/domains/<name>/`.
-- **Five layers per domain:** `models`, then `schemas`, then `repository`, then `service`, then
-  `router`. All SQL lives in `repository.py` (returns ORM rows, raises nothing). `service.py`
-  holds every rule and never calls `session.execute`. Routers stay thin.
+- **Three apps over a shared kernel, in one uv workspace.** `apps/api-student`,
+  `apps/api-faculty`, and `apps/api-admin` each build and run as their own service. The kernel
+  under `packages/` is shared: `core` (settings, logging, errors, events, middleware, email),
+  then `database` (the base, the session, every model), then `shared` (the cross-role domains,
+  the outbox, the worker, the app factory), and `migrations` (the one Alembic history). Each
+  kernel package imports only the ones before it.
+- **An app never imports another app, and the kernel never imports an app.** Anything two apps
+  need goes in `packages/shared`. `main.py` at the root is the only module that imports every
+  app, to run all three in one process.
+- **The kernel owns every table.** Models live only in
+  `packages/database/src/cbpupsis_database/models/<domain>.py`, one module per domain, and every
+  migration lives in `packages/migrations`. No app defines a model, and no table is defined
+  twice.
+- **Organize by domain, not by file type.** Apart from its models, a feature's code lives in
+  one folder: `apps/api-<role>/src/cbpupsis_api_<role>/domains/<name>/` when one app owns it,
+  or `packages/shared/src/cbpupsis_shared/domains/<name>/` when every app needs it. Its tests
+  live in `tests/domains/<name>/`. Domain names are unique across the workspace.
+- **Five layers per domain:** `models` (in the kernel), then `schemas`, then `repository`, then
+  `service`, then `router` (in the domain folder). All SQL lives in `repository.py` (returns ORM
+  rows, raises nothing). `service.py` holds every rule and never calls `session.execute`.
+  Routers stay thin.
 - **Domains talk through each other's `service.py`**, via `client.py`, never by importing
-  another domain's models. Cross-domain ids are bare UUIDs without a foreign key.
+  another domain's models or repository. A domain imports only its own models module
+  (`cbpupsis_database.models.<own>`). Cross-domain ids are bare UUIDs without a foreign key.
 - **The layering is enforced** by `tests/core/test_architecture.py`. Add a test there when you
   add a convention.
 - **Every public repository function documents its SQL** in a `SQL::` docstring block.

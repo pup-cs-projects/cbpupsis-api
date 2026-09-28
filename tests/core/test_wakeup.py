@@ -17,10 +17,10 @@ import asyncio
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
-from app.core.outbox import WakeupListener, notify_wakeup
-from app.core.outbox.constants import WAKEUP_CHANNEL
-from app.core.outbox.wakeup import listener_dsn
+from cbpupsis_core.config import settings
+from cbpupsis_shared.outbox import WakeupListener, notify_wakeup
+from cbpupsis_shared.outbox.constants import WAKEUP_CHANNEL
+from cbpupsis_shared.outbox.wakeup import listener_dsn
 
 
 class TestListenerDsn:

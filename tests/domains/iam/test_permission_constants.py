@@ -9,7 +9,7 @@ caller, silently, exactly as the literal did.
 
 That failure is invisible from either side alone: the seed looks complete, the
 constants look complete, and only comparing them reveals the gap. These tests do
-the comparison. ``tests/test_permission_naming.py`` covers the adjacent concern
+the comparison. ``tests/core/test_permission_naming.py`` covers the adjacent concern
 — that the seeded names follow the fixed vocabulary — and its
 ``TestCodeMatchesSeed`` scans source for the string literals that used to be
 there; between them, a permission is checked whether it is written as a literal
@@ -27,11 +27,11 @@ from types import ModuleType
 
 import pytest
 
-from app.domains.auth import constants as auth_constants
-from app.domains.iam import constants as iam_constants
-from app.domains.items import constants as items_constants
-from app.domains.notifications import constants as notifications_constants
-from app.domains.users import constants as users_constants
+from cbpupsis_api_student.domains.items import constants as items_constants
+from cbpupsis_shared.domains.auth import constants as auth_constants
+from cbpupsis_shared.domains.iam import constants as iam_constants
+from cbpupsis_shared.domains.notifications import constants as notifications_constants
+from cbpupsis_shared.domains.users import constants as users_constants
 from scripts.seed_iam import GROUPS, PERMISSIONS
 
 #: Every domain's constants module. A new domain is added here, and its

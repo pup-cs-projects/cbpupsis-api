@@ -22,11 +22,11 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.events import Event
-from app.core.outbox import DeliveryReceipt, publish_transactional
-from app.domains.notifications import handlers, repository
-from app.domains.notifications import service as notifications_service
-from app.domains.notifications.channels import (
+from cbpupsis_core.events import Event
+from cbpupsis_database.models.notifications import Notification
+from cbpupsis_shared.domains.notifications import handlers, repository
+from cbpupsis_shared.domains.notifications import service as notifications_service
+from cbpupsis_shared.domains.notifications.channels import (
     CHANNELS,
     Channel,
     EmailChannel,
@@ -35,18 +35,18 @@ from app.domains.notifications.channels import (
     Recipient,
     RenderedNotification,
 )
-from app.domains.notifications.constants import (
+from cbpupsis_shared.domains.notifications.constants import (
     NOTIFICATION_TYPES,
 )
-from app.domains.notifications.constants import (
+from cbpupsis_shared.domains.notifications.constants import (
     Channel as ChannelName,
 )
-from app.domains.notifications.exceptions import (
+from cbpupsis_shared.domains.notifications.exceptions import (
     MandatoryNotificationError,
     NotificationNotFoundError,
     UnknownNotificationTypeError,
 )
-from app.domains.notifications.models import Notification
+from cbpupsis_shared.outbox import DeliveryReceipt, publish_transactional
 
 
 async def _notify(db: AsyncSession, user_id: uuid.UUID, **kw) -> Notification:
@@ -248,7 +248,9 @@ class TestChannels:
             sent.append({"to": to, "subject": subject})
             return True
 
-        monkeypatch.setattr("app.domains.notifications.channels.send_email", _capture)
+        monkeypatch.setattr(
+            "cbpupsis_shared.domains.notifications.channels.send_email", _capture
+        )
 
         await EmailChannel().deliver(
             db,
@@ -268,7 +270,9 @@ class TestChannels:
         async def _fails(*, to: str, subject: str, body: str) -> bool:
             return False
 
-        monkeypatch.setattr("app.domains.notifications.channels.send_email", _fails)
+        monkeypatch.setattr(
+            "cbpupsis_shared.domains.notifications.channels.send_email", _fails
+        )
 
         with pytest.raises(EmailDeliveryError):
             await EmailChannel().deliver(
@@ -335,7 +339,9 @@ class TestIdempotency:
             calls.append(to)
             return True
 
-        monkeypatch.setattr("app.domains.notifications.channels.send_email", _capture)
+        monkeypatch.setattr(
+            "cbpupsis_shared.domains.notifications.channels.send_email", _capture
+        )
         message_id = uuid.uuid4()
         for _ in range(3):
             await EmailChannel().deliver(
@@ -378,8 +384,8 @@ class TestTheHandlerIsWiredUp:
         self, db: AsyncSession
     ) -> None:
         """End to end: staged durably, claimed, delivered."""
-        from app import worker
-        from app.domains.notifications.subscribers import (
+        from cbpupsis_shared import worker
+        from cbpupsis_shared.domains.notifications.subscribers import (
             register_notification_subscribers,
         )
 
@@ -410,8 +416,8 @@ class TestTheHandlerIsWiredUp:
     def test_every_notified_event_has_a_handler(self) -> None:
         """A type in NOTIFICATION_TYPES that nothing subscribes to reads as
         supported while notifying nobody."""
-        from app import worker
-        from app.domains.notifications.subscribers import (
+        from cbpupsis_shared import worker
+        from cbpupsis_shared.domains.notifications.subscribers import (
             register_notification_subscribers,
         )
 

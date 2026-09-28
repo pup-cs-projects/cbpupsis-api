@@ -5,7 +5,7 @@ meta {
 }
 
 get {
-  url: {{base_url}}/openapi.json
+  url: {{student_url}}/openapi.json
   body: none
   auth: none
 }
@@ -36,7 +36,7 @@ tests {
       try {
         probe = await bru.sendRequest({
           method: "GET",
-          url: `${bru.getEnvVar("base_url")}${path}`,
+          url: `${bru.getEnvVar("student_url")}${path}`,
         });
       } catch (err) {
         if (!err.response) throw err;

@@ -12,9 +12,9 @@ import uuid
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domains.auth import service as auth_service
-from app.domains.iam import service as iam_service
-from app.domains.users import service as users_service
+from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.iam import service as iam_service
+from cbpupsis_shared.domains.users import service as users_service
 from scripts.bootstrap_admin import ADMIN_GROUP, bootstrap_admin
 
 
@@ -90,11 +90,7 @@ class TestBootstrapAdmin:
         assert await bootstrap_admin("twice@example.com") == 0
 
     async def test_the_bootstrapped_admin_can_then_use_the_iam_api(
-        self,
-        db: AsyncSession,
-        client: AsyncClient,
-        monkeypatch,
-        admin_session_headers,
+        self, db: AsyncSession, client: AsyncClient, monkeypatch
     ) -> None:
         """The end-to-end point: after bootstrap, the circularity is broken and
         every further grant happens through the API."""
@@ -123,8 +119,7 @@ class TestBootstrapAdmin:
         )
         assert await bootstrap_admin("root@example.com") == 0
 
-        # A completed administrative session is now authorized.
-        headers = await admin_session_headers(uuid.UUID(registered.json()["id"]))
+        # Same token, now authorized.
         after = await client.post(
             "/api/v1/iam/groups", json={"name": "Editors"}, headers=headers
         )

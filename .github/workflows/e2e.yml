@@ -40,9 +40,12 @@ jobs:
         # env/ is gitignored because it holds real values, so CI composes its
         # own. The database URL matches docker-compose.yml's local Postgres.
         # JWT_SECRET is generated per run and clears the 32-character minimum.
+        # One file per app (env/<app>/env.dev). All three must share the
+        # database URLs and JWT_SECRET, so the admin file is written once and
+        # copied.
         run: |
-          mkdir -p env
-          cat > env/env.dev <<EOF
+          mkdir -p env/admin env/student env/faculty
+          cat > env/admin/env.dev <<EOF
           APP_NAME="CBPUPSIS API (CI)"
           ENVIRONMENT=development
           DEBUG=true
@@ -67,29 +70,41 @@ jobs:
           AWS_REGION=ap-southeast-1
           FRONTEND_BASE_URL=http://localhost:3000
           EOF
+          cp env/admin/env.dev env/student/env.dev
+          cp env/admin/env.dev env/faculty/env.dev
 
       - name: Start the stack
-        # The compose command runs `alembic upgrade head` before serving.
+        # The one-shot migrate service runs `alembic upgrade head` before any of
+        # the three apps starts.
         run: $COMPOSE up -d --build
 
-      - name: Wait for the API
+      - name: Wait for the three apps
+        # student :8001, faculty :8002, admin :8003. Each must answer before the
+        # suite starts, since requests are routed to the app that serves them.
         run: |
-          for i in $(seq 1 90); do
-            if curl -fsS http://localhost:8000/health > /dev/null 2>&1; then
-              echo "API is up after ${i}s"
-              exit 0
+          for port in 8001 8002 8003; do
+            up=""
+            for i in $(seq 1 90); do
+              if curl -fsS "http://localhost:${port}/health" > /dev/null 2>&1; then
+                echo "App on :${port} is up after ${i}s"
+                up=1
+                break
+              fi
+              sleep 1
+            done
+            if [ -z "$up" ]; then
+              echo "::error::App on :${port} did not become healthy within 90s"
+              $COMPOSE logs --no-color
+              exit 1
             fi
-            sleep 1
           done
-          echo "::error::API did not become healthy within 90s"
-          $COMPOSE logs --no-color
-          exit 1
 
       - name: Seed IAM and the test accounts
         # seed_iam first: it creates the groups seed_e2e assigns accounts to.
+        # Run in the admin app's container, the image that carries scripts/.
         run: |
-          $COMPOSE exec -T api python -m scripts.seed_iam
-          $COMPOSE exec -T -e E2E_PASSWORD="$E2E_PASSWORD" api python -m scripts.seed_e2e --quiet
+          $COMPOSE exec -T api-admin python -m scripts.seed_iam
+          $COMPOSE exec -T -e E2E_PASSWORD="$E2E_PASSWORD" api-admin python -m scripts.seed_e2e --quiet
 
       - uses: actions/setup-node@v4
         with:
@@ -100,9 +115,7 @@ jobs:
 
       - name: Run the end-to-end tests
         working-directory: bruno
-        run: |
-          mkdir -p reports
-          npm run test:ci
+        run: npm run test:ci
 
       - name: Dump service logs on failure
         # Every service, not only the API: a delivery the outbox worker never

@@ -1,0 +1,1 @@
+"""Admin-only application domains."""

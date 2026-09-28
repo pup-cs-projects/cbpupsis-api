@@ -23,8 +23,8 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domains.iam import repository as iam_repository
-from app.domains.iam import service as iam_service
+from cbpupsis_shared.domains.iam import repository as iam_repository
+from cbpupsis_shared.domains.iam import service as iam_service
 
 
 class TestIamRepository:

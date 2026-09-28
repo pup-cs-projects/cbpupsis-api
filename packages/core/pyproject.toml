@@ -1,0 +1,24 @@
+[project]
+name = "cbpupsis-core"
+version = "0.1.0"
+description = "Infrastructure with no database: settings, logging, errors, events, middleware, email"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "pydantic[email]",
+    "pydantic-settings",
+    "slowapi>=0.1.10",
+    # The Redis client backing RATE_LIMIT_STORAGE_URI=redis://... Not optional
+    # despite the default being `memory://`: `limits` resolves the storage
+    # backend from the URI at startup and raises ConfigurationError if the
+    # client is absent, so a multi-worker deployment pointed at Redis without
+    # this fails to boot rather than falling back.
+    "redis>=5.0",
+    # AWS SDK, used only for SES email delivery. Imported lazily in
+    # cbpupsis_core/emails/sender.py so nothing loads it unless SES is configured.
+    "boto3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

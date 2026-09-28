@@ -11,15 +11,15 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import UnauthorizedError
-from app.domains.auth import service as auth_service
-from app.domains.auth.security import (
+from cbpupsis_core.exceptions import UnauthorizedError
+from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.auth.security import (
     create_refresh_token,
     decode_token,
     hash_password,
     verify_password,
 )
-from app.domains.users import service as users_service
+from cbpupsis_shared.domains.users import service as users_service
 
 
 class TestPasswordHashing:
@@ -259,7 +259,7 @@ class TestDeactivation:
         which is why the user row is loaded on every request."""
         import uuid
 
-        from app.domains.users import service as users_service
+        from cbpupsis_shared.domains.users import service as users_service
 
         assert (
             await client.get("/api/v1/auth/whoami", headers=auth_headers)
@@ -276,7 +276,7 @@ class TestDeactivation:
     ) -> None:
         import uuid
 
-        from app.domains.users import service as users_service
+        from cbpupsis_shared.domains.users import service as users_service
 
         await users_service.deactivate(db, uuid.UUID(registered_user["id"]))
         response = await client.post(

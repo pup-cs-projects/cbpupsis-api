@@ -5,7 +5,7 @@ meta {
 }
 
 get {
-  url: {{api}}/auth/whoami
+  url: {{student_api}}/auth/whoami
   body: none
   auth: inherit
 }
@@ -34,7 +34,7 @@ tests {
   // same path a client uses, and it does not bake in assumptions about claims.
   const other = await bru.sendRequest({
     method: "GET",
-    url: `${bru.getEnvVar("api")}/auth/whoami`,
+    url: `${bru.getEnvVar("student_api")}/auth/whoami`,
     headers: { Authorization: `Bearer ${bru.getVar("other_access_token")}` },
   });
   bru.setVar("other_user_id", other.data.id);

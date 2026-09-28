@@ -5,7 +5,7 @@ meta {
 }
 
 post {
-  url: {{api}}/auth/refresh
+  url: {{student_api}}/auth/refresh
   body: json
   auth: none
 }
@@ -35,7 +35,7 @@ tests {
   // look like anything but a test four files upstream.
   const relogin = await bru.sendRequest({
     method: "POST",
-    url: `${bru.getEnvVar("api")}/auth/login`,
+    url: `${bru.getEnvVar("student_api")}/auth/login`,
     headers: { "Content-Type": "application/json" },
     data: {
       email: "e2e-owner@example.com",

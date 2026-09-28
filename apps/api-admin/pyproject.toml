@@ -1,0 +1,30 @@
+[project]
+name = "cbpupsis-api-admin"
+version = "0.1.0"
+description = "CBPUPSIS admin API"
+requires-python = ">=3.12"
+dependencies = [
+    "cbpupsis-core",
+    "cbpupsis-database",
+    "cbpupsis-shared",
+    "fastapi",
+    "sqlalchemy[asyncio]",
+    "cryptography",
+    "webauthn",
+    "starlette",
+    "uvicorn[standard]",
+    "sqladmin",
+    # Signs the admin panel's session cookie. A transitive-in-name-only
+    # dependency: Starlette's SessionMiddleware imports it but does not require
+    # it, so without this line the admin login fails at import time.
+    "itsdangerous",
+]
+
+[tool.uv.sources]
+cbpupsis-core = { workspace = true }
+cbpupsis-database = { workspace = true }
+cbpupsis-shared = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

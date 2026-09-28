@@ -25,7 +25,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domains.items import repository as items_repository
+from cbpupsis_api_student.domains.items import repository as items_repository
 
 
 class TestItemsRepository:

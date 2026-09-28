@@ -20,15 +20,15 @@ import asyncio
 
 from sqlalchemy import select
 
-from app.database import AsyncSessionLocal
-from app.domains.iam.constants import ADMIN_GROUP
-from app.domains.iam.models import (
+from cbpupsis_database.models.iam import (
     Group,
     GroupPolicy,
     Permission,
     Policy,
     PolicyPermission,
 )
+from cbpupsis_database.session import AsyncSessionLocal
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
 
 # --------------------------------------------------------------------------- #
 # Declarative seed data. Edit these three structures to change the baseline.
@@ -49,10 +49,10 @@ from app.domains.iam.models import (
 # The actions below stay LITERAL strings even though every one of them also has
 # a constant in its domain's constants.py. That duplication is the point: this
 # file is the independent declaration of what exists in the database, and
-# tests/test_permission_constants.py checks the constants against it. Importing
-# the constants here would make that test compare a value with itself, so a
-# misspelled constant would seed its own typo and the check would pass while
-# every guard using it denied all callers.
+# tests/domains/iam/test_permission_constants.py checks the constants against
+# it. Importing the constants here would make that test compare a value with
+# itself, so a misspelled constant would seed its own typo and the check would
+# pass while every guard using it denied all callers.
 # ADMIN_GROUP is the deliberate exception: bootstrap_admin LOOKS UP the group
 # this file CREATES, so there the two must be the same object, not two copies.
 # --------------------------------------------------------------------------- #
@@ -88,6 +88,13 @@ POLICIES: dict[str, list[str]] = {
     "NotificationAdmin": ["ReadAllNotification", "ManageNotificationDelivery"],
 }
 
+#: Policies reserved for the separate Superadmin role. They are seeded now
+#: because their handlers already exist, but attaching them to the Admin role
+#: would cross the product boundary for issue #91.
+RESERVED_POLICIES: frozenset[str] = frozenset(
+    {"UserAdmin", "IAMAdmin", "AuditReader", "NotificationAdmin"}
+)
+
 #: Groups and the policies attached to each. name -> [policy names]
 GROUPS: dict[str, list[str]] = {
     "Members": ["ItemAuthor"],
@@ -97,16 +104,11 @@ GROUPS: dict[str, list[str]] = {
         "UserModerator",
         "NotificationModerator",
     ],
-    # Keyed by the constant, not the literal: bootstrap_admin looks this
-    # group up by the same name, and a drift would leave it unfindable.
-    ADMIN_GROUP: [
-        "ItemAuthor",
-        "ItemModerator",
-        "UserAdmin",
-        "IAMAdmin",
-        "AuditReader",
-        "NotificationAdmin",
-    ],
+    # Admin is one authenticated role whose position controls data scope. Its
+    # product permissions (Home, Calendar, Courses, Enrollment) will be attached
+    # by those domains. User administration, IAM, and audit reading belong to
+    # the separate Superadmin story and must not leak through this seed.
+    ADMIN_GROUP: [],
 }
 
 

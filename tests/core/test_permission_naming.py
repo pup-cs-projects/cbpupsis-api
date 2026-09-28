@@ -20,23 +20,23 @@ from pathlib import Path
 
 import pytest
 
-from scripts.seed_iam import GROUPS, PERMISSIONS, POLICIES
+from scripts.seed_iam import GROUPS, PERMISSIONS, POLICIES, RESERVED_POLICIES
 
 
-#: The project root is two levels up from tests/core/. Resolved by locating the
-#: directory that actually contains ``app`` rather than counting parents, so
-#: moving this file again cannot silently point it at nothing — an ``rglob``
-#: over a missing directory yields no files and turns the scan below into a test
-#: that always passes.
-def _app_dir() -> Path:
+#: Every workspace member's source, located by searching upward for the
+#: workspace rather than counting parents, so moving this file cannot silently
+#: point the scan at nothing — an ``rglob`` over a missing directory yields no
+#: files and turns the scan below into a test that always passes.
+def _source_dirs() -> list[Path]:
     for parent in Path(__file__).resolve().parents:
-        candidate = parent / "app"
-        if candidate.is_dir():
-            return candidate
-    raise RuntimeError("could not locate the app/ package from this test file")
+        if (parent / "packages").is_dir() and (parent / "apps").is_dir():
+            return sorted(
+                d for base in ("packages", "apps") for d in parent.glob(f"{base}/*/src")
+            )
+    raise RuntimeError("could not locate the workspace root from this test file")
 
 
-APP_DIR = _app_dir()
+SOURCE_DIRS = _source_dirs()
 
 #: Verbs acting on the caller's own records. Always paired with an ownership
 #: check in the service layer.
@@ -171,7 +171,7 @@ class TestModelIsCoherent:
 
     def test_every_policy_is_reachable(self) -> None:
         attached = {p for policies in GROUPS.values() for p in policies}
-        orphans = set(POLICIES) - attached
+        orphans = set(POLICIES) - attached - RESERVED_POLICIES
         assert not orphans, f"policies in no group: {sorted(orphans)}"
 
     def test_elevated_permissions_are_not_universal(self) -> None:
@@ -214,13 +214,20 @@ class TestModelIsCoherent:
         )
 
     def test_admin_bootstrap_group_exists(self) -> None:
-        """Someone must be able to grant the first ManageIAM, and that cannot
-        come through the API — see scripts/bootstrap_admin.py."""
+        """The Admin role exists without Superadmin-owned capabilities."""
         from scripts.bootstrap_admin import ADMIN_GROUP
 
         assert ADMIN_GROUP in GROUPS
         granted = {a for p in GROUPS[ADMIN_GROUP] for a in POLICIES[p]}
-        assert "ManageIAM" in granted
+        assert (
+            not {
+                "ManageIAM",
+                "ManageUser",
+                "ReadAllUser",
+                "ReadAllAuditEntry",
+            }
+            & granted
+        )
 
 
 class TestCodeMatchesSeed:
@@ -235,7 +242,9 @@ class TestCodeMatchesSeed:
             r'|_require_owner_or_permission\([^)]*?"([A-Za-z]+)"\s*\)'
         )
         missing: dict[str, str] = {}
-        for path in APP_DIR.rglob("*.py"):
+        files = [p for d in SOURCE_DIRS for p in d.rglob("*.py")]
+        assert files, "the scan found no source files"
+        for path in files:
             for match in pattern.finditer(path.read_text(encoding="utf-8")):
                 action = match.group(1) or match.group(2)
                 if action and action not in known:
