@@ -20,6 +20,7 @@ from cbpupsis_api_admin.domains.admin_auth.exceptions import (
 from cbpupsis_api_admin.domains.admin_auth.schemas import (
     AdminLoginChallenge,
     AdminTokenPair,
+    SuperadminTokenPair,
     TotpEnrollmentRead,
 )
 from cbpupsis_api_admin.domains.admin_auth.security import (
@@ -42,6 +43,7 @@ from cbpupsis_database.models.admin_auth import (
     MfaCredential,
     MfaType,
 )
+from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.auth import client as auth_client
 from cbpupsis_shared.domains.auth import service as auth_service
 from cbpupsis_shared.domains.auth.exceptions import (
@@ -52,7 +54,7 @@ from cbpupsis_shared.domains.auth.exceptions import (
 )
 from cbpupsis_shared.domains.auth.schemas import RefreshRequest
 from cbpupsis_shared.domains.iam import service as iam_service
-from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
 from cbpupsis_shared.domains.users import service as users_service
 from cbpupsis_shared.outbox import publish_transactional
 
@@ -70,6 +72,8 @@ async def login_admin(
         raise InvalidCredentialsError
 
     is_admin = await iam_service.is_user_in_group(db, user.id, ADMIN_GROUP)
+    if await iam_service.is_user_in_group(db, user.id, SUPERADMIN_GROUP):
+        raise InvalidCredentialsError
     if is_admin:
         await _require_not_locked(db, user.id)
 
@@ -194,6 +198,24 @@ async def verify_mfa(
     if claims.get("enrollment_required") is True:
         raise MfaEnrollmentRequiredError
 
+    valid = await _verify_factor(db, user_id, claims, code, assertion)
+    if not valid:
+        await _record_failure(db, user_id, AuthFailureStep.mfa)
+        raise InvalidMfaError
+
+    repository.update_admin_profile(db, profile, active_mfa_challenge_jti=None)
+    await _clear_failure_state(db, user_id)
+    return await _issue_admin_pair(db, user_id, profile)
+
+
+async def _verify_factor(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    claims: dict[str, object],
+    code: str | None,
+    assertion: dict[str, object] | None,
+) -> bool:
+    """Verify and consume one enrolled factor for either privileged role."""
     valid = False
     if code is not None:
         credential = await repository.get_mfa_credential(
@@ -249,13 +271,271 @@ async def verify_mfa(
                     db, credential, sign_count=new_count, last_used_at=datetime.now(UTC)
                 )
 
-    if not valid:
+    return valid
+
+
+async def login_superadmin(
+    db: AsyncSession, *, email: str, password: str
+) -> AdminLoginChallenge:
+    user = await users_service.get_by_email(db, email.lower())
+    if user is None:
+        raise InvalidCredentialsError
+    is_superadmin = await iam_service.is_user_in_group(db, user.id, SUPERADMIN_GROUP)
+    if is_superadmin:
+        await _require_not_locked(db, user.id)
+    password_valid = auth_client.check_password(password, user.password_hash)
+    if not password_valid or not user.is_active or user.deleted_at is not None:
+        if is_superadmin:
+            await _record_failure(db, user.id, AuthFailureStep.credentials)
+        raise InvalidCredentialsError
+    if not is_superadmin or await iam_service.is_user_in_group(
+        db, user.id, ADMIN_GROUP
+    ):
+        raise InvalidCredentialsError
+    if user.email_verified_at is None:
+        raise UnverifiedEmailError("Verify your email address to continue")
+
+    credentials = await _factor_credentials(db, user.id)
+    enrollment_required = not any(c.is_enrolled for c in credentials.values())
+    token, webauthn_challenge, jti = create_challenge_token(
+        user.id, enrollment_required=enrollment_required, role="superadmin"
+    )
+    existing = await repository.get_superadmin_challenge(db, user.id)
+    repository.stage_superadmin_challenge(db, user.id, jti, existing)
+    audit_client.stage(
+        db,
+        action="superadmin.login_challenge",
+        actor_id=user.id,
+        target_type="session",
+        target_id=str(user.id),
+        prior_state={"mfa_pending": False},
+        new_state={"mfa_pending": True},
+    )
+    await db.commit()
+    methods = [
+        name.value for name, credential in credentials.items() if credential.is_enrolled
+    ]
+    webauthn = credentials.get(MfaType.webauthn)
+    return AdminLoginChallenge(
+        challenge_token=token,
+        enrollment_required=enrollment_required,
+        methods=methods,
+        webauthn_challenge=webauthn_challenge,
+        webauthn_rp_id=settings.webauthn_rp_id,
+        webauthn_credential_id=(
+            decrypt_secret(webauthn.credential_id)
+            if webauthn is not None
+            and webauthn.is_enrolled
+            and webauthn.credential_id is not None
+            else None
+        ),
+    )
+
+
+async def _superadmin_challenge_context(
+    db: AsyncSession, token: str
+) -> tuple[dict[str, object], uuid.UUID]:
+    claims = decode_challenge_token(token, role="superadmin")
+    user_id = uuid.UUID(str(claims["sub"]))
+    await _require_not_locked(db, user_id)
+    if (
+        not await iam_service.is_user_in_group(db, user_id, SUPERADMIN_GROUP)
+        or await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP)
+        or await users_service.get_active_user(db, user_id) is None
+    ):
+        raise InvalidAuthTokenError
+    active = await repository.get_superadmin_challenge(db, user_id)
+    if active is None or active.active_jti != claims.get("jti"):
+        raise InvalidAuthTokenError
+    return claims, user_id
+
+
+async def begin_superadmin_totp_enrollment(
+    db: AsyncSession, *, challenge_token: str
+) -> TotpEnrollmentRead:
+    claims, user_id = await _superadmin_challenge_context(db, challenge_token)
+    if claims.get("enrollment_required") is not True:
+        raise MfaEnrollmentRequiredError
+    credential = await repository.get_mfa_credential(
+        db, user_id=user_id, mfa_type=MfaType.totp
+    )
+    secret = generate_totp_secret()
+    fields = {
+        "totp_secret": encrypt_secret(secret),
+        "is_enrolled": False,
+        "last_used_at": None,
+    }
+    if credential is None:
+        repository.add_mfa_credential(
+            db, user_id=user_id, mfa_type=MfaType.totp, **fields
+        )
+    else:
+        repository.update_mfa_credential(db, credential, **fields)
+    user = await users_service.get_active_user(db, user_id)
+    audit_client.stage(
+        db,
+        action="superadmin.mfa_enrollment_started",
+        actor_id=user_id,
+        target_type="factor",
+        target_id=str(user_id),
+        prior_state={"enrolled": False},
+        new_state={"enrolled": False},
+    )
+    await db.commit()
+    return TotpEnrollmentRead(
+        secret=secret, provisioning_uri=totp_provisioning_uri(secret, user.email)
+    )
+
+
+async def confirm_superadmin_totp_enrollment(
+    db: AsyncSession,
+    *,
+    challenge_token: str,
+    code: str,
+    device_info: str,
+    ip_address: str,
+) -> SuperadminTokenPair:
+    claims, user_id = await _superadmin_challenge_context(db, challenge_token)
+    if claims.get("enrollment_required") is not True:
+        raise MfaEnrollmentRequiredError
+    credential = await repository.get_mfa_credential(
+        db, user_id=user_id, mfa_type=MfaType.totp
+    )
+    if credential is None or credential.is_enrolled or credential.totp_secret is None:
+        raise MfaEnrollmentRequiredError
+    counter = matching_totp_counter(decrypt_secret(credential.totp_secret), code)
+    if counter is None:
         await _record_failure(db, user_id, AuthFailureStep.mfa)
         raise InvalidMfaError
-
-    repository.update_admin_profile(db, profile, active_mfa_challenge_jti=None)
+    repository.update_mfa_credential(
+        db,
+        credential,
+        is_enrolled=True,
+        last_used_at=datetime.fromtimestamp(counter * 30, UTC),
+    )
+    await repository.clear_superadmin_challenge(db, user_id)
     await _clear_failure_state(db, user_id)
-    return await _issue_admin_pair(db, user_id, profile)
+    audit_client.stage(
+        db,
+        action="superadmin.mfa_enrollment_completed",
+        actor_id=user_id,
+        target_type="session",
+        target_id=str(user_id),
+        prior_state={"authenticated": False},
+        new_state={"authenticated": True},
+    )
+    return await _issue_superadmin_pair(db, user_id, device_info, ip_address)
+
+
+async def verify_superadmin_mfa(
+    db: AsyncSession,
+    *,
+    challenge_token: str,
+    code: str | None,
+    assertion: dict[str, object] | None,
+    device_info: str,
+    ip_address: str,
+) -> SuperadminTokenPair:
+    claims, user_id = await _superadmin_challenge_context(db, challenge_token)
+    if claims.get("enrollment_required") is True:
+        raise MfaEnrollmentRequiredError
+    if not await _verify_factor(db, user_id, claims, code, assertion):
+        await _record_failure(db, user_id, AuthFailureStep.mfa)
+        raise InvalidMfaError
+    await repository.clear_superadmin_challenge(db, user_id)
+    await _clear_failure_state(db, user_id)
+    audit_client.stage(
+        db,
+        action="superadmin.login_completed",
+        actor_id=user_id,
+        target_type="session",
+        target_id=str(user_id),
+        prior_state={"authenticated": False},
+        new_state={"authenticated": True},
+    )
+    return await _issue_superadmin_pair(db, user_id, device_info, ip_address)
+
+
+async def _issue_superadmin_pair(
+    db: AsyncSession, user_id: uuid.UUID, device_info: str, ip_address: str
+) -> SuperadminTokenPair:
+    session_id = uuid.uuid4()
+    await auth_service.stage_superadmin_session(
+        db,
+        session_id=session_id,
+        user_id=user_id,
+        device_info=device_info[:1024],
+        ip_address=ip_address,
+    )
+    pair = await auth_service.issue_session(
+        db,
+        user_id,
+        claims={"role": "superadmin", "mfa": True, "sid": str(session_id)},
+    )
+    return SuperadminTokenPair(
+        access_token=pair.access_token, refresh_token=pair.refresh_token
+    )
+
+
+async def refresh_superadmin(
+    db: AsyncSession, request: RefreshRequest
+) -> SuperadminTokenPair:
+    claims = auth_client.decode_refresh_session(request.refresh_token)
+    if claims.get("role") != "superadmin" or claims.get("mfa") is not True:
+        raise InvalidAuthTokenError
+    user_id = uuid.UUID(str(claims["sub"]))
+    session_id = uuid.UUID(str(claims["sid"]))
+    if not await iam_service.is_user_in_group(
+        db, user_id, SUPERADMIN_GROUP
+    ) or await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP):
+        raise InvalidAuthTokenError
+    await auth_service.touch_superadmin_session(
+        db, session_id=session_id, user_id=user_id
+    )
+    pair = await auth_service.refresh(
+        db,
+        request.refresh_token,
+        session_claims={"role": "superadmin", "mfa": True, "sid": str(session_id)},
+        commit=False,
+    )
+    audit_client.stage(
+        db,
+        action="superadmin.session_refreshed",
+        actor_id=user_id,
+        target_type="session",
+        target_id=str(session_id),
+    )
+    await db.commit()
+    return SuperadminTokenPair(
+        access_token=pair.access_token, refresh_token=pair.refresh_token
+    )
+
+
+async def logout_superadmin(db: AsyncSession, request: RefreshRequest) -> None:
+    claims = auth_client.decode_refresh_session(request.refresh_token)
+    if claims.get("role") != "superadmin":
+        raise InvalidAuthTokenError
+    user_id = uuid.UUID(str(claims["sub"]))
+    session_id = uuid.UUID(str(claims["sid"]))
+    await auth_service.touch_superadmin_session(
+        db, session_id=session_id, user_id=user_id
+    )
+    await auth_service.end_superadmin_session(
+        db, session_id=session_id, user_id=user_id, commit=False
+    )
+    await auth_service.logout(
+        db, request.refresh_token, allow_superadmin=True, commit=False
+    )
+    audit_client.stage(
+        db,
+        action="superadmin.session_ended",
+        actor_id=user_id,
+        target_type="session",
+        target_id=str(session_id),
+        prior_state={"active": True},
+        new_state={"active": False},
+    )
+    await db.commit()
 
 
 async def refresh_admin(db: AsyncSession, request: RefreshRequest) -> AdminTokenPair:
@@ -264,7 +544,9 @@ async def refresh_admin(db: AsyncSession, request: RefreshRequest) -> AdminToken
     if refresh_claims.get("role") != "admin" or refresh_claims.get("mfa") is not True:
         raise InvalidAuthTokenError
     user_id = uuid.UUID(str(refresh_claims["sub"]))
-    if not await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP):
+    if not await iam_service.is_user_in_group(
+        db, user_id, ADMIN_GROUP
+    ) or await iam_service.is_user_in_group(db, user_id, SUPERADMIN_GROUP):
         raise InvalidAuthTokenError
     profile = await repository.get_admin_profile(db, user_id)
     if profile is None or not profile.is_active:

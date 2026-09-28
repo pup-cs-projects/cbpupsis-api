@@ -104,6 +104,12 @@ async def list_direct_permission_actions_for_user(
     return list(result.scalars().all())
 
 
+async def list_all_permission_actions(db: AsyncSession) -> list[str]:
+    """List all registered actions. SQL:: SELECT action FROM permissions."""
+    result = await db.execute(select(Permission.action))
+    return list(result.scalars().all())
+
+
 # --------------------------------------------------------------------------- #
 # Permissions, policies, groups
 # --------------------------------------------------------------------------- #

@@ -29,7 +29,7 @@ from cbpupsis_database.models.iam import Group
 from cbpupsis_database.models.users import User
 from cbpupsis_database.session import AsyncSessionLocal
 from cbpupsis_shared.domains.iam import service as iam_service
-from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
 
 #: Re-exported so existing callers (and tests) can keep importing it from here.
 #: The value itself lives in the IAM domain because seed_iam creates the group
@@ -56,6 +56,10 @@ async def bootstrap_admin(
                 "Register the account first: POST /api/v1/auth/register",
                 file=sys.stderr,
             )
+            return 1
+
+        if await iam_service.is_user_in_group(session, user.id, SUPERADMIN_GROUP):
+            print("Superadmin accounts cannot also be Admins.", file=sys.stderr)
             return 1
 
         group = await session.scalar(select(Group).where(Group.name == ADMIN_GROUP))

@@ -51,8 +51,9 @@ be done over HTTP:
 
 - **Email verification.** Tokens go only to the console email backend, and
   `/login` refuses an unverified account with `403 email_not_verified`.
-- **`ManageIAM`.** The endpoints that would grant it are themselves gated behind
-  it, so the first admin has to come from outside the API.
+- **Superadmin membership and enrolled MFA.** IAM endpoints require a completed
+  Superadmin session, so the test-only account and encrypted factor are seeded
+  outside the HTTP layer.
 
 The suite *does* register a throwaway account each run — see `01-auth-journey` —
 because registration and the unverified-login rejection can only be observed on
@@ -120,7 +121,11 @@ individual request asserts only its own business outcome.
 |---|---|---|
 | `owner` | `e2e-owner@example.com` | ordinary member; creates and owns records |
 | `other` | `e2e-other@example.com` | second member; proves cross-user access is refused |
-| `admin` | `e2e-admin@example.com` | holds `ManageIAM`; drives the IAM folder |
+| `admin` | `e2e-admin@example.com` | test-only Superadmin with a public fixture TOTP seed; drives the IAM folder |
+
+The fixed factor seed in `scripts/seed_e2e.py` and `00-smoke/verify-admin-mfa.bru`
+is for disposable E2E databases only. Never provision this account or seed in a
+shared or production database.
 
 **Test data is unique per run.** Registrations, permissions, policies, and groups
 are suffixed with a timestamp, so the suite is re-runnable against a database

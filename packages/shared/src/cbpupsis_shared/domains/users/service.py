@@ -20,8 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cbpupsis_core.events import Event
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.models.users import User
+from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.auth import client as auth_client
 from cbpupsis_shared.domains.iam import service as iam_service
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
 from cbpupsis_shared.domains.users import repository
 from cbpupsis_shared.domains.users.constants import (
     EDITABLE_PROFILE_FIELDS,
@@ -35,6 +37,8 @@ from cbpupsis_shared.domains.users.exceptions import (
     IncorrectPasswordError,
     ProfileAccessDeniedError,
     ProfileIncompleteError,
+    ProtectedRoleTargetError,
+    UserAlreadyInactiveError,
     UserNotFoundError,
 )
 from cbpupsis_shared.outbox import publish_transactional
@@ -163,7 +167,17 @@ async def set_password_hash(
     return user
 
 
-async def deactivate(db: AsyncSession, user_id: uuid.UUID) -> User:
+async def stage_password_hash(
+    db: AsyncSession, user_id: uuid.UUID, password_hash: str
+) -> None:
+    """Stage a password change in an authentication-owned transaction."""
+    user = await get_by_id(db, user_id)
+    repository.update_user(db, user, password_hash=password_hash)
+
+
+async def deactivate(
+    db: AsyncSession, user_id: uuid.UUID, *, commit: bool = True
+) -> User:
     """Suspend an account without deleting it.
 
     Reversible by design — nothing is scrubbed, so reactivation restores the
@@ -173,8 +187,9 @@ async def deactivate(db: AsyncSession, user_id: uuid.UUID) -> User:
     """
     user = await get_by_id(db, user_id)
     repository.update_user(db, user, is_active=False)
-    await db.commit()
-    await db.refresh(user)
+    if commit:
+        await db.commit()
+        await db.refresh(user)
     return user
 
 
@@ -188,6 +203,21 @@ async def deactivate_own_account(db: AsyncSession, user_id: uuid.UUID) -> User:
     belt and braces. It also means reactivating does not silently restore
     sessions that were open weeks earlier.
     """
+    if db.info.get("superadmin_actor") == user_id:
+        user = await deactivate(db, user_id, commit=False)
+        await auth_client.stage_revoke_all_sessions(db, user_id)
+        await auth_client.stage_end_all_superadmin_sessions(db, user_id)
+        audit_client.stage(
+            db,
+            action="superadmin.self_deactivated",
+            actor_id=user_id,
+            target_type="user",
+            target_id=str(user_id),
+            prior_state={"is_active": True},
+            new_state={"is_active": False},
+        )
+        await db.commit()
+        return user
     user = await deactivate(db, user_id)
     await auth_client.revoke_all_sessions(db, user_id)
     return user
@@ -210,6 +240,21 @@ async def delete_own_account(
     if not auth_client.check_password(password, user.password_hash):
         raise IncorrectPasswordError
 
+    if db.info.get("superadmin_actor") == user_id:
+        await soft_delete(db, user_id, commit=False)
+        await auth_client.stage_revoke_all_sessions(db, user_id)
+        await auth_client.stage_end_all_superadmin_sessions(db, user_id)
+        audit_client.stage(
+            db,
+            action="superadmin.self_deleted",
+            actor_id=user_id,
+            target_type="user",
+            target_id=str(user_id),
+            prior_state={"deleted": False},
+            new_state={"deleted": True},
+        )
+        await db.commit()
+        return
     await soft_delete(db, user_id)
     await auth_client.revoke_all_sessions(db, user_id)
 
@@ -230,7 +275,9 @@ async def reactivate(db: AsyncSession, user_id: uuid.UUID) -> User:
     return user
 
 
-async def soft_delete(db: AsyncSession, user_id: uuid.UUID) -> User:
+async def soft_delete(
+    db: AsyncSession, user_id: uuid.UUID, *, commit: bool = True
+) -> User:
     """Soft-delete an account and scrub its personal data.
 
     **What survives and why.** The row itself stays: items, audit entries, and
@@ -274,8 +321,9 @@ async def soft_delete(db: AsyncSession, user_id: uuid.UUID) -> User:
         deleted_at=now,
     )
 
-    await db.commit()
-    await db.refresh(user)
+    if commit:
+        await db.commit()
+        await db.refresh(user)
     return user
 
 
@@ -351,24 +399,62 @@ async def deactivate_as_admin(
         raise CannotAdministerSelfError
 
     user = await get_by_id(db, user_id)
+    if await iam_service.is_user_in_group(
+        db, user_id, ADMIN_GROUP
+    ) or await iam_service.is_user_in_group(db, user_id, SUPERADMIN_GROUP):
+        raise ProtectedRoleTargetError
     prior_state = {"is_active": user.is_active}
     repository.update_user(db, user, is_active=False)
     await auth_client.stage_revoke_all_sessions(db, user_id)
-    publish_transactional(
-        db,
-        Event(
-            name="user.deactivated",
-            payload={
-                "user_id": str(user_id),
-                "actor_id": str(actor_id),
-                "prior_state": prior_state,
-                "new_state": {"is_active": False},
-            },
-        ),
-    )
+    if db.info.get("superadmin_actor") == actor_id:
+        audit_client.stage(
+            db,
+            action="user.deactivated",
+            actor_id=actor_id,
+            target_type="user",
+            target_id=str(user_id),
+            prior_state=prior_state,
+            new_state={"is_active": False},
+            payload={"result": "success"},
+        )
+    else:
+        publish_transactional(
+            db,
+            Event(
+                name="user.deactivated",
+                payload={
+                    "user_id": str(user_id),
+                    "actor_id": str(actor_id),
+                    "prior_state": prior_state,
+                    "new_state": {"is_active": False},
+                },
+            ),
+        )
     await db.commit()
     await db.refresh(user)
     return user
+
+
+async def stage_admin_deactivation_override(
+    db: AsyncSession, *, actor_id: uuid.UUID, user_id: uuid.UUID
+) -> tuple[dict[str, bool], dict[str, bool]]:
+    """Stage an Admin-only deactivation; the caller owns audit and commit."""
+    if (
+        actor_id == user_id
+        or not await iam_service.is_user_in_group(db, actor_id, SUPERADMIN_GROUP)
+        or await iam_service.is_user_in_group(db, actor_id, ADMIN_GROUP)
+        or not await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP)
+        or await iam_service.is_user_in_group(db, user_id, SUPERADMIN_GROUP)
+    ):
+        raise ProtectedRoleTargetError
+    user = await repository.get_user_for_update(db, user_id)
+    if user is None:
+        raise UserNotFoundError(user_id)
+    if not user.is_active:
+        raise UserAlreadyInactiveError
+    repository.update_user(db, user, is_active=False)
+    await auth_client.stage_revoke_all_sessions(db, user_id)
+    return {"is_active": True}, {"is_active": False}
 
 
 async def reactivate_as_admin(
@@ -388,18 +474,30 @@ async def reactivate_as_admin(
         raise AccountDeletedError
     prior_state = {"is_active": user.is_active}
     repository.update_user(db, user, is_active=True)
-    publish_transactional(
-        db,
-        Event(
-            name="user.reactivated",
-            payload={
-                "user_id": str(user_id),
-                "actor_id": str(actor_id),
-                "prior_state": prior_state,
-                "new_state": {"is_active": True},
-            },
-        ),
-    )
+    if db.info.get("superadmin_actor") == actor_id:
+        audit_client.stage(
+            db,
+            action="user.reactivated",
+            actor_id=actor_id,
+            target_type="user",
+            target_id=str(user_id),
+            prior_state=prior_state,
+            new_state={"is_active": True},
+            payload={"result": "success"},
+        )
+    else:
+        publish_transactional(
+            db,
+            Event(
+                name="user.reactivated",
+                payload={
+                    "user_id": str(user_id),
+                    "actor_id": str(actor_id),
+                    "prior_state": prior_state,
+                    "new_state": {"is_active": True},
+                },
+            ),
+        )
     await db.commit()
     await db.refresh(user)
     return user

@@ -323,12 +323,11 @@ class TestAdminPanelIsDevelopmentOnly:
         with app_for(environment) as built, TestClient(built) as client:
             assert client.get(route).status_code == 404
 
-    def test_admin_is_mounted_in_development(self) -> None:
-        """The gate must not be so tight that local development loses the
-        panel entirely."""
+    def test_admin_is_not_mounted_in_development(self) -> None:
+        """Direct SQLAdmin writes must not bypass Superadmin controls."""
         with app_for("development") as built:
             paths = [getattr(route, "path", "") for route in built.routes]
-            assert any(path.startswith("/admin") for path in paths)
+            assert not any(path.startswith("/admin") for path in paths)
 
 
 class TestAdminDoesNotExposeCredentials:

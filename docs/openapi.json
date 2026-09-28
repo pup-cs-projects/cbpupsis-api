@@ -1,0 +1,4754 @@
+{
+  "components": {
+    "schemas": {
+      "AddUserToGroupRequest": {
+        "description": "Body for adding a user to a group.",
+        "properties": {
+          "user_id": {
+            "description": "Target user's UUID.",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id"
+        ],
+        "title": "AddUserToGroupRequest",
+        "type": "object"
+      },
+      "AdminLoginChallenge": {
+        "properties": {
+          "challenge_token": {
+            "title": "Challenge Token",
+            "type": "string"
+          },
+          "enrollment_required": {
+            "title": "Enrollment Required",
+            "type": "boolean"
+          },
+          "methods": {
+            "items": {
+              "enum": [
+                "totp",
+                "webauthn"
+              ],
+              "type": "string"
+            },
+            "title": "Methods",
+            "type": "array"
+          },
+          "mfa_required": {
+            "const": true,
+            "default": true,
+            "title": "Mfa Required",
+            "type": "boolean"
+          },
+          "webauthn_challenge": {
+            "title": "Webauthn Challenge",
+            "type": "string"
+          },
+          "webauthn_credential_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webauthn Credential Id"
+          },
+          "webauthn_rp_id": {
+            "title": "Webauthn Rp Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_token",
+          "enrollment_required",
+          "methods",
+          "webauthn_challenge",
+          "webauthn_rp_id"
+        ],
+        "title": "AdminLoginChallenge",
+        "type": "object"
+      },
+      "AdminLoginRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "AdminLoginRequest",
+        "type": "object"
+      },
+      "AdminPosition": {
+        "description": "The data-reach position carried by the single Admin role.",
+        "enum": [
+          "chairperson",
+          "dean",
+          "registrar"
+        ],
+        "title": "AdminPosition",
+        "type": "string"
+      },
+      "AdminSessionRead": {
+        "properties": {
+          "college_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "College Id"
+          },
+          "department_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department Id"
+          },
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "position": {
+            "$ref": "#/components/schemas/AdminPosition"
+          },
+          "role": {
+            "const": "admin",
+            "default": "admin",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "position"
+        ],
+        "title": "AdminSessionRead",
+        "type": "object"
+      },
+      "AdminTokenPair": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "college_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "College Id"
+          },
+          "department_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department Id"
+          },
+          "position": {
+            "$ref": "#/components/schemas/AdminPosition"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "role": {
+            "const": "admin",
+            "default": "admin",
+            "title": "Role",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token",
+          "position"
+        ],
+        "title": "AdminTokenPair",
+        "type": "object"
+      },
+      "AttachPolicyRequest": {
+        "description": "Body for attaching a policy to a group.",
+        "properties": {
+          "policy_id": {
+            "title": "Policy Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "policy_id"
+        ],
+        "title": "AttachPolicyRequest",
+        "type": "object"
+      },
+      "AuditEntryRead": {
+        "description": "One recorded administrative change, as returned by the API.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actor_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "new_state": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New State"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "prior_state": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prior State"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
+          "target_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Type"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "actor_id",
+          "target_type",
+          "target_id",
+          "payload",
+          "prior_state",
+          "new_state",
+          "occurred_at"
+        ],
+        "title": "AuditEntryRead",
+        "type": "object"
+      },
+      "ChangePasswordRequest": {
+        "additionalProperties": false,
+        "description": "Payload for an authenticated password change.\n\nThe current password is required even though the caller holds a valid access\ntoken: without it, a stolen token could be used to lock the real owner out\nby changing the credential.",
+        "properties": {
+          "current_password": {
+            "maxLength": 128,
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 128,
+            "minLength": 12,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "ChangePasswordRequest",
+        "type": "object"
+      },
+      "Channel": {
+        "description": "Where a notification can be delivered.\n\nA ``StrEnum`` so it compares equal to the strings stored in preference rows\nand delivery receipts, without those columns needing a database enum that\nwould make adding a channel a migration.",
+        "enum": [
+          "email",
+          "in_app"
+        ],
+        "title": "Channel",
+        "type": "string"
+      },
+      "CurrentUserRead": {
+        "description": "The authenticated principal, as returned by /whoami.",
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email"
+        ],
+        "title": "CurrentUserRead",
+        "type": "object"
+      },
+      "DeleteAccountRequest": {
+        "additionalProperties": false,
+        "description": "Payload for deleting your own account.\n\nThe password is re-checked even though the caller is already authenticated:\nit proves a live human holds the credential, so a stolen access token alone\ncannot destroy the account.",
+        "properties": {
+          "password": {
+            "maxLength": 128,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "DeleteAccountRequest",
+        "type": "object"
+      },
+      "EffectivePermissionsRead": {
+        "description": "Every action a user is effectively granted, and how they got it.\n\nThe two sources are reported separately rather than pre-merged because the\nquestion an admin screen actually asks is not \"what can they do?\" but \"why\ncan they do it, and what do I change to stop it?\" \u2014 and those have different\nanswers: a group grant is revoked by changing membership, a direct grant by\ndetaching the policy. ``effective`` is the union the guards actually check.",
+        "properties": {
+          "effective": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Effective",
+            "type": "array"
+          },
+          "from_direct": {
+            "items": {
+              "type": "string"
+            },
+            "title": "From Direct",
+            "type": "array"
+          },
+          "from_groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "From Groups",
+            "type": "array"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "effective",
+          "from_groups",
+          "from_direct"
+        ],
+        "title": "EffectivePermissionsRead",
+        "type": "object"
+      },
+      "ForgotPasswordRequest": {
+        "additionalProperties": false,
+        "description": "Payload for requesting a password-reset email.",
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ForgotPasswordRequest",
+        "type": "object"
+      },
+      "GroupCreate": {
+        "description": "Payload for creating a group.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "examples": [
+              "Teachers"
+            ],
+            "maxLength": 100,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "GroupCreate",
+        "type": "object"
+      },
+      "GroupRead": {
+        "description": "Group as returned by the API.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "examples": [
+              "Teachers"
+            ],
+            "maxLength": 100,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "id"
+        ],
+        "title": "GroupRead",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ItemCreate": {
+        "additionalProperties": false,
+        "description": "Payload for creating an item.\n\nThe owner is taken from the authentication context, never the body \u2014 a\nclient must not be able to create records on someone else's behalf.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "examples": [
+              "Widget"
+            ],
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,10}|(?=[\\d.]{1,13}0*$)\\d{0,10}\\.\\d{0,2}0*$)",
+                "type": "string"
+              }
+            ],
+            "examples": [
+              "19.99"
+            ],
+            "title": "Price"
+          }
+        },
+        "required": [
+          "name",
+          "price"
+        ],
+        "title": "ItemCreate",
+        "type": "object"
+      },
+      "ItemRead": {
+        "description": "Lightweight shape for list endpoints \u2014 only what a row or card shows.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "examples": [
+              "Widget"
+            ],
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_id": {
+            "format": "uuid",
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "price": {
+            "examples": [
+              "19.99"
+            ],
+            "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,10}|(?=[\\d.]{1,13}0*$)\\d{0,10}\\.\\d{0,2}0*$)",
+            "title": "Price",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "price",
+          "id",
+          "owner_id",
+          "created_at"
+        ],
+        "title": "ItemRead",
+        "type": "object"
+      },
+      "ItemReadDetail": {
+        "description": "Full shape for a single item; inherits the list fields and adds the rest.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "examples": [
+              "Widget"
+            ],
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_id": {
+            "format": "uuid",
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "price": {
+            "examples": [
+              "19.99"
+            ],
+            "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,10}|(?=[\\d.]{1,13}0*$)\\d{0,10}\\.\\d{0,2}0*$)",
+            "title": "Price",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "price",
+          "id",
+          "owner_id",
+          "created_at",
+          "description",
+          "updated_at"
+        ],
+        "title": "ItemReadDetail",
+        "type": "object"
+      },
+      "ItemUpdate": {
+        "additionalProperties": false,
+        "description": "Partial update: every field optional so PATCH may send a subset.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,10}|(?=[\\d.]{1,13}0*$)\\d{0,10}\\.\\d{0,2}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          }
+        },
+        "title": "ItemUpdate",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "additionalProperties": false,
+        "description": "Payload for exchanging credentials for tokens.",
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "MfaVerifyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "assertion": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assertion"
+          },
+          "challenge_token": {
+            "title": "Challenge Token",
+            "type": "string"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "maxLength": 6,
+                "minLength": 6,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          }
+        },
+        "required": [
+          "challenge_token"
+        ],
+        "title": "MfaVerifyRequest",
+        "type": "object"
+      },
+      "NotificationPreferenceRead": {
+        "description": "One resolved preference: what will actually happen for this type.\n\nReturned for **every** known type, whether or not the user has stored a row,\nbecause a client rendering a settings screen needs the effective state \u2014 not\njust the overrides.",
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/Channel"
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "notification_type": {
+            "title": "Notification Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notification_type",
+          "channel",
+          "enabled",
+          "editable"
+        ],
+        "title": "NotificationPreferenceRead",
+        "type": "object"
+      },
+      "NotificationPreferenceUpdate": {
+        "description": "Payload for changing one preference.",
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/Channel"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "notification_type": {
+            "maxLength": 100,
+            "title": "Notification Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notification_type",
+          "channel",
+          "enabled"
+        ],
+        "title": "NotificationPreferenceUpdate",
+        "type": "object"
+      },
+      "NotificationRead": {
+        "description": "One notification as returned by the API.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "notification_type": {
+            "title": "Notification Type",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "notification_type",
+          "title",
+          "body",
+          "payload",
+          "read_at",
+          "created_at"
+        ],
+        "title": "NotificationRead",
+        "type": "object"
+      },
+      "OverrideRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "justification": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Justification"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id"
+        ],
+        "title": "OverrideRequest",
+        "type": "object"
+      },
+      "OverrideResult": {
+        "properties": {
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "applied",
+            "default": "applied",
+            "title": "Status",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule_id",
+          "target_type",
+          "target_id"
+        ],
+        "title": "OverrideResult",
+        "type": "object"
+      },
+      "Page_AuditEntryRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntryRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[AuditEntryRead]",
+        "type": "object"
+      },
+      "Page_GroupRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GroupRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[GroupRead]",
+        "type": "object"
+      },
+      "Page_ItemRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ItemRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[ItemRead]",
+        "type": "object"
+      },
+      "Page_NotificationRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[NotificationRead]",
+        "type": "object"
+      },
+      "Page_PermissionRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PermissionRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[PermissionRead]",
+        "type": "object"
+      },
+      "Page_PolicyRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[PolicyRead]",
+        "type": "object"
+      },
+      "Page_UserRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UserRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[UserRead]",
+        "type": "object"
+      },
+      "PermissionCreate": {
+        "description": "Payload for creating a permission.",
+        "properties": {
+          "action": {
+            "description": "Machine-readable action name; unique and stable.",
+            "examples": [
+              "ReadItem",
+              "ModerateItem"
+            ],
+            "maxLength": 100,
+            "title": "Action",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "PermissionCreate",
+        "type": "object"
+      },
+      "PermissionRead": {
+        "description": "Permission as returned by the API.",
+        "properties": {
+          "action": {
+            "description": "Machine-readable action name; unique and stable.",
+            "examples": [
+              "ReadItem",
+              "ModerateItem"
+            ],
+            "maxLength": 100,
+            "title": "Action",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "id",
+          "created_at"
+        ],
+        "title": "PermissionRead",
+        "type": "object"
+      },
+      "PolicyCreate": {
+        "description": "Payload for creating a policy.\n\n``permission_actions`` lets the caller declare the policy's contents in one\nrequest by naming existing permissions; the service resolves them to ids.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "examples": [
+              "ObjectFullAccess"
+            ],
+            "maxLength": 100,
+            "title": "Name",
+            "type": "string"
+          },
+          "permission_actions": {
+            "description": "Actions to include in this policy (must already exist).",
+            "items": {
+              "type": "string"
+            },
+            "title": "Permission Actions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "PolicyCreate",
+        "type": "object"
+      },
+      "PolicyRead": {
+        "description": "Policy as returned by the API, including its resolved permissions.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "examples": [
+              "ObjectFullAccess"
+            ],
+            "maxLength": 100,
+            "title": "Name",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/PermissionRead"
+            },
+            "title": "Permissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "id"
+        ],
+        "title": "PolicyRead",
+        "type": "object"
+      },
+      "RefreshRequest": {
+        "additionalProperties": false,
+        "description": "Payload for exchanging a refresh token for a new token pair.",
+        "properties": {
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest",
+        "type": "object"
+      },
+      "RegisterRequest": {
+        "additionalProperties": false,
+        "description": "Payload for creating an account.",
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "RegisterRequest",
+        "type": "object"
+      },
+      "ResendVerificationRequest": {
+        "additionalProperties": false,
+        "description": "Payload for requesting a fresh verification email.\n\nTakes an email rather than requiring authentication, so a user who cannot\nfinish signup on the device they registered on is not locked out of the\nflow. Like forgot-password, the response is identical whether or not the\naddress exists.",
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ResendVerificationRequest",
+        "type": "object"
+      },
+      "ResetPasswordRequest": {
+        "additionalProperties": false,
+        "description": "Payload for redeeming a reset token and setting a new password.",
+        "properties": {
+          "new_password": {
+            "maxLength": 128,
+            "minLength": 12,
+            "title": "New Password",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 64,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "new_password"
+        ],
+        "title": "ResetPasswordRequest",
+        "type": "object"
+      },
+      "RestoreAuthorizationRead": {
+        "properties": {
+          "approved_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved By"
+          },
+          "backup_id": {
+            "format": "uuid",
+            "title": "Backup Id",
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "requested_by": {
+            "format": "uuid",
+            "title": "Requested By",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "backup_id",
+          "status",
+          "requested_by",
+          "requested_at"
+        ],
+        "title": "RestoreAuthorizationRead",
+        "type": "object"
+      },
+      "SuperadminSessionRead": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "const": "superadmin",
+            "default": "superadmin",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email"
+        ],
+        "title": "SuperadminSessionRead",
+        "type": "object"
+      },
+      "SuperadminTokenPair": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "role": {
+            "const": "superadmin",
+            "default": "superadmin",
+            "title": "Role",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token"
+        ],
+        "title": "SuperadminTokenPair",
+        "type": "object"
+      },
+      "TokenPair": {
+        "description": "An access/refresh token pair, as returned by login and refresh.",
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token"
+        ],
+        "title": "TokenPair",
+        "type": "object"
+      },
+      "TotpEnrollmentConfirmRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "challenge_token": {
+            "title": "Challenge Token",
+            "type": "string"
+          },
+          "code": {
+            "maxLength": 6,
+            "minLength": 6,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_token",
+          "code"
+        ],
+        "title": "TotpEnrollmentConfirmRequest",
+        "type": "object"
+      },
+      "TotpEnrollmentRead": {
+        "properties": {
+          "provisioning_uri": {
+            "title": "Provisioning Uri",
+            "type": "string"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret",
+          "provisioning_uri"
+        ],
+        "title": "TotpEnrollmentRead",
+        "type": "object"
+      },
+      "TotpEnrollmentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "challenge_token": {
+            "title": "Challenge Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_token"
+        ],
+        "title": "TotpEnrollmentRequest",
+        "type": "object"
+      },
+      "UnreadCount": {
+        "description": "The bell badge.\n\nAn object rather than a bare integer so the response can gain a field \u2014 a\nhighest-unread id, a category breakdown \u2014 without breaking every client that\nparses it.",
+        "properties": {
+          "unread": {
+            "title": "Unread",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unread"
+        ],
+        "title": "UnreadCount",
+        "type": "object"
+      },
+      "UserRead": {
+        "description": "A user as returned by the API.",
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "bio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bio"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "email_verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Verified At"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "onboarding_completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Onboarding Completed At"
+          },
+          "phone_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Number"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          }
+        },
+        "required": [
+          "email",
+          "id",
+          "is_active",
+          "created_at"
+        ],
+        "title": "UserRead",
+        "type": "object"
+      },
+      "UserUpdate": {
+        "additionalProperties": false,
+        "description": "Partial profile update; every field optional so PATCH may send a subset.\n\nEmail is deliberately excluded: changing a login identifier needs\nverification of the new address, which is a flow, not a field.\n\n``extra=\"forbid\"`` means a client typo (``displayName``) is a 422 rather\nthan a silently ignored write the user believes succeeded.",
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "bio": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bio"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "maxLength": 35,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "phone_number": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Number"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          }
+        },
+        "title": "UserUpdate",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VerifyEmailRequest": {
+        "additionalProperties": false,
+        "description": "Payload for redeeming an email-verification token.",
+        "properties": {
+          "token": {
+            "maxLength": 64,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "VerifyEmailRequest",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "CBPUPSIS API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/admin/me": {
+      "get": {
+        "description": "Return the MFA-completed Admin identity and query-ready data scope.",
+        "operationId": "read_admin_session_api_v1_admin_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSessionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Admin Session",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/audit": {
+      "get": {
+        "description": "List recorded administrative changes, newest first.\n\nThe two questions this is built to answer are \"what happened to this thing?\"\n(``target_id``) and \"what has this person been doing?\" (``actor_id``); both\nare indexed.",
+        "operationId": "list_audit_entries_api_v1_audit_get",
+        "parameters": [
+          {
+            "description": "Filter to one event name, e.g. iam.group_created.",
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one event name, e.g. iam.group_created.",
+              "title": "Action"
+            }
+          },
+          {
+            "description": "Filter to changes made by one user.",
+            "in": "query",
+            "name": "actor_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to changes made by one user.",
+              "title": "Actor Id"
+            }
+          },
+          {
+            "description": "Filter to changes made to one target.",
+            "in": "query",
+            "name": "target_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to changes made to one target.",
+              "title": "Target Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AuditEntryRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Audit Entries",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/auth/admin/login": {
+      "post": {
+        "description": "Verify credentials and issue no session until MFA completes.",
+        "operationId": "login_admin_api_v1_auth_admin_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLoginChallenge"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login Admin",
+        "tags": [
+          "admin-auth"
+        ]
+      }
+    },
+    "/api/v1/auth/admin/logout": {
+      "post": {
+        "description": "Revoke the refresh token and clear the Admin cookie.",
+        "operationId": "logout_admin_api_v1_auth_admin_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Logout Admin",
+        "tags": [
+          "admin-auth"
+        ]
+      }
+    },
+    "/api/v1/auth/admin/mfa/totp/confirm": {
+      "post": {
+        "description": "Prove the enrolled seed and issue the first Admin session.",
+        "operationId": "confirm_totp_api_v1_auth_admin_mfa_totp_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpEnrollmentConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Totp",
+        "tags": [
+          "admin-auth"
+        ]
+      }
+    },
+    "/api/v1/auth/admin/mfa/totp/enroll": {
+      "post": {
+        "description": "Return the standard otpauth URI Google Authenticator scans.",
+        "operationId": "enroll_totp_api_v1_auth_admin_mfa_totp_enroll_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpEnrollmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpEnrollmentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enroll Totp",
+        "tags": [
+          "admin-auth"
+        ]
+      }
+    },
+    "/api/v1/auth/admin/mfa/verify": {
+      "post": {
+        "description": "Complete sign-in using Google Authenticator TOTP or a hardware key.",
+        "operationId": "verify_mfa_api_v1_auth_admin_mfa_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Mfa",
+        "tags": [
+          "admin-auth"
+        ]
+      }
+    },
+    "/api/v1/auth/admin/refresh": {
+      "post": {
+        "description": "Rotate an Admin session and renew its hardened cookie.",
+        "operationId": "refresh_admin_api_v1_auth_admin_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh Admin",
+        "tags": [
+          "admin-auth"
+        ]
+      }
+    },
+    "/api/v1/auth/change-password": {
+      "post": {
+        "description": "Change your own password, returning a replacement token pair.\n\nAuthorization is by identity alone: the target is the authenticated user,\ntaken from the token, so there is no id to tamper with and no object-level\ncheck to make. Requires the current password.\n\nAll existing refresh tokens \u2014 including the caller's \u2014 are revoked, and the\nreturned pair replaces them.",
+        "operationId": "change_password_api_v1_auth_change_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Change Password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/forgot-password": {
+      "post": {
+        "description": "Request a password-reset email.\n\nAlways 204. Returning 404 for an unknown address would make this endpoint a\nmembership oracle for any email list.\n\nRate limited as strictly as /resend-verification, and for the same reason:\nit mails an address chosen by an unauthenticated caller.",
+        "operationId": "forgot_password_api_v1_auth_forgot_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgotPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Forgot Password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "Exchange email and password for an access/refresh token pair.\n\nRate limited against credential stuffing.\n\nThree outcomes, and the difference between them is deliberate:\n\n- **401** \u2014 unknown email, wrong password, or a disabled account, all with\n  one identical message so the endpoint cannot be used to discover which\n  addresses are registered.\n- **403** with ``code: \"email_not_verified\"`` \u2014 the password was correct but\n  the address is unverified. Branch on the code, not the message, and send\n  the user to a resend-verification screen rather than back to login.\n- **200** \u2014 a token pair.",
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "Revoke a refresh token. Idempotent: always succeeds.",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "description": "Exchange a refresh token for a new pair, invalidating the old token.",
+        "operationId": "refresh_api_v1_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "description": "Create an account. Returns the new user; tokens come from /login.\n\nRate limited per IP against signup spam. ``request`` is unused by the body\nbut required: slowapi reads the limiter and the caller's key off it, and\nrefuses to decorate an endpoint that does not declare it.",
+        "operationId": "register_api_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/resend-verification": {
+      "post": {
+        "description": "Request a fresh verification email.\n\nAlways 204, whether or not the address is registered, active, or already\nverified. Any live token previously issued to that user is invalidated.\n\nThe strictest limit in the app, alongside /forgot-password: this endpoint\nsends mail to an address the caller names, so without one an anonymous\ncaller can bomb a stranger's inbox from your domain and spend your SES\nbudget doing it.",
+        "operationId": "resend_verification_api_v1_auth_resend_verification_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResendVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resend Verification",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/reset-password": {
+      "post": {
+        "description": "Redeem a reset token and set a new password.\n\nEvery refresh token for the account is revoked, so any session an attacker\nholds dies with the reset. The client must log in again with the new\npassword.",
+        "operationId": "reset_password_api_v1_auth_reset_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/superadmin/login": {
+      "post": {
+        "operationId": "login_superadmin_api_v1_auth_superadmin_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLoginChallenge"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login Superadmin",
+        "tags": [
+          "superadmin-auth"
+        ]
+      }
+    },
+    "/api/v1/auth/superadmin/logout": {
+      "post": {
+        "operationId": "logout_superadmin_api_v1_auth_superadmin_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Logout Superadmin",
+        "tags": [
+          "superadmin-auth"
+        ]
+      }
+    },
+    "/api/v1/auth/superadmin/mfa/totp/confirm": {
+      "post": {
+        "operationId": "confirm_superadmin_totp_api_v1_auth_superadmin_mfa_totp_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpEnrollmentConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuperadminTokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Superadmin Totp",
+        "tags": [
+          "superadmin-auth"
+        ]
+      }
+    },
+    "/api/v1/auth/superadmin/mfa/totp/enroll": {
+      "post": {
+        "operationId": "enroll_superadmin_totp_api_v1_auth_superadmin_mfa_totp_enroll_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpEnrollmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpEnrollmentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enroll Superadmin Totp",
+        "tags": [
+          "superadmin-auth"
+        ]
+      }
+    },
+    "/api/v1/auth/superadmin/mfa/verify": {
+      "post": {
+        "operationId": "verify_superadmin_mfa_api_v1_auth_superadmin_mfa_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuperadminTokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Superadmin Mfa",
+        "tags": [
+          "superadmin-auth"
+        ]
+      }
+    },
+    "/api/v1/auth/superadmin/refresh": {
+      "post": {
+        "operationId": "refresh_superadmin_api_v1_auth_superadmin_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuperadminTokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh Superadmin",
+        "tags": [
+          "superadmin-auth"
+        ]
+      }
+    },
+    "/api/v1/auth/verify-email": {
+      "post": {
+        "description": "Redeem an email-verification token.\n\n401 for a token that is unknown, expired, already used, or issued for a\ndifferent purpose \u2014 all with the same message, so the response cannot be\nused to probe which.",
+        "operationId": "verify_email_api_v1_auth_verify_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Email",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/whoami": {
+      "get": {
+        "description": "Return the authenticated principal \u2014 useful for verifying token wiring.",
+        "operationId": "whoami_api_v1_auth_whoami_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Whoami",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/iam/groups": {
+      "get": {
+        "description": "List groups.",
+        "operationId": "list_groups_api_v1_iam_groups_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_GroupRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Groups",
+        "tags": [
+          "iam"
+        ]
+      },
+      "post": {
+        "description": "Create a new (empty) group.",
+        "operationId": "create_group_api_v1_iam_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Group",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/api/v1/iam/groups/{group_id}": {
+      "get": {
+        "description": "Return one group.",
+        "operationId": "read_group_api_v1_iam_groups__group_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Group",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/api/v1/iam/groups/{group_id}/policies": {
+      "post": {
+        "description": "Attach a policy to a group; members inherit its permissions.",
+        "operationId": "attach_policy_to_group_api_v1_iam_groups__group_id__policies_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachPolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Attach Policy To Group",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/api/v1/iam/groups/{group_id}/policies/{policy_id}": {
+      "delete": {
+        "description": "Detach a policy from a group; members lose the permissions it granted.\n\nTakes effect immediately: permissions are resolved per request, never\ncarried in the token.",
+        "operationId": "detach_policy_from_group_api_v1_iam_groups__group_id__policies__policy_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "title": "Policy Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Detach Policy From Group",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/api/v1/iam/groups/{group_id}/users": {
+      "post": {
+        "description": "Add a user to a group, granting them the group's policies.",
+        "operationId": "add_user_to_group_api_v1_iam_groups__group_id__users_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddUserToGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Add User To Group",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/api/v1/iam/groups/{group_id}/users/{user_id}": {
+      "delete": {
+        "description": "Remove a user from a group, revoking the policies it granted them.",
+        "operationId": "remove_user_from_group_api_v1_iam_groups__group_id__users__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove User From Group",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/api/v1/iam/permissions": {
+      "get": {
+        "description": "List every permission the application understands.",
+        "operationId": "list_permissions_api_v1_iam_permissions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_PermissionRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Permissions",
+        "tags": [
+          "iam"
+        ]
+      },
+      "post": {
+        "description": "Create a new permission (an atomic action).",
+        "operationId": "create_permission_api_v1_iam_permissions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PermissionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Permission",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/api/v1/iam/permissions/{permission_id}": {
+      "get": {
+        "description": "Return one permission.",
+        "operationId": "read_permission_api_v1_iam_permissions__permission_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "permission_id",
+            "required": true,
+            "schema": {
+              "title": "Permission Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Permission",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/api/v1/iam/policies": {
+      "get": {
+        "description": "List policies, each with the permissions it grants.",
+        "operationId": "list_policies_api_v1_iam_policies_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_PolicyRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Policies",
+        "tags": [
+          "iam"
+        ]
+      },
+      "post": {
+        "description": "Create a policy bundling the named (existing) permissions.",
+        "operationId": "create_policy_api_v1_iam_policies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Policy",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/api/v1/iam/policies/{policy_id}": {
+      "get": {
+        "description": "Return one policy with its permissions.",
+        "operationId": "read_policy_api_v1_iam_policies__policy_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "title": "Policy Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Policy",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/api/v1/iam/users/{user_id}/permissions": {
+      "get": {
+        "description": "Return a user's effective permissions, split by how they were granted.\n\nThe view an admin screen needs and that nothing exposed: the union is what\nthe guards check, while the two sources are what an operator changes to\nrevoke a grant.",
+        "operationId": "read_user_permissions_api_v1_iam_users__user_id__permissions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectivePermissionsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read User Permissions",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/api/v1/items": {
+      "get": {
+        "description": "List items the caller may see, newest first.\n\nItems are private: without ``ReadAllItem`` this returns only the caller's\nown. The service decides that \u2014 see ``cbpupsis_api_student.domains.items.service``.",
+        "operationId": "list_items_api_v1_items_get",
+        "parameters": [
+          {
+            "description": "Narrow the results to the caller's own items. Only meaningful to a caller holding ReadAllItem; everyone else is already scoped to their own.",
+            "in": "query",
+            "name": "mine",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Narrow the results to the caller's own items. Only meaningful to a caller holding ReadAllItem; everyone else is already scoped to their own.",
+              "title": "Mine",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ItemRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Items",
+        "tags": [
+          "items"
+        ]
+      },
+      "post": {
+        "description": "Create an item owned by the authenticated user.",
+        "operationId": "create_item_api_v1_items_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ItemCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemReadDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Item",
+        "tags": [
+          "items"
+        ]
+      }
+    },
+    "/api/v1/items/{item_id}": {
+      "delete": {
+        "description": "Soft-delete an item. The service enforces that the caller owns it.",
+        "operationId": "delete_item_api_v1_items__item_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Item",
+        "tags": [
+          "items"
+        ]
+      },
+      "get": {
+        "description": "Return a single item.\n\n404 rather than 403 for an item the caller may not read, so the endpoint\ncannot be used to confirm which ids exist.",
+        "operationId": "read_item_api_v1_items__item_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemReadDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Item",
+        "tags": [
+          "items"
+        ]
+      },
+      "patch": {
+        "description": "Update an item. The service enforces that the caller owns it.",
+        "operationId": "update_item_api_v1_items__item_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ItemUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemReadDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Item",
+        "tags": [
+          "items"
+        ]
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "description": "List the caller's notifications, newest first.",
+        "operationId": "list_notifications_api_v1_notifications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_NotificationRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Notifications",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/preferences": {
+      "get": {
+        "description": "Return the effective preference for every type and channel.\n\nIncludes types the caller has never touched, with their defaults, so a\nsettings screen can render the state the user is actually in.",
+        "operationId": "get_preferences_api_v1_notifications_preferences_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NotificationPreferenceRead"
+                  },
+                  "title": "Response Get Preferences Api V1 Notifications Preferences Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Preferences",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "put": {
+        "description": "Set one preference. 422 on an unknown type, or on silencing a notice.",
+        "operationId": "set_preference_api_v1_notifications_preferences_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationPreferenceUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Preference",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/read-all": {
+      "post": {
+        "description": "Mark every unread notification as read.\n\nDeclared before ``/{notification_id}/read`` so the literal path is matched\nfirst \u2014 otherwise \"read-all\" is captured as a notification id and answers\n422 on the UUID parse.",
+        "operationId": "mark_all_read_api_v1_notifications_read_all_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Mark All Read",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/unread-count": {
+      "get": {
+        "description": "Return the caller's unread count \u2014 the bell badge.\n\nPolled on an interval by every client, so it is deliberately the cheapest\nendpoint here: one indexed count, no joins, no page of rows.",
+        "operationId": "unread_count_api_v1_notifications_unread_count_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnreadCount"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unread Count",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/{notification_id}/read": {
+      "post": {
+        "description": "Mark one notification as read.\n\n404 for somebody else's, not 403 \u2014 the service explains why.",
+        "operationId": "mark_read_api_v1_notifications__notification_id__read_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notification_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Notification Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Mark Read",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/superadmin/backups/{backup_id}/restore-requests": {
+      "post": {
+        "operationId": "request_restore_api_v1_superadmin_backups__backup_id__restore_requests_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "backup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Backup Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreAuthorizationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Request Restore",
+        "tags": [
+          "superadmin"
+        ]
+      }
+    },
+    "/api/v1/superadmin/backups/{backup_id}/restore-requests/approve": {
+      "post": {
+        "operationId": "approve_restore_api_v1_superadmin_backups__backup_id__restore_requests_approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "backup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Backup Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreAuthorizationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Approve Restore",
+        "tags": [
+          "superadmin"
+        ]
+      }
+    },
+    "/api/v1/superadmin/me": {
+      "get": {
+        "operationId": "read_superadmin_session_api_v1_superadmin_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuperadminSessionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Superadmin Session",
+        "tags": [
+          "superadmin"
+        ]
+      }
+    },
+    "/api/v1/superadmin/overrides/{rule_id}": {
+      "post": {
+        "operationId": "perform_override_api_v1_superadmin_overrides__rule_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverrideResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Perform Override",
+        "tags": [
+          "superadmin"
+        ]
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "description": "List user accounts, newest first. Requires ``ReadAllUser``.\n\nBoth filters are tri-state: omitting one returns accounts in either state,\nwhich is what makes \"everyone\" and \"only the unverified\" the same endpoint.",
+        "operationId": "list_users_api_v1_users_get",
+        "parameters": [
+          {
+            "description": "Filter by account status. Omit for both.",
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by account status. Omit for both.",
+              "title": "Is Active"
+            }
+          },
+          {
+            "description": "Filter by email verification. Omit for both.",
+            "in": "query",
+            "name": "is_verified",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by email verification. Omit for both.",
+              "title": "Is Verified"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_UserRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Users",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/me": {
+      "delete": {
+        "description": "Soft-delete the authenticated user's own account.\n\nRequires the account password \u2014 a stolen access token must not be enough to\ndelete an account. The row survives so records referencing it are not\norphaned, but every identifying field is scrubbed and all sessions revoked.\n401 if the password is wrong.",
+        "operationId": "delete_me_api_v1_users_me_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Me",
+        "tags": [
+          "users"
+        ]
+      },
+      "get": {
+        "description": "Return the authenticated user's own profile.",
+        "operationId": "read_me_api_v1_users_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Me",
+        "tags": [
+          "users"
+        ]
+      },
+      "patch": {
+        "description": "Update the authenticated user's own profile.\n\nA true partial update: ``exclude_unset=True`` passes on only the fields the\nclient actually sent, so omitting one leaves it unchanged while sending it\nas ``null`` clears it. Dumping the whole model instead would blank every\nfield the client did not mention.",
+        "operationId": "update_me_api_v1_users_me_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Me",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/me/complete-onboarding": {
+      "post": {
+        "description": "Mark the authenticated user's onboarding as finished.\n\n422 listing the missing fields if the required profile data is not yet set.\nIdempotent: calling it again keeps the original completion timestamp.",
+        "operationId": "complete_onboarding_api_v1_users_me_complete_onboarding_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Complete Onboarding",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/me/deactivate": {
+      "post": {
+        "description": "Deactivate the authenticated user's own account.\n\nReversible: nothing is erased, and an operator can reactivate the account.\nAll refresh tokens are revoked, so every session ends immediately.",
+        "operationId": "deactivate_me_api_v1_users_me_deactivate_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Deactivate Me",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}": {
+      "get": {
+        "description": "Return another user's profile.\n\nAllowed when the caller holds ``ReadAllUser`` or is asking about themselves.\nThis object-level check cannot be expressed by ``require_permission`` alone,\nwhich answers only \"may they read users in general?\" \u2014 see\n``cbpupsis_api_student.domains.items.service`` for the same pattern on owned\nresources.",
+        "operationId": "read_user_api_v1_users__user_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read User",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}/deactivate": {
+      "post": {
+        "description": "Suspend another user's account. Requires ``ManageUser``.\n\nReversible, and every session is revoked immediately. Deliberately not a\nDELETE: account deletion stays self-service and password-confirmed, because\nan administrator cannot supply the password that authorizes it.\n\n422 if the caller aims it at themselves \u2014 see the service for why.",
+        "operationId": "deactivate_user_api_v1_users__user_id__deactivate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Deactivate User",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}/reactivate": {
+      "post": {
+        "description": "Restore a suspended account. Requires ``ManageUser``.\n\n422 on a deleted account: deletion scrubs the identity, so there is nothing\nleft to restore.",
+        "operationId": "reactivate_user_api_v1_users__user_id__reactivate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reactivate User",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Liveness probe: reports the process is up, without touching the database.\n\nDeliberately does not query Postgres \u2014 a readiness check that fails on a\nslow database will get your healthy container killed by the orchestrator.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/ready": {
+      "get": {
+        "description": "Readiness probe: reports whether this process can actually serve traffic.\n\nThe counterpart to ``/health`` above, and deliberately a separate endpoint\nrather than a flag on it. They answer different questions and a failure of\neach should have the opposite effect:\n\n- ``/health`` is liveness \u2014 \"is the process alive?\" A failure means restart\n  me. It must not touch the database, or a slow query gets healthy\n  containers killed and turns a database blip into a rolling outage.\n- ``/ready`` is readiness \u2014 \"should traffic be routed here?\" A failure means\n  take me out of the load balancer, but leave me running: the database may\n  come back, and a restart would not help if it does not.\n\n``SELECT 1`` under a short timeout, because the check has to fail faster\nthan the probe interval \u2014 a readiness check that hangs is indistinguishable\nfrom one that failed, except it also ties up a worker each time it runs.\n\n503 rather than a 200 carrying a status field: orchestrators route on the\nstatus code, and a body saying \"not ready\" behind a 200 keeps traffic\ncoming.",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Ready Ready Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ready",
+        "tags": [
+          "meta"
+        ]
+      }
+    }
+  }
+}

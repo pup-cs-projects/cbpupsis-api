@@ -14,11 +14,12 @@ from collections.abc import Callable, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from fastapi import APIRouter, FastAPI, Response, status
+from fastapi import APIRouter, FastAPI, Request, Response, status
 from fastapi.responses import HTMLResponse
 from scalar_fastapi import get_scalar_api_reference
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.config import settings
 from cbpupsis_core.events import event_bus
@@ -26,6 +27,7 @@ from cbpupsis_core.exceptions import register_exception_handlers
 from cbpupsis_core.logging import configure_logging
 from cbpupsis_core.middleware import limiter, register_middleware
 from cbpupsis_database.session import engine
+from cbpupsis_shared.domains.audit import client as audit_client
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +110,44 @@ def create_app(
     app.state.limiter = limiter
 
     register_middleware(app)
+
+    @app.middleware("http")
+    async def audit_superadmin_request(request: Request, call_next):
+        """Record protected activity that did not stage its own mutation audit."""
+        response = await call_next(request)
+        actor = getattr(request.state, "superadmin_id", None)
+        request_db = getattr(request.state, "audit_db", None)
+        if (
+            actor is not None
+            and request_db is not None
+            and not request_db.info.get("superadmin_audit_staged")
+        ):
+            # Yield dependencies may already have closed their request
+            # session when call_next returns; a fresh session also keeps
+            # read/denial auditing independent of that lifecycle.
+            async with AsyncSession(bind=request_db.bind) as audit_db:
+                audit_client.stage(
+                    audit_db,
+                    action="superadmin.request",
+                    actor_id=actor,
+                    target_type="endpoint",
+                    target_id=request.url.path,
+                    payload={
+                        "method": request.method,
+                        "status": response.status_code,
+                    },
+                )
+                await audit_db.commit()
+        if request_db is not None:
+            for key in (
+                "superadmin_actor",
+                "superadmin_audit_staged",
+                "superadmin_request_path",
+                "superadmin_request_method",
+            ):
+                request_db.info.pop(key, None)
+        return response
+
     # Registered after the limiter is attached, since it installs the 429 handler.
     register_exception_handlers(app)
 

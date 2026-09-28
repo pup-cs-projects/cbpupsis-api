@@ -36,6 +36,16 @@ class AdminTokenPair(TokenPair):
     college_id: str | None = None
 
 
+class SuperadminTokenPair(TokenPair):
+    role: Literal["superadmin"] = "superadmin"
+
+
+class SuperadminSessionRead(BaseModel):
+    role: Literal["superadmin"] = "superadmin"
+    id: uuid.UUID
+    email: EmailStr
+
+
 class AdminSessionRead(BaseModel):
     role: Literal["admin"] = "admin"
     id: uuid.UUID

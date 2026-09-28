@@ -30,7 +30,7 @@ def _decode_base64url(value: str) -> bytes:
 
 
 def create_challenge_token(
-    user_id: uuid.UUID, *, enrollment_required: bool
+    user_id: uuid.UUID, *, enrollment_required: bool, role: str = "admin"
 ) -> tuple[str, str, str]:
     """Issue a signed, short-lived token that carries no API privilege."""
     now = datetime.now(UTC)
@@ -39,7 +39,7 @@ def create_challenge_token(
     token = jwt.encode(
         {
             "sub": str(user_id),
-            "type": "admin_mfa_challenge",
+            "type": f"{role}_mfa_challenge",
             "iat": now,
             "exp": now + timedelta(minutes=settings.mfa_challenge_ttl_minutes),
             "jti": jti,
@@ -52,7 +52,7 @@ def create_challenge_token(
     return token, challenge, jti
 
 
-def decode_challenge_token(token: str) -> dict[str, Any]:
+def decode_challenge_token(token: str, *, role: str = "admin") -> dict[str, Any]:
     """Validate an Admin challenge without accepting it as a session."""
     try:
         claims: dict[str, Any] = jwt.decode(
@@ -62,7 +62,7 @@ def decode_challenge_token(token: str) -> dict[str, Any]:
         )
     except jwt.InvalidTokenError as exc:
         raise InvalidAuthTokenError from exc
-    if claims.get("type") != "admin_mfa_challenge":
+    if claims.get("type") != f"{role}_mfa_challenge":
         raise InvalidAuthTokenError
     return claims
 

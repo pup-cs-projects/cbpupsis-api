@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     #: asyncpg actually uses — *are* supported by the pooler, which is why the
     #: app's own traffic is fine on the pooled URL.)
     direct_database_url: str | None = None
+    audit_runtime_role: str | None = None
 
     # --- Connection pool ---
     #: Connections held open per worker process. The arithmetic that matters is

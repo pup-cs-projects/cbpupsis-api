@@ -1,0 +1,60 @@
+meta {
+  name: Verify Superadmin TOTP
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{admin_api}}/auth/superadmin/mfa/verify
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "challenge_token": "{{e2e_admin_challenge}}",
+    "code": "{{e2e_admin_totp}}"
+  }
+}
+
+script:pre-request {
+  // Matches the public, disposable fixture seed in scripts/seed_e2e.py.
+  const secret = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const bytes = [];
+  let value = 0;
+  let bits = 0;
+  for (const char of secret) {
+    value = (value << 5) | alphabet.indexOf(char);
+    bits += 5;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes.push((value >>> bits) & 255);
+    }
+  }
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
+  const digest = require("crypto")
+    .createHmac("sha1", Buffer.from(bytes))
+    .update(counter)
+    .digest();
+  const offset = digest[digest.length - 1] & 15;
+  const truncated = digest.readUInt32BE(offset) & 0x7fffffff;
+  bru.setVar("e2e_admin_totp", String(truncated % 1000000).padStart(6, "0"));
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("factor completes a bearer-only Superadmin session", function () {
+    expect(res.getBody().access_token).to.be.a("string").and.not.be.empty;
+    expect(res.getBody().refresh_token).to.be.a("string").and.not.be.empty;
+  });
+  bru.setVar("admin_access_token", res.getBody().access_token);
+}

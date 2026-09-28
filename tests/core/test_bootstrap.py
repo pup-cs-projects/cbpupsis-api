@@ -16,6 +16,7 @@ from cbpupsis_shared.domains.auth import service as auth_service
 from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.users import service as users_service
 from scripts.bootstrap_admin import ADMIN_GROUP, bootstrap_admin
+from scripts.bootstrap_superadmin import bootstrap_superadmin
 
 
 async def _seed_admin_group(db: AsyncSession) -> None:
@@ -89,11 +90,10 @@ class TestBootstrapAdmin:
         assert await bootstrap_admin("twice@example.com") == 0
         assert await bootstrap_admin("twice@example.com") == 0
 
-    async def test_the_bootstrapped_admin_can_then_use_the_iam_api(
+    async def test_the_bootstrapped_admin_still_cannot_use_the_iam_api(
         self, db: AsyncSession, client: AsyncClient, monkeypatch
     ) -> None:
-        """The end-to-end point: after bootstrap, the circularity is broken and
-        every further grant happens through the API."""
+        """A legacy permission grant cannot replace Superadmin MFA."""
         await _seed_admin_group(db)
         registered = await client.post(
             "/api/v1/auth/register",
@@ -119,11 +119,29 @@ class TestBootstrapAdmin:
         )
         assert await bootstrap_admin("root@example.com") == 0
 
-        # Same token, now authorized.
+        # Neither an ordinary token nor Admin membership can open IAM.
         after = await client.post(
             "/api/v1/iam/groups", json={"name": "Editors"}, headers=headers
         )
-        assert after.status_code == 201
+        assert after.status_code == 403
+
+
+async def test_AC0041_bootstrap_superadmin_requires_verified_account(
+    db: AsyncSession, monkeypatch
+) -> None:
+    from cbpupsis_shared.domains.iam.constants import SUPERADMIN_GROUP
+
+    await iam_service.create_group(db, name=SUPERADMIN_GROUP)
+    user = await auth_service.register(
+        db, email="owner@example.com", password="a-long-enough-password"
+    )
+    monkeypatch.setattr(
+        "scripts.bootstrap_superadmin.AsyncSessionLocal", lambda: _Session(db)
+    )
+    assert await bootstrap_superadmin("owner@example.com") == 1
+    await users_service.mark_email_verified(db, user.id)
+    assert await bootstrap_superadmin("owner@example.com") == 0
+    assert await iam_service.is_user_in_group(db, user.id, SUPERADMIN_GROUP)
 
 
 class _Session:

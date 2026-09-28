@@ -105,3 +105,12 @@ class AuthenticationLockout(Base):
 
     user_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     locked_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class SuperadminChallenge(Base):
+    """The sole live password-step challenge for one Superadmin."""
+
+    __tablename__ = "superadmin_challenges"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    active_jti: Mapped[str] = mapped_column(String(36))

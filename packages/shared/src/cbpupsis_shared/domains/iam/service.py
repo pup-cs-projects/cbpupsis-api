@@ -25,9 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cbpupsis_core.events import Event
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.models.iam import Group, Permission, Policy
+from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.iam import repository
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
 from cbpupsis_shared.domains.iam.exceptions import (
     GroupNotFoundError,
+    GroupRoleConflictError,
     PermissionNotFoundError,
     PolicyNotFoundError,
     UnknownPermissionsError,
@@ -41,7 +44,30 @@ def _audit(
     actor_id: uuid.UUID | None,
     payload: dict[str, object],
 ) -> None:
-    """Stage an IAM audit event in the business transaction's outbox."""
+    """Stage immediate Superadmin audit or the ordinary durable outbox event."""
+    if actor_id is not None and db.info.get("superadmin_actor") == actor_id:
+        target_type = next(
+            (
+                kind
+                for kind in ("user", "group", "policy", "permission")
+                if f"{kind}_id" in payload
+            ),
+            None,
+        )
+        target_id = str(payload.get(f"{target_type}_id")) if target_type else None
+        prior = payload.get("prior_state")
+        new = payload.get("new_state")
+        audit_client.stage(
+            db,
+            action=name,
+            actor_id=actor_id,
+            target_type=target_type,
+            target_id=target_id,
+            prior_state=prior if isinstance(prior, dict) else {},
+            new_state=new if isinstance(new, dict) else dict(payload),
+            payload={"result": "success"},
+        )
+        return
     publish_transactional(
         db,
         Event(
@@ -72,6 +98,8 @@ async def get_effective_permissions(db: AsyncSession, user_id: uuid.UUID) -> set
     membership or policy change. The database—not the auth token—must remain the
     source of truth so permission changes take effect immediately.
     """
+    if await is_user_in_group(db, user_id, SUPERADMIN_GROUP):
+        return set(await repository.list_all_permission_actions(db))
     from_groups = await repository.list_group_permission_actions_for_user(db, user_id)
     from_direct = await repository.list_direct_permission_actions_for_user(db, user_id)
 
@@ -211,6 +239,15 @@ async def add_user_to_group(
     """
     if await repository.exists_user_group(db, user_id, group_id):
         return
+    group = await repository.get_group(db, group_id)
+    if group is None:
+        raise GroupNotFoundError(group_id)
+    opposite = {
+        ADMIN_GROUP: SUPERADMIN_GROUP,
+        SUPERADMIN_GROUP: ADMIN_GROUP,
+    }.get(group.name)
+    if opposite and await is_user_in_group(db, user_id, opposite):
+        raise GroupRoleConflictError
     repository.add_user_group(db, user_id, group_id)
     _audit(
         db,

@@ -30,10 +30,94 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_database.models.auth import OneTimeToken, RefreshToken, TokenPurpose
+from cbpupsis_database.models.auth import (
+    ActiveSession,
+    OneTimeToken,
+    RefreshToken,
+    TokenPurpose,
+)
+
+
+def add_active_session(
+    db: AsyncSession,
+    *,
+    session_id: uuid.UUID,
+    user_id: uuid.UUID,
+    token_hash: str,
+    device_info: str,
+    ip_address: str,
+    now: datetime,
+) -> None:
+    """Stage server-side session state. SQL:: INSERT INTO user_active_sessions (...)."""
+    db.add(
+        ActiveSession(
+            id=session_id,
+            user_id=user_id,
+            session_token_hash=token_hash,
+            device_info=device_info,
+            ip_address=ip_address,
+            is_current=True,
+            last_activity_at=now,
+            created_at=now,
+        )
+    )
+
+
+async def touch_active_session(
+    db: AsyncSession,
+    *,
+    session_id: uuid.UUID,
+    user_id: uuid.UUID,
+    token_hash: str,
+    cutoff: datetime,
+    now: datetime,
+) -> bool:
+    """Slide an unexpired session.
+
+    SQL:: UPDATE user_active_sessions SET last_activity_at = :now
+    WHERE id = :session_id AND last_activity_at > :cutoff.
+    """
+    result = await db.execute(
+        update(ActiveSession)
+        .where(
+            ActiveSession.id == session_id,
+            ActiveSession.user_id == user_id,
+            ActiveSession.session_token_hash == token_hash,
+            ActiveSession.is_current.is_(True),
+            ActiveSession.last_activity_at > cutoff,
+        )
+        .values(last_activity_at=now)
+    )
+    return result.rowcount == 1
+
+
+async def delete_active_session(
+    db: AsyncSession,
+    *,
+    session_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> None:
+    """Remove an invalidated session.
+
+    SQL:: DELETE FROM user_active_sessions WHERE id = :session_id.
+    """
+    await db.execute(
+        delete(ActiveSession).where(
+            ActiveSession.id == session_id, ActiveSession.user_id == user_id
+        )
+    )
+
+
+async def delete_active_sessions_for_user(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Delete every server-side session for an account.
+
+    SQL:: DELETE FROM user_active_sessions WHERE user_id = :user_id.
+    """
+    await db.execute(delete(ActiveSession).where(ActiveSession.user_id == user_id))
+
 
 # --------------------------------------------------------------------------- #
 # Refresh tokens

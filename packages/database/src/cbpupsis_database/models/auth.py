@@ -16,7 +16,8 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, String
+from sqlalchemy import Boolean, DateTime, Enum, String, Text
+from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import Mapped, mapped_column
 
 from cbpupsis_database.base import Base, TimestampMixin, UUIDMixin
@@ -47,6 +48,20 @@ class RefreshToken(UUIDMixin, TimestampMixin, Base):
     revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
+
+
+class ActiveSession(UUIDMixin, Base):
+    """Server-side session state used for idle-revocable Superadmin tokens."""
+
+    __tablename__ = "user_active_sessions"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    session_token_hash: Mapped[str] = mapped_column(String(64))
+    device_info: Mapped[str] = mapped_column(Text)
+    ip_address: Mapped[str] = mapped_column(INET().with_variant(String(45), "sqlite"))
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_activity_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class TokenPurpose(enum.StrEnum):
