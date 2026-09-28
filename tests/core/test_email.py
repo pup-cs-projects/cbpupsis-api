@@ -16,14 +16,14 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.emails import (
+from cbpupsis_core.emails import (
     ConsoleEmailSender,
     EmailSender,
     SESEmailSender,
     get_email_sender,
     send_email,
 )
-from app.domains.users import service as users_service
+from cbpupsis_shared.domains.users import service as users_service
 
 
 @pytest.fixture(autouse=True)
@@ -37,14 +37,17 @@ def _clear_sender_cache():
 class TestSenderSelection:
     def test_console_backend_when_ses_is_unconfigured(self, monkeypatch) -> None:
         """The default in development and tests: no credentials, no real mail."""
-        monkeypatch.setattr("app.core.emails.sender.settings.ses_from_email", None)
+        monkeypatch.setattr("cbpupsis_core.emails.sender.settings.ses_from_email", None)
         assert isinstance(get_email_sender(), ConsoleEmailSender)
 
     def test_ses_backend_when_configured(self, monkeypatch) -> None:
         monkeypatch.setattr(
-            "app.core.emails.sender.settings.ses_from_email", "no-reply@example.com"
+            "cbpupsis_core.emails.sender.settings.ses_from_email",
+            "no-reply@example.com",
         )
-        monkeypatch.setattr("app.core.emails.sender.settings.aws_region", "us-east-1")
+        monkeypatch.setattr(
+            "cbpupsis_core.emails.sender.settings.aws_region", "us-east-1"
+        )
 
         constructed: dict[str, object] = {}
 
@@ -64,7 +67,7 @@ class TestSenderSelection:
     def test_the_sender_is_cached(self, monkeypatch) -> None:
         """boto3 client construction resolves credentials and loads service
         models — far too expensive to repeat per message."""
-        monkeypatch.setattr("app.core.emails.sender.settings.ses_from_email", None)
+        monkeypatch.setattr("cbpupsis_core.emails.sender.settings.ses_from_email", None)
         assert get_email_sender() is get_email_sender()
 
     def test_both_backends_satisfy_the_protocol(self) -> None:
@@ -73,7 +76,7 @@ class TestSenderSelection:
 
 class TestConsoleSender:
     async def test_logs_rather_than_sends(self, caplog) -> None:
-        with caplog.at_level(logging.INFO, logger="app.core.emails.sender"):
+        with caplog.at_level(logging.INFO, logger="cbpupsis_core.emails.sender"):
             await ConsoleEmailSender().send(
                 to="someone@example.com", subject="Hi", body="Body text"
             )
@@ -90,10 +93,10 @@ class TestSendEmailNeverRaises:
                 raise RuntimeError("SES is down")
 
         monkeypatch.setattr(
-            "app.core.emails.sender.get_email_sender", lambda: ExplodingSender()
+            "cbpupsis_core.emails.sender.get_email_sender", lambda: ExplodingSender()
         )
 
-        with caplog.at_level(logging.ERROR, logger="app.core.emails.sender"):
+        with caplog.at_level(logging.ERROR, logger="cbpupsis_core.emails.sender"):
             result = await send_email(to="a@example.com", subject="S", body="B")
 
         assert result is False
@@ -101,7 +104,7 @@ class TestSendEmailNeverRaises:
 
     async def test_a_working_sender_returns_true(self, monkeypatch) -> None:
         monkeypatch.setattr(
-            "app.core.emails.sender.get_email_sender", lambda: ConsoleEmailSender()
+            "cbpupsis_core.emails.sender.get_email_sender", lambda: ConsoleEmailSender()
         )
         assert await send_email(to="a@example.com", subject="S", body="B") is True
 
@@ -116,9 +119,9 @@ class TestSendEmailNeverRaises:
                 raise RuntimeError("SES is down")
 
         monkeypatch.setattr(
-            "app.core.emails.sender.get_email_sender", lambda: ExplodingSender()
+            "cbpupsis_core.emails.sender.get_email_sender", lambda: ExplodingSender()
         )
-        with caplog.at_level(logging.ERROR, logger="app.core.emails.sender"):
+        with caplog.at_level(logging.ERROR, logger="cbpupsis_core.emails.sender"):
             await send_email(to="a@example.com", subject="S", body="SECRET-TOKEN-VALUE")
         assert "SECRET-TOKEN-VALUE" not in caplog.text
 
@@ -214,7 +217,7 @@ class TestEmailFailureDoesNotBreakTheRequest:
                 raise RuntimeError("SES is down")
 
         monkeypatch.setattr(
-            "app.core.emails.sender.get_email_sender", lambda: ExplodingSender()
+            "cbpupsis_core.emails.sender.get_email_sender", lambda: ExplodingSender()
         )
 
         response = await client.post(
@@ -242,7 +245,7 @@ class TestEmailFailureDoesNotBreakTheRequest:
                 raise RuntimeError("SES is down")
 
         monkeypatch.setattr(
-            "app.core.emails.sender.get_email_sender", lambda: ExplodingSender()
+            "cbpupsis_core.emails.sender.get_email_sender", lambda: ExplodingSender()
         )
 
         response = await client.post(
@@ -254,27 +257,27 @@ class TestEmailFailureDoesNotBreakTheRequest:
 class TestTemplates:
     def test_verification_link_points_at_the_frontend(self) -> None:
         """A human clicks these; the API has no page to render."""
-        from app.core import emails as email_templates
+        from cbpupsis_core import emails as email_templates
 
         subject, body = email_templates.verification_email("abc123")
         assert subject
         assert "/verify-email?token=abc123" in body
 
     def test_reset_link_points_at_the_frontend(self) -> None:
-        from app.core import emails as email_templates
+        from cbpupsis_core import emails as email_templates
 
         _subject, body = email_templates.password_reset_email("xyz789")
         assert "/reset-password?token=xyz789" in body
 
     def test_tokens_are_url_escaped(self) -> None:
-        from app.core import emails as email_templates
+        from cbpupsis_core import emails as email_templates
 
         _subject, body = email_templates.verification_email("a+b/c=d")
         assert "a+b/c=d" not in body
         assert "a%2Bb%2Fc%3Dd" in body
 
     def test_password_changed_notice_carries_no_token(self) -> None:
-        from app.core import emails as email_templates
+        from cbpupsis_core import emails as email_templates
 
         _subject, body = email_templates.password_changed_email()
         assert "token=" not in body

@@ -14,9 +14,9 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import UnauthorizedError, ValidationError
-from app.domains.auth import service as auth_service
-from app.domains.users import service as users_service
+from cbpupsis_core.exceptions import UnauthorizedError, ValidationError
+from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.users import service as users_service
 
 
 class TestProfileUpdate:
@@ -408,7 +408,7 @@ class TestDeletionScrubsPII:
         # The row is still there: records referencing this id are not orphaned.
         from sqlalchemy import select
 
-        from app.domains.users.models import User
+        from cbpupsis_database.models.users import User
 
         row = await db.scalar(select(User).where(User.id == user_id))
         assert row is not None
@@ -436,8 +436,8 @@ class TestDeletionScrubsPII:
         remaining purpose."""
         from sqlalchemy import select
 
-        from app.domains.auth.security import verify_password
-        from app.domains.users.models import User
+        from cbpupsis_database.models.users import User
+        from cbpupsis_shared.domains.auth.security import verify_password
 
         user = await auth_service.register(
             db, email="hash@example.com", password="a-long-enough-password"
@@ -477,7 +477,7 @@ class TestDeletionScrubsPII:
         assert deleted.json()["detail"] == never_existed.json()["detail"]
 
     async def test_verify_password_is_false_for_a_scrubbed_hash(self) -> None:
-        from app.domains.auth.security import verify_password
+        from cbpupsis_shared.domains.auth.security import verify_password
 
         assert verify_password("anything-at-all", "!deleted") is False
 
@@ -489,7 +489,7 @@ class TestDeletionScrubsPII:
         )
         await users_service.delete_own_account(db, user.id, "a-long-enough-password")
 
-        from app.core.exceptions import NotFoundError
+        from cbpupsis_core.exceptions import NotFoundError
 
         assert await users_service.get_active_user(db, user.id) is None
         assert await users_service.get_by_email(db, "gone@example.com") is None
@@ -526,7 +526,7 @@ class TestDeletionScrubsPII:
 
         from sqlalchemy import select
 
-        from app.domains.users.models import User
+        from cbpupsis_database.models.users import User
 
         emails = (await db.execute(select(User.email))).scalars().all()
         assert len(emails) == len(set(emails))
@@ -578,7 +578,7 @@ class TestProfileService:
         assert updated.bio == "Only this"
 
     async def test_unknown_user_raises_not_found(self, db: AsyncSession) -> None:
-        from app.core.exceptions import NotFoundError
+        from cbpupsis_core.exceptions import NotFoundError
 
         with pytest.raises(NotFoundError):
             await users_service.update_profile(db, uuid.uuid4(), bio="x")

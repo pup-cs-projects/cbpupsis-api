@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domains.users import repository as users_repository
+from cbpupsis_shared.domains.users import repository as users_repository
 
 
 class TestUsersRepository:

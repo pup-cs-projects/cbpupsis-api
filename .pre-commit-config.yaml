@@ -19,6 +19,13 @@ repos:
     rev: v6.0.0
     hooks:
       - id: check-yaml
+        exclude: ^docker/docker-compose\.staging\.yml$
+      # The staging overlay uses Compose's `!reset` tag, which a plain YAML
+      # loader rejects. --unsafe checks its syntax without constructing tags.
+      - id: check-yaml
+        name: check yaml (compose tags)
+        args: [--unsafe]
+        files: ^docker/docker-compose\.staging\.yml$
       - id: check-json
       - id: check-toml
       - id: end-of-file-fixer
@@ -58,8 +65,10 @@ repos:
         language_version: python3.12
         args: [-c, pyproject.toml]
         additional_dependencies: ["bandit[toml]"]
-        # Application code only: tests use assert by design (B101).
-        files: ^(app|scripts)/
+        # Application code only: tests use assert by design (B101), and applied
+        # migrations are generated and never edited.
+        files: ^((packages|apps|scripts)/.*|main\.py)$
+        exclude: ^packages/migrations/versions/
 
   # Commit messages follow Conventional Commits, with the types listed in
   # CONTRIBUTING.md. Merge commits from `git pull` are still accepted.

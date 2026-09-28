@@ -38,15 +38,15 @@ import sys
 
 from sqlalchemy import select
 
-from app.core.exceptions import ConflictError
-from app.database import AsyncSessionLocal
-from app.domains.auth import service as auth_service
-from app.domains.auth.constants import PASSWORD_MIN_LENGTH
-from app.domains.iam import service as iam_service
-from app.domains.iam.constants import ADMIN_GROUP
-from app.domains.iam.models import Group
-from app.domains.users import service as users_service
-from app.domains.users.models import User
+from cbpupsis_core.exceptions import ConflictError
+from cbpupsis_database.models.iam import Group
+from cbpupsis_database.models.users import User
+from cbpupsis_database.session import AsyncSessionLocal
+from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.auth.constants import PASSWORD_MIN_LENGTH
+from cbpupsis_shared.domains.iam import service as iam_service
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
+from cbpupsis_shared.domains.users import service as users_service
 
 #: The group an ordinary user belongs to. Registration itself grants no groups,
 #: so the API alone cannot produce an account that may create items; seed_iam

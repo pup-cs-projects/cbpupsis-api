@@ -62,9 +62,11 @@ jobs:
       - name: pytest
         # No database needed: the suite runs against in-memory SQLite.
         # SRS 4.5 requires coverage above 80 percent, so the job fails below it.
+        # --cov with no value measures [tool.coverage.run] source: every
+        # workspace member under packages/ and apps/.
         run: >
           uv run pytest -q
-          --cov=app --cov-report=term-missing --cov-report=xml
+          --cov --cov-report=term-missing --cov-report=xml
           --cov-fail-under=80
 
       - name: Upload coverage

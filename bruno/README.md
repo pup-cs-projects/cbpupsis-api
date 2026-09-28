@@ -36,10 +36,11 @@ npm install --prefix bruno          # installs the Bruno CLI
 cp bruno/env.example bruno/.env     # the test-account password
 ```
 
-Then, with the API running and its database migrated:
+Then, with the three apps running and the database migrated (`make up` does
+both):
 
 ```bash
-uv run python -m scripts.seed_e2e
+make seed-e2e     # or: uv run python -m scripts.seed_e2e, against the same database
 ```
 
 That seeds three accounts the suite logs in as. It is idempotent — re-run it
@@ -61,7 +62,7 @@ an account whose history the run controls.
 
 ```bash
 cd bruno
-npm test              # everything, against localhost:8000
+npm test              # everything, against localhost:8001-8003
 npm run test:items    # one folder (smoke runs first, for the tokens)
 ```
 
@@ -140,7 +141,7 @@ that already holds a previous run's records without a reset.
   Pydantic's `EmailStr` rejects it as a special-use name — the API returns 422
   for any address in that TLD.)
 - **Notification *delivery* is asserted for one event only, and needs the worker.**
-  Delivery is performed by a separate process (`app/worker.py`) consuming the
+  Delivery is performed by a separate process (`cbpupsis_shared.worker`) consuming the
   outbox — it runs in `docker/docker-compose.yml` and in CI, but NOT when you
   start the API alone with `uvicorn`. Two consequences worth knowing before
   adding to `05-notifications-journey`:
@@ -158,11 +159,13 @@ that already holds a previous run's records without a reset.
   The mechanics are covered in `tests/core/test_outbox.py` and
   `tests/domains/notifications/`, where the worker is driven directly.
 - **Rate-limit state is shared.** With the default `memory://` storage the
-  counters live in the API process and persist for the window. Two consequences:
+  counters live in each app's process and persist for the window. Every
+  `/auth/login` in the suite goes to the student app, so that is the one whose
+  budget matters. Two consequences:
   the API must run with a raised `RATE_LIMIT_LOGIN` (see
   `environments/README.md`), and running the suite repeatedly in quick
-  succession can still exhaust even that raised budget. `docker compose restart
-  api` clears the counters instantly, since they die with the process.
+  succession can still exhaust even that raised budget. `make restart` clears
+  the counters instantly, since they die with the process.
 
 ## Known defects this suite reports
 
@@ -178,4 +181,4 @@ defect is fixed.
   database does not catch it either. Group membership is an authorization
   primitive: a typo'd id looks like success to whoever is granting access, and
   if that id is later issued to a real user they inherit a grant nobody made.
-  The fix belongs in `app/domains/iam/service.py`.
+  The fix belongs in `packages/shared/src/cbpupsis_shared/domains/iam/service.py`.

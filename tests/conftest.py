@@ -7,8 +7,8 @@ identically, so anything genuinely dialect-specific (JSONB operators, partial
 indexes) deserves an integration test against a real Neon branch.
 
 Environment defaults live in ``[tool.pytest.ini_options].env`` in pyproject.toml
-(via pytest-env), because ``app.config`` validates settings at import time and
-must see them before collection imports anything from ``app``.
+(via pytest-env), because ``cbpupsis_core.config`` validates settings at import
+time and must see them before collection imports any workspace package.
 """
 
 from __future__ import annotations
@@ -24,21 +24,16 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-# Import every domain's models so Base.metadata is complete before create_all —
-# the same footgun that migrations/env.py guards against.
-from app.core.outbox import models as _outbox_models  # noqa: F401
-from app.database import Base, get_db
-from app.domains.audit import models as _audit_models  # noqa: F401
-from app.domains.auth import models as _auth_models  # noqa: F401
-from app.domains.auth import service as auth_service
-from app.domains.iam import models as _iam_models  # noqa: F401
-from app.domains.iam import service as iam_service
-from app.domains.items import models as _items_models  # noqa: F401
-from app.domains.notifications import models as _notifications_models  # noqa: F401
-from app.domains.notifications.constants import NOTIFICATION_TYPES
-from app.domains.users import models as _users_models  # noqa: F401
-from app.domains.users import service as users_service
-from app.main import app
+# Imported for its side effect: registering every table on Base.metadata before
+# create_all, the same way packages/migrations/env.py does.
+from cbpupsis_database import models as _models  # noqa: F401
+from cbpupsis_database.base import Base
+from cbpupsis_database.session import get_db
+from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.iam import service as iam_service
+from cbpupsis_shared.domains.notifications.constants import NOTIFICATION_TYPES
+from cbpupsis_shared.domains.users import service as users_service
+from main import app
 
 
 @pytest.fixture
@@ -135,8 +130,8 @@ def drain_outbox(db: AsyncSession):
     """
 
     async def _drain() -> int:
-        from app import worker
-        from app.domains.notifications import handlers
+        from cbpupsis_shared import worker
+        from cbpupsis_shared.domains.notifications import handlers
 
         async def _handle(event, *, message_id):
             await handlers.deliver_event_on(db, event, message_id=message_id)
@@ -160,7 +155,7 @@ def sent_emails(monkeypatch) -> list[dict[str, str]]:
 
     Patches ``send_email`` where the auth service *looked it up*, not where it
     is defined: the service imported the name at module load, so patching
-    ``app.core.emails.send_email`` would leave that binding untouched.
+    ``cbpupsis_core.emails.send_email`` would leave that binding untouched.
 
     Tests use this to read the one-time token out of the message body, which is
     the only place it exists — by design, since only a digest is stored.
@@ -176,8 +171,10 @@ def sent_emails(monkeypatch) -> list[dict[str, str]]:
     # flow, and a reset link must not arrive a poll interval late), while
     # everything durable goes through the notifications channel. Patching only
     # one would silently miss half the mail.
-    monkeypatch.setattr("app.domains.auth.service.send_email", _capture)
-    monkeypatch.setattr("app.domains.notifications.channels.send_email", _capture)
+    monkeypatch.setattr("cbpupsis_shared.domains.auth.service.send_email", _capture)
+    monkeypatch.setattr(
+        "cbpupsis_shared.domains.notifications.channels.send_email", _capture
+    )
     return captured
 
 
@@ -198,7 +195,7 @@ async def registered_user(client: AsyncClient, db: AsyncSession) -> dict[str, st
     redeeming the mailed token, so this fixture does not depend on the
     ``sent_emails`` capture and stays usable by tests that never opt into it.
     The mailed-token path is exercised on its own in
-    ``tests/test_auth_email_flows.py``.
+    ``tests/domains/auth/test_email_flows.py``.
 
     Tests that specifically need an *unverified* account register one inline
     rather than using this fixture.

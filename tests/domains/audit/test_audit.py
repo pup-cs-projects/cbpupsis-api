@@ -21,11 +21,11 @@ from datetime import UTC, datetime
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.events import Event, event_bus
-from app.domains.audit import service as audit_service
-from app.domains.audit.constants import AUDITED_EVENTS
-from app.domains.audit.subscribers import register_audit_subscribers
-from app.domains.iam import service as iam_service
+from cbpupsis_core.events import Event, event_bus
+from cbpupsis_shared.domains.audit import service as audit_service
+from cbpupsis_shared.domains.audit.constants import AUDITED_EVENTS
+from cbpupsis_shared.domains.audit.subscribers import register_audit_subscribers
+from cbpupsis_shared.domains.iam import service as iam_service
 
 
 class TestRecording:

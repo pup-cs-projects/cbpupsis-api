@@ -5,8 +5,8 @@ accepts only `vars` blocks — so what each variable is for is documented here.
 
 | Variable | Purpose |
 |---|---|
-| `base_url` | Origin of the running API. `/health`, `/docs`, and `/openapi.json` hang off it. |
-| `api` | The versioned API root (`{base_url}/api/v1`). Every domain request uses this. |
+| `student_url`, `faculty_url`, `admin_url` | Origin of each app (ports 8001, 8002, 8003). `/health`, `/docs`, and `/openapi.json` hang off each. |
+| `student_api`, `faculty_api`, `admin_api` | Each app's versioned API root (`{origin}/api/v1`). A request uses the root of the app that serves it: IAM and audit requests use `admin_api`, items use `student_api`. Endpoints every app serves (auth, users, notifications) use `student_api`. |
 | `docs_expected` | `true` where the docs surface should be reachable, `false` for a production-like build. `08-contract/08-docs-surface` asserts the opposite thing depending on it — set it to `false` and it demands `/openapi.json`, `/docs`, `/redoc`, and `/scalar` all 404. |
 | `e2e_password` | Password for the seeded accounts. Resolved from the `E2E_PASSWORD` process environment variable (via `bruno/.env` locally), never written in a committed file. It must match what `scripts/seed_e2e.py` seeded. |
 

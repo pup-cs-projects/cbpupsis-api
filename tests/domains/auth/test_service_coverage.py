@@ -18,15 +18,15 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import UnauthorizedError
-from app.domains.auth import service as auth_service
-from app.domains.auth.exceptions import (
+from cbpupsis_core.exceptions import UnauthorizedError
+from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.auth.exceptions import (
     EmailAlreadyRegisteredError,
     IncorrectCurrentPasswordError,
     InvalidAuthTokenError,
     RefreshTokenReusedError,
 )
-from app.domains.users import service as users_service
+from cbpupsis_shared.domains.users import service as users_service
 
 PASSWORD = "correct-horse-battery-staple"
 
@@ -78,7 +78,7 @@ class TestRefreshFamilyRevocation:
         refuses both. Minted directly rather than through login, since every
         issued token has a row by construction.
         """
-        from app.domains.auth.security import create_refresh_token
+        from cbpupsis_shared.domains.auth.security import create_refresh_token
 
         user = await _verified_user(db)
         token, _jti, _expires = create_refresh_token(user.id)
