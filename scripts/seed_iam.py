@@ -20,15 +20,15 @@ import asyncio
 
 from sqlalchemy import select
 
-from app.database import AsyncSessionLocal
-from app.domains.iam.constants import ADMIN_GROUP
-from app.domains.iam.models import (
+from cbpupsis_database.models.iam import (
     Group,
     GroupPolicy,
     Permission,
     Policy,
     PolicyPermission,
 )
+from cbpupsis_database.session import AsyncSessionLocal
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
 
 # --------------------------------------------------------------------------- #
 # Declarative seed data. Edit these three structures to change the baseline.
@@ -49,10 +49,10 @@ from app.domains.iam.models import (
 # The actions below stay LITERAL strings even though every one of them also has
 # a constant in its domain's constants.py. That duplication is the point: this
 # file is the independent declaration of what exists in the database, and
-# tests/test_permission_constants.py checks the constants against it. Importing
-# the constants here would make that test compare a value with itself, so a
-# misspelled constant would seed its own typo and the check would pass while
-# every guard using it denied all callers.
+# tests/domains/iam/test_permission_constants.py checks the constants against
+# it. Importing the constants here would make that test compare a value with
+# itself, so a misspelled constant would seed its own typo and the check would
+# pass while every guard using it denied all callers.
 # ADMIN_GROUP is the deliberate exception: bootstrap_admin LOOKS UP the group
 # this file CREATES, so there the two must be the same object, not two copies.
 # --------------------------------------------------------------------------- #

@@ -5,7 +5,7 @@ meta {
 }
 
 patch {
-  url: {{api}}/users/me
+  url: {{student_api}}/users/me
   body: json
   auth: inherit
 }
@@ -46,7 +46,7 @@ tests {
   // bru.sendRequest throws on non-2xx and every one of these is a deliberate
   // 422 — unwrap err.response or the first probe aborts the script and the
   // whole file silently reports zero tests.
-  const api = bru.getEnvVar("api");
+  const api = bru.getEnvVar("student_api");
   const token = bru.getVar("owner_access_token");
 
   const attempt = async (avatarUrl) => {

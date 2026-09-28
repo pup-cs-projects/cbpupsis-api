@@ -5,7 +5,7 @@ meta {
 }
 
 post {
-  url: {{api}}/iam/groups/{{e2e_group_id}}/users
+  url: {{admin_api}}/iam/groups/{{e2e_group_id}}/users
   body: json
   auth: inherit
 }
@@ -37,7 +37,7 @@ tests {
     // later issued to a real user they inherit a grant nobody deliberately
     // made.
     //
-    // The fix belongs in app/domains/iam/service.py — resolve the user through
+    // The fix belongs in cbpupsis_shared/domains/iam/service.py: resolve the user through
     // the users domain's service (per the cross-domain rule in CONVENTIONS.md) and
     // raise NotFoundError when it does not exist. When that lands, this test
     // passes as written; delete this comment and keep the assertion.

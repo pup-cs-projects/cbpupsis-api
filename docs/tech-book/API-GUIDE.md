@@ -1,9 +1,10 @@
 # FastAPI Modular-Monolith Template
 
-A production-ready FastAPI starter: one deployable app, organized by business
-domain, with boundaries clean enough that any domain can be extracted into its
-own service later. The option value of microservices without their operational
-cost.
+A production-ready FastAPI starter, organized by business domain, with
+boundaries clean enough that any domain can be extracted into its own service
+later. CBPUPSIS runs it as a uv workspace: three apps (student, faculty, admin),
+each buildable as its own service, over a shared kernel that owns every model
+and every migration. The same three apps also run as one process.
 
 **Stack:** FastAPI · Pydantic v2 · SQLAlchemy 2.0 (async) · Neon Postgres ·
 Alembic · JWT auth (argon2) · IAM-style RBAC in-database · uv · Docker.
@@ -11,18 +12,24 @@ Alembic · JWT auth (argon2) · IAM-style RBAC in-database · uv · Docker.
 ## Quick start
 
 ```bash
-cp env.example env/env.dev          # real values live here; env/ is gitignored
+mkdir -p env/student env/faculty env/admin
+for app in student faculty admin; do cp env.example env/$app/env.dev; done
 make setup                          # build, start, migrate, seed
 make create-admin EMAIL=you@example.com   # after registering through the API
 ```
 
-Configuration lives in `env/env.<environment>`, one file per environment, never
-committed. `make up env=dev` reads `env/env.dev`; `env=staging` reads
-`env/env.staging`. `env.example` is the committed shape to copy from, and `make up`
-refuses to start when the file for the chosen env is missing.
+Configuration lives in `env/<app>/env.<stage>`, one file per app and stage, never
+committed. `make up env=dev` reads `env/student/env.dev`, `env/faculty/env.dev`,
+and `env/admin/env.dev`; `env=staging` reads the `env.staging` file in each.
+The migrate service and the worker read the admin file, and so does a host-side
+script. `DATABASE_URL`, `DIRECT_DATABASE_URL`, and `JWT_SECRET` must be
+identical in all three files. `env.example` is the committed shape to copy
+from, and `make up` refuses to start when any file for the chosen env is missing.
 
-`make setup` brings up the API and a local Postgres, generates the first
-migration if none exists, applies it, and seeds the RBAC baseline. Then:
+`make setup` brings up the three apps (student on :8001, faculty on :8002, admin
+on :8003) and a local Postgres, generates the first migration if none exists,
+applies it once through the `migrate` service, and seeds the RBAC baseline.
+Then:
 
 ```bash
 make help                    # every target
@@ -158,80 +165,105 @@ Two things worth knowing before using it on real data:
   index page, leaving `password_hash` visible *and editable* in the form. The
   exclusions are asserted in `tests/core/test_admin_panel.py`.
 
-To take it out, delete the `setup_admin(app)` call in `app/main.py`; to expose it
-elsewhere, gate it on its own setting rather than widening `docs_enabled`.
+It is mounted only by processes that serve the admin app: `api-admin` on :8003,
+and the composed `main.py`. To take it out, remove `setup_admin` from
+`DEVELOPMENT_TOOLS` in `apps/api-admin/src/cbpupsis_api_admin/routes.py`; to
+expose it elsewhere, gate it on its own setting rather than widening
+`docs_enabled`.
 
 ## Structure
 
 ```
-app/
-  main.py            # thin entry point: wires routers, middleware, handlers
-  config.py          # pydantic-settings; validated at startup
-  database.py        # async SQLAlchemy engine/session (Neon-aware)
-  admin.py           # SQLAdmin panel, development-only, ManageIAM required
+packages/                    # the shared kernel; every app depends on it
+  core/src/cbpupsis_core/    #   no database: the bottom of the dependency graph
+    config.py                #     pydantic-settings; validated at startup
+    events.py                #     in-process event bus -> swap for a broker after a split
+    exceptions.py            #     AppError hierarchy + handlers
+    logging.py               #     JSON logs, request-id correlation
+    pagination.py            #     Page[T] envelope
+    emails/                  #     EmailSender protocol, SES and console backends, bodies
+    middleware/              #     correlation-id, request logging, CORS; @rate_limit
 
-  api/v1/router.py   # THE aggregator — mounts every domain router. Versioning seam.
+  database/src/cbpupsis_database/
+    base.py                  #   the declarative Base; UUID, timestamp, soft-delete mixins
+    session.py               #   async engine and session (Neon-aware), get_db
+    models/                  #   EVERY table, one module per domain; __init__ imports all
 
-  core/              # cross-cutting infrastructure
-    events.py        #   in-process event bus -> swap for a broker after a split
-    exceptions.py    #   AppError hierarchy + handlers
-    logging.py       #   JSON logs, request-id correlation
-    emails/          #   outbound mail
-      sender.py      #     EmailSender protocol; SES and console backends
-      templates.py   #     the message bodies, kept apart from transport
-    middleware/      #   what wraps a request
-      http.py        #     correlation-id, request logging, CORS
-      rate_limit.py  #     limiter, key function (user id, else IP), @rate_limit
-    outbox/          #   transactional outbox: side effects that survive a crash
+  shared/src/cbpupsis_shared/  # what every app needs
+    application.py           #   create_app(): middleware, handlers, docs gate, probes
+    routes.py                #   where each shared router is mounted, declared once
+    domains/                 #   cross-role domains: schemas, repository, service, router
+      auth/                  #     register/login/refresh/logout, argon2, JWT
+      users/                 #     identity and profile
+      iam/                   #     RBAC: permissions, policies, groups (served by admin)
+      audit/                 #     the administrative trail (served by admin)
+      notifications/         #     in-app + email notices, delivered via the worker
+    outbox/                  #   transactional outbox: side effects that survive a crash
+    worker.py                #   the outbox consumer; runs as its OWN process
 
-  domains/           # ONE folder per feature. Product code lives here.
-    auth/            #   register/login/refresh/logout, argon2, JWT
-    users/           #   identity and profile
-    iam/             #   RBAC: permissions, policies, groups
-    audit/           #   the administrative trail; subscribes to IAM/user events
-    notifications/   #   in-app + email notices, delivered via the outbox worker
-    items/           #   <-- the reference domain; copy this shape
-      models.py      #       SQLAlchemy tables, owned by THIS domain only
-      schemas.py     #       Pydantic DTOs = the domain's public data contract
-      repository.py  #       ALL data access; returns ORM rows, holds no rules
-      service.py     #       business logic, framework-agnostic = public interface
-      client.py      #       the extraction swap point (local call now, HTTP later)
-      router.py      #       HTTP only (thin): parse -> call service -> return
+  migrations/                # the one Alembic history; env.py imports cbpupsis_database.models
 
-  shared/            # genuinely cross-cutting helpers only (not a dumping ground)
-    models.py        #   UUIDMixin, TimestampMixin, SoftDeleteMixin
-    pagination.py    #   Page[T] envelope
+apps/                        # one folder per role; each builds as its own service
+  api-student/src/cbpupsis_api_student/
+    main.py                  #   uvicorn cbpupsis_api_student.main:app
+    routes.py                #   the routers this app serves
+    domains/items/           #   <-- the reference app-owned domain; copy this shape
+      schemas.py             #       Pydantic DTOs = the domain's public data contract
+      repository.py          #       ALL data access; returns ORM rows, holds no rules
+      service.py             #       business logic, framework-agnostic = public interface
+      client.py              #       the extraction swap point (local call now, HTTP later)
+      router.py              #       HTTP only (thin): parse -> call service -> return
+  api-faculty/               #   the shared routers only, until faculty features land
+  api-admin/                 #   IAM, audit, and admin.py (the SQLAdmin panel)
 
-  worker.py          # the outbox consumer; runs as its OWN process, not in the API
+main.py                      # all three apps in one process: uvicorn main:app
+scripts/seed_iam.py          # idempotent RBAC seed
+scripts/seed_e2e.py          # verified accounts the HTTP suite logs in as
 
-migrations/          # Alembic; env.py imports ALL domain models (footgun handled)
-scripts/seed_iam.py  # idempotent RBAC seed
-scripts/seed_e2e.py  # verified accounts the HTTP suite logs in as
+tests/                       # against in-memory SQLite; no database required
+  conftest.py                #   shared fixtures (db, client, make_user, auth_headers)
+  domains/<name>/            #   one folder per domain, wherever the domain lives
+  core/                      #   kernel infrastructure, plus the conventions that span
+                             #   the workspace (architecture, permission naming)
+  apps/                      #   which app serves which routers; the composed union
 
-tests/               # 610 tests against in-memory SQLite; no database required
-  conftest.py        #   shared fixtures (db, client, make_user, auth_headers)
-  domains/<name>/    #   mirrors app/domains/<name>/ — every layer's tests together
-  core/              #   mirrors app/core/ — logging, email, rate limiting, docs gate,
-                     #   plus conventions that span domains (permission naming)
-
-bruno/               # end-to-end HTTP tests; needs a RUNNING API (see bruno/README.md)
+bruno/                       # end-to-end HTTP tests; needs the RUNNING apps (see bruno/README.md)
 ```
 
-## Starting a new project from this template
+The apps are what a client talks to; the kernel is what they share. Each app
+lists the router mounts it serves, its `main.py` passes them to `create_app`,
+and the root `main.py` passes the union of all three. Every mount is declared
+once, so a path served by two apps is the same path in both, and in the
+composed process.
 
-1. Rename `items` to your first real domain (or copy its shape and delete it).
-2. Register the router in `app/api/v1/router.py` — one import, one line.
-3. Import its models in `migrations/env.py`, or autogenerate silently skips the
-   tables.
-4. Replace the example actions in `scripts/seed_iam.py` with the ones your app
+### Why three kernel packages rather than one
+
+`core` sits below `database` because the session reads its settings, and
+`shared` sits above both because the outbox and the domains query the database.
+Putting settings and the outbox in one package, as the natural split suggests,
+would make that package and `database` depend on each other.
+`tests/core/test_architecture.py` enforces the order.
+
+## Starting a new feature
+
+1. Add its table to `packages/database/src/cbpupsis_database/models/<name>.py`,
+   and import that module in `models/__init__.py`, or autogenerate silently
+   skips the table (a test catches this).
+2. Put the other layers in `apps/api-<role>/src/cbpupsis_api_<role>/domains/<name>/`
+   if one app owns the feature, or in `packages/shared/src/cbpupsis_shared/domains/<name>/`
+   if every app needs it. Copy the shape of `items`.
+3. Mount its router: a `RouterMount` in that app's `routes.py`, or, for a shared
+   domain, one in `cbpupsis_shared/routes.py` added to the `MOUNTS` of each app
+   that serves it.
+4. Generate the migration: `make migrate-create MSG="add <name>"`, and read it.
+5. Replace the example actions in `scripts/seed_iam.py` with the ones your app
    actually authorizes.
-5. Set a real `JWT_SECRET`. The app refuses to start with anything under 32
-   characters.
 
 ## The three rules
 
 1. **Organize by domain, not by file type.** All of a feature's code in one
-   folder.
+   folder, apart from its table, which lives with every other table in the
+   kernel.
 2. **Domains talk only through each other's `service.py`**, via `client.py` —
    never by importing another domain's models or querying its tables. Cross-domain
    ids are stored as bare UUIDs with no foreign key, because a hard FK is a
@@ -245,7 +277,7 @@ Each domain is split so that a change has one obvious home:
 
 | Layer | Responsibility | Hard rule |
 |---|---|---|
-| `models.py` | ORM tables | every schema change gets a migration |
+| `cbpupsis_database/models/<domain>.py` | ORM tables, in the kernel | every schema change gets a migration |
 | `schemas.py` | request/response DTOs | never one class for both input and output |
 | `repository.py` | builds and runs queries | no rules, no domain errors, no DTOs |
 | `service.py` | rules, ownership checks, orchestration | never calls `session.execute` |
@@ -361,7 +393,7 @@ the configured limit.
 **Limiting a new endpoint is two steps** — a settings field and a decorator:
 
 ```python
-# app/config.py
+# packages/core/src/cbpupsis_core/config.py
 rate_limit_export: str = "2/hour"
 
 # the router
@@ -422,7 +454,7 @@ and uniquely indexed, so several deletions would otherwise collide, and
 
 ### Email delivery
 
-`app/core/emails/sender.py` picks a backend from configuration: **`SESEmailSender`** when
+`cbpupsis_core/emails/sender.py` picks a backend from configuration: **`SESEmailSender`** when
 `SES_FROM_EMAIL` is set, **`ConsoleEmailSender`** otherwise — so development and
 tests need no AWS credentials and cannot mail a real person by accident. boto3 is
 synchronous, so every SES call goes through `asyncio.to_thread`; calling it
@@ -513,7 +545,7 @@ await _require_owner_or_permission(db, item, user_id, "ModerateItem")
 Level 2 needs the loaded row, so it cannot live in a dependency. Enforcing only
 Level 1 is how applications ship IDOR bugs: every authenticated user holding a
 generic permission could edit everyone else's records by changing an id in the
-URL. `app/domains/items/service.py` shows the pattern; `tests/domains/items/test_items.py`
+URL. `cbpupsis_api_student/domains/items/service.py` shows the pattern; `tests/domains/items/test_items.py`
 covers it.
 
 ### Reads are a boundary too, not just writes
@@ -582,21 +614,27 @@ one of the payoffs of the layering.
 Fastest way to run everything, including a local Postgres:
 
 ```bash
-docker compose up            # API on :8000, database on :5432
+make up              # student :8001, faculty :8002, admin :8003, database :5432
 ```
 
-Compose migrates the database before starting the server, and bind-mounts the
-source so an edit on the host reloads the container.
+Compose runs the three apps as three services, a one-shot `migrate` service
+that applies migrations once before any app starts, the outbox worker, and the
+database. It bind-mounts the source, so an edit on the host reloads the apps.
 
-Three images in [`docker/`](../../docker/): `Dockerfile.dev` (dev deps, reload),
-`Dockerfile.staging`, and `Dockerfile.prod` (multi-stage, non-root, ~214MB, no
-dev deps). Staging is an identical build to production — only configuration
-differs, because a staging image that differs cannot vouch for a release.
+Nine images in [`docker/`](../../docker/): `<app>/Dockerfile.dev` (reload,
+source bind-mounted), `<app>/Dockerfile.staging`, and `<app>/Dockerfile.prod`
+(multi-stage, non-root, no dev deps), for each of `student`, `faculty`, and
+`admin`. Each contains only its own app and the kernel packages. The admin
+images also carry the migrations and `scripts/`, because the `migrate` service,
+the worker, and the seed scripts run from them. Staging is an identical build to
+production: only configuration differs, because a staging image that differs
+cannot vouch for a release.
 
-Build from the project root, since the context needs `pyproject.toml` and `app/`:
+Build from the project root, since the context needs `pyproject.toml`,
+`packages/`, and `apps/`:
 
 ```bash
-docker build -f docker/Dockerfile.prod -t api .
+docker build -f docker/student/Dockerfile.prod -t api-student .
 ```
 
 See [`docker/README.md`](../../docker/README.md) for deployment, environment
@@ -604,9 +642,9 @@ variables, and how migrations should run in a deploy.
 
 **Why keep `.venv` if everything runs in Docker?** It is the *development*
 environment: your editor resolves imports through it, the git hooks run
-`ruff` and `pytest` through it, and the suite is ~9s locally versus a build-and-run
-cycle. The image never copies it; `.dockerignore` excludes it and each build
-creates its own.
+`ruff` and `pytest` through it, and the suite is fast locally versus a
+build-and-run cycle. The image never copies it; `.dockerignore` excludes it and
+each build creates its own.
 
 ## Conventions worth keeping
 

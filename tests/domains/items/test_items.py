@@ -15,9 +15,9 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.events import Event, event_bus
-from app.core.exceptions import ForbiddenError, NotFoundError
-from app.domains.items import service as items_service
+from cbpupsis_api_student.domains.items import service as items_service
+from cbpupsis_core.events import Event, event_bus
+from cbpupsis_core.exceptions import ForbiddenError, NotFoundError
 
 
 class TestItemService:
@@ -426,7 +426,7 @@ class TestTheClientSeamRespectsTheBoundary:
     async def test_client_applies_the_read_boundary_when_given_a_viewer(
         self, db: AsyncSession
     ) -> None:
-        from app.domains.items import client as items_client
+        from cbpupsis_api_student.domains.items import client as items_client
 
         theirs = await items_service.create_item(
             db, owner_id=uuid.uuid4(), name="Theirs", price=Decimal("2.00")
@@ -436,7 +436,7 @@ class TestTheClientSeamRespectsTheBoundary:
             await items_client.get_item(db, theirs.id, viewer_id=uuid.uuid4())
 
     async def test_client_returns_the_owners_own_item(self, db: AsyncSession) -> None:
-        from app.domains.items import client as items_client
+        from cbpupsis_api_student.domains.items import client as items_client
 
         owner_id = uuid.uuid4()
         mine = await items_service.create_item(

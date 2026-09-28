@@ -17,8 +17,8 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.outbox import OutboxMessage
-from app.domains.notifications.models import DigestRun
+from cbpupsis_database.models.notifications import DigestRun
+from cbpupsis_shared.outbox import OutboxMessage
 from scripts.send_digests import DIGEST_LOCAL_HOUR, is_due, stage_digests
 
 

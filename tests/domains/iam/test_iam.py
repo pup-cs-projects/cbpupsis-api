@@ -8,10 +8,13 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ForbiddenError, NotFoundError
-from app.domains.auth.dependencies import CurrentUser
-from app.domains.iam import service as iam_service
-from app.domains.iam.dependencies import require_any_permission, require_permission
+from cbpupsis_core.exceptions import ForbiddenError, NotFoundError
+from cbpupsis_shared.domains.auth.dependencies import CurrentUser
+from cbpupsis_shared.domains.iam import service as iam_service
+from cbpupsis_shared.domains.iam.dependencies import (
+    require_any_permission,
+    require_permission,
+)
 
 
 class TestEffectivePermissions:
@@ -195,7 +198,7 @@ class TestPolicySchema:
     async def test_policy_read_includes_its_permissions(self, db: AsyncSession) -> None:
         """PolicyRead advertises a permissions list; it must actually populate,
         not silently serialise as an empty array."""
-        from app.domains.iam.schemas import PolicyRead
+        from cbpupsis_shared.domains.iam.schemas import PolicyRead
 
         await iam_service.create_permission(db, action="AlphaPerm")
         await iam_service.create_permission(db, action="BetaPerm")

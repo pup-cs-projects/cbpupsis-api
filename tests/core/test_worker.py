@@ -24,10 +24,10 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import worker
-from app.config import settings
-from app.core.events import Event
-from app.core.outbox import OutboxStatus, publish_transactional
+from cbpupsis_core.config import settings
+from cbpupsis_core.events import Event
+from cbpupsis_shared import worker
+from cbpupsis_shared.outbox import OutboxStatus, publish_transactional
 
 
 @pytest.fixture(autouse=True)
@@ -258,10 +258,10 @@ class TestHeartbeat:
             async def __aexit__(self, *exc):
                 return False
 
-        monkeypatch.setattr("app.worker.AsyncSessionLocal", _Once)
+        monkeypatch.setattr("cbpupsis_shared.worker.AsyncSessionLocal", _Once)
         await _stage(db)
 
-        with caplog.at_level(logging.INFO, logger="app.worker"):
+        with caplog.at_level(logging.INFO, logger="cbpupsis_shared.worker"):
             claimed = await worker._tick()
 
         assert claimed == 1
@@ -330,18 +330,18 @@ class TestShutdown:
 
 
 class TestTheEntrypointDoesNotDuplicateTheModule:
-    """`python -m app.worker` must not load this module twice.
+    """`python -m cbpupsis_shared.worker` must not load this module twice.
 
     A regression test for a bug that reached a running container: executing the
     package with ``-m`` runs the file as ``__main__``, and anything that later
-    does ``from app import worker`` imports it a SECOND time under its real name.
-    Two module objects, two ``_HANDLERS`` dicts — so ``register_handler`` writes
-    into one while the loop reads the other.
+    does ``from cbpupsis_shared import worker`` imports it a SECOND time under its
+    real name. Two module objects, two ``_HANDLERS`` dicts — so
+    ``register_handler`` writes into one while the loop reads the other.
 
     The symptom was maximally misleading: every message was marked *dispatched*
     with "no handler for outbox message", the worker logged a healthy heartbeat,
     and nothing was ever delivered. It was identified from the log prefix saying
-    ``[__main__]`` rather than ``[app.worker]``.
+    ``[__main__]`` rather than ``[cbpupsis_shared.worker]``.
 
     The fix is the ``if __name__ == "__main__"`` block importing ``main`` from
     the real module path, so both names resolve to one object.
@@ -351,7 +351,7 @@ class TestTheEntrypointDoesNotDuplicateTheModule:
         source = pathlib.Path(worker.__file__).read_text(encoding="utf-8")
         entrypoint = source.split('if __name__ == "__main__":')[1]
 
-        assert "from app.worker import main" in entrypoint, (
+        assert "from cbpupsis_shared.worker import main" in entrypoint, (
             "the __main__ block must delegate to the imported module, or the "
             "module is loaded twice and handlers register into the wrong copy"
         )
@@ -359,6 +359,6 @@ class TestTheEntrypointDoesNotDuplicateTheModule:
     def test_the_handler_registry_is_module_state(self) -> None:
         """What makes the duplication harmful: the registry is module-level, so
         two module objects means two registries."""
-        import app.worker as imported
+        import cbpupsis_shared.worker as imported
 
         assert imported._HANDLERS is worker._HANDLERS

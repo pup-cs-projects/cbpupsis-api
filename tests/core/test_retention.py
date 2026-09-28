@@ -23,17 +23,17 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
-from app.core.events import Event
-from app.core.outbox import (
+from cbpupsis_core.config import settings
+from cbpupsis_core.events import Event
+from cbpupsis_database.models.notifications import Notification
+from cbpupsis_shared.domains.notifications import repository as notifications_repository
+from cbpupsis_shared.outbox import (
     OutboxMessage,
     OutboxStatus,
     add_receipt,
     publish_transactional,
 )
-from app.core.outbox.store import prune_dispatched, prune_failed, prune_receipts
-from app.domains.notifications import repository as notifications_repository
-from app.domains.notifications.models import Notification
+from cbpupsis_shared.outbox.store import prune_dispatched, prune_failed, prune_receipts
 from scripts.prune_retention import prune
 
 OLD = datetime(2020, 1, 1, tzinfo=UTC)

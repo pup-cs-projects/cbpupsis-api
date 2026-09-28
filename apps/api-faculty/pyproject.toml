@@ -1,0 +1,21 @@
+[project]
+name = "cbpupsis-api-faculty"
+version = "0.1.0"
+description = "CBPUPSIS faculty API"
+requires-python = ">=3.12"
+dependencies = [
+    "cbpupsis-core",
+    "cbpupsis-database",
+    "cbpupsis-shared",
+    "fastapi",
+    "uvicorn[standard]",
+]
+
+[tool.uv.sources]
+cbpupsis-core = { workspace = true }
+cbpupsis-database = { workspace = true }
+cbpupsis-shared = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

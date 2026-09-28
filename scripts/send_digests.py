@@ -48,12 +48,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.events import Event
-from app.core.logging import configure_logging
-from app.core.outbox import notify_wakeup, publish_transactional
-from app.database import AsyncSessionLocal
-from app.domains.notifications.models import DigestRun
-from app.domains.users.models import User
+from cbpupsis_core.events import Event
+from cbpupsis_core.logging import configure_logging
+from cbpupsis_database.models.notifications import DigestRun
+from cbpupsis_database.models.users import User
+from cbpupsis_database.session import AsyncSessionLocal
+from cbpupsis_shared.outbox import notify_wakeup, publish_transactional
 
 configure_logging()
 logger = logging.getLogger(__name__)

@@ -38,11 +38,11 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
-from app.core.logging import configure_logging
-from app.core.outbox.store import prune_dispatched, prune_failed, prune_receipts
-from app.database import AsyncSessionLocal
-from app.domains.notifications import repository as notifications_repository
+from cbpupsis_core.config import settings
+from cbpupsis_core.logging import configure_logging
+from cbpupsis_database.session import AsyncSessionLocal
+from cbpupsis_shared.domains.notifications import repository as notifications_repository
+from cbpupsis_shared.outbox.store import prune_dispatched, prune_failed, prune_receipts
 
 configure_logging()
 logger = logging.getLogger(__name__)

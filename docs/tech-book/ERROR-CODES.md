@@ -10,8 +10,8 @@ Add the row in the same commit as the code that raises it.
 
 | | |
 |---|---|
-| **Last updated** | 2026-08-29 |
-| **Source** | `app/core/exceptions.py`, `app/core/middleware/rate_limit.py`, and each domain's `exceptions.py` (`auth`, `users`, `iam`, `items`, `notifications`) |
+| **Last updated** | 2026-09-28 |
+| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py` (`auth`, `users`, `iam`, `notifications` in `packages/shared`; `items` in `apps/api-student`) |
 
 ## The envelope
 
@@ -147,7 +147,7 @@ resend-verification screen rather than back to the login form.
 
 The audit trail is append-only and has no write endpoint at all — a trail a
 client can write to is not evidence of anything. Entries arrive through the
-event bus; see `app/domains/audit/service.py`.
+event bus; see `cbpupsis_shared/domains/audit/service.py`.
 
 ### notifications
 

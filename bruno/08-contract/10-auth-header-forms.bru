@@ -5,7 +5,7 @@ meta {
 }
 
 get {
-  url: {{api}}/auth/whoami
+  url: {{student_api}}/auth/whoami
   body: none
   auth: none
 }
@@ -27,7 +27,7 @@ tests {
   // Every probe below expects a non-2xx, so each must unwrap err.response —
   // bru.sendRequest throws on those, and an unhandled throw would abort this
   // script with zero tests registered.
-  const api = bru.getEnvVar("api");
+  const api = bru.getEnvVar("student_api");
 
   const probe = async (headerValue) => {
     try {

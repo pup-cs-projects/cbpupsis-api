@@ -21,8 +21,8 @@ from httpx import AsyncClient
 from limits import parse
 from limits.storage import storage_from_string
 
-from app.config import settings
-from app.core.middleware import (
+from cbpupsis_core.config import settings
+from cbpupsis_core.middleware import (
     UnknownRateLimitError,
     client_ip,
     limit_names,
@@ -30,7 +30,7 @@ from app.core.middleware import (
     rate_limit,
     rate_limit_key,
 )
-from app.main import app
+from main import app
 
 
 @pytest.fixture
@@ -109,7 +109,10 @@ class TestAuthenticatedCallersAreKeyedByIdentity:
 
         # A route that depends on get_current_user, then reports the key the
         # limiter would compute for that same request.
-        from app.domains.auth.dependencies import CurrentUser, get_current_user
+        from cbpupsis_shared.domains.auth.dependencies import (
+            CurrentUser,
+            get_current_user,
+        )
 
         @app.get("/api/v1/_test_rate_limit_key")
         async def _probe(
@@ -314,7 +317,7 @@ def _amount(setting_name: str) -> int:
     """
     from limits import parse
 
-    from app.config import settings
+    from cbpupsis_core.config import settings
 
     return int(parse(getattr(settings, setting_name)).amount)
 

@@ -9,8 +9,9 @@ cookie it was handed.
 
 The backend opens its own ``AsyncSessionLocal`` because SQLAdmin mounts a
 separate Starlette app and the ``get_db`` request dependency does not reach it.
-Tests therefore patch that name **in ``app.admin``**, where it was imported —
-patching ``app.database`` would leave the module-level binding untouched.
+Tests therefore patch that name **in ``cbpupsis_api_admin.admin``**, where it was
+imported — patching ``cbpupsis_database.session`` would leave the module-level
+binding untouched.
 """
 
 from __future__ import annotations
@@ -29,13 +30,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import RedirectResponse
 
-from app.admin import SESSION_USER_ID, AdminAuth, UserAdmin
-from app.database import engine
-from app.domains.auth import service as auth_service
-from app.domains.iam import service as iam_service
-from app.domains.iam.constants import MANAGE_IAM
-from app.domains.iam.models import Group
-from app.domains.users import service as users_service
+from cbpupsis_api_admin.admin import SESSION_USER_ID, AdminAuth, UserAdmin
+from cbpupsis_database.models.iam import Group
+from cbpupsis_database.session import engine
+from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.iam import service as iam_service
+from cbpupsis_shared.domains.iam.constants import MANAGE_IAM
+from cbpupsis_shared.domains.users import service as users_service
 
 PASSWORD = "correct-horse-battery-staple"
 
@@ -78,7 +79,9 @@ class _Request:
 @pytest.fixture
 def backend(db: AsyncSession, monkeypatch) -> AdminAuth:
     """Return an ``AdminAuth`` whose own sessions hit the test database."""
-    monkeypatch.setattr("app.admin.AsyncSessionLocal", lambda: _Session(db))
+    monkeypatch.setattr(
+        "cbpupsis_api_admin.admin.AsyncSessionLocal", lambda: _Session(db)
+    )
     return AdminAuth(secret_key="x" * 32)
 
 
@@ -96,6 +99,21 @@ async def _group_named(db: AsyncSession, name: str) -> Group:
     return result.scalar_one()
 
 
+def _reload_app_modules() -> None:
+    """Rebuild the app from a fresh settings object, in dependency order.
+
+    ``create_app`` reads the gate from the settings its module bound at import,
+    so the factory module is reloaded after the config and before ``main``.
+    """
+    import cbpupsis_core.config
+    import cbpupsis_shared.application
+    import main
+
+    importlib.reload(cbpupsis_core.config)
+    importlib.reload(cbpupsis_shared.application)
+    importlib.reload(main)
+
+
 @contextmanager
 def app_for(environment: str) -> Iterator[FastAPI]:
     """Yield a freshly imported app built for ``environment``.
@@ -105,22 +123,19 @@ def app_for(environment: str) -> Iterator[FastAPI]:
     patched environment and restored afterwards, leaving the shared app
     untouched for other tests.
     """
-    import app.config
-    import app.main
+    import main
 
     previous = os.environ.get("ENVIRONMENT")
     os.environ["ENVIRONMENT"] = environment
     try:
-        importlib.reload(app.config)
-        reloaded = importlib.reload(app.main)
-        yield reloaded.app
+        _reload_app_modules()
+        yield main.app
     finally:
         if previous is None:
             os.environ.pop("ENVIRONMENT", None)
         else:
             os.environ["ENVIRONMENT"] = previous
-        importlib.reload(app.config)
-        importlib.reload(app.main)
+        _reload_app_modules()
 
 
 class TestAdminLogin:
