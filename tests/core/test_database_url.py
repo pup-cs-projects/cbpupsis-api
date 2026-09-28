@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.database import to_asyncpg_url
+from cbpupsis_database.session import to_asyncpg_url
 
 
 class TestSchemeRewrite:

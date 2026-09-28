@@ -4,37 +4,18 @@ version = "0.1.0"
 description = "CBPUPSIS: Cloud-Based PUP Student Information System API"
 readme = "README.md"
 requires-python = ">=3.12"
+# The workspace root is the composed process (main.py) plus the operational
+# scripts. Each member declares its own dependencies; these are the members the
+# root imports directly.
 dependencies = [
-    "fastapi",
+    "cbpupsis-core",
+    "cbpupsis-database",
+    "cbpupsis-shared",
+    "cbpupsis-migrations",
+    "cbpupsis-api-student",
+    "cbpupsis-api-faculty",
+    "cbpupsis-api-admin",
     "uvicorn[standard]",
-    "sqlalchemy[asyncio]",
-    "asyncpg",
-    "alembic",
-    "pydantic[email]",
-    "pydantic-settings",
-    "pyjwt",
-    "passlib[argon2]",
-    "sqladmin",
-    # Signs the admin panel's session cookie. A transitive-in-name-only
-    # dependency: Starlette's SessionMiddleware imports it but does not require
-    # it, so without this line the admin login fails at import time.
-    "itsdangerous",
-    "scalar-fastapi>=1.8.2",
-    # AWS SDK, used only for SES email delivery. Imported lazily in
-    # app/core/emails/sender.py so nothing loads it unless SES is configured.
-    "boto3",
-    # The IANA time zone database for `zoneinfo`, which validates the user
-    # profile's timezone field. Required, not optional: Windows ships no system
-    # tz database at all, and slim Linux images routinely omit it — without this
-    # `zoneinfo` finds zero zones and rejects every valid input.
-    "tzdata",
-    "slowapi>=0.1.10",
-    # The Redis client backing RATE_LIMIT_STORAGE_URI=redis://... Not optional
-    # despite the default being `memory://`: `limits` resolves the storage
-    # backend from the URI at startup and raises ConfigurationError if the
-    # client is absent, so a multi-worker deployment pointed at Redis without
-    # this fails to boot rather than falling back.
-    "redis>=5.0",
 ]
 
 [dependency-groups]
@@ -51,15 +32,31 @@ dev = [
 ]
 
 [tool.uv]
-# keep the project itself importable without packaging it as a wheel
+# The root is not a wheel: main.py and scripts/ run from the repository root.
+# Everything importable lives in a workspace member.
 package = false
+
+[tool.uv.workspace]
+members = ["packages/*", "apps/*"]
+
+[tool.uv.sources]
+cbpupsis-core = { workspace = true }
+cbpupsis-database = { workspace = true }
+cbpupsis-shared = { workspace = true }
+cbpupsis-migrations = { workspace = true }
+cbpupsis-api-student = { workspace = true }
+cbpupsis-api-faculty = { workspace = true }
+cbpupsis-api-admin = { workspace = true }
 
 [tool.ruff]
 line-length = 88
 target-version = "py312"
 # Alembic generates these; reformatting an applied revision is churn on a file
 # that must not change, and its long type expressions are the tool's own style.
-extend-exclude = ["migrations/versions"]
+extend-exclude = ["packages/migrations/versions"]
+# Where first-party imports live, so the import sorter groups the workspace
+# packages apart from third-party ones.
+src = [".", "packages/*/src", "apps/*/src"]
 
 [tool.ruff.lint]
 # PLC0415 ("import should be at the top-level of a file") is the reason "PL" is
@@ -82,7 +79,7 @@ ignore = ["B008"]
 [tool.bandit]
 # Security linting, run by the pre-commit hook. Dependency CVEs are a separate
 # concern and are audited in CI, where a network lookup does not slow a commit.
-exclude_dirs = [".venv", "migrations", "tests", "bruno"]
+exclude_dirs = [".venv", "packages/migrations/versions", "tests", "bruno"]
 # B105/B106 flag any string constant whose NAME contains "password" or "token".
 # Every hit in this codebase is an email subject, an enum value, or the
 # deliberately-invalid "!deleted" digest — never a credential. Left on, the hook
@@ -92,11 +89,17 @@ exclude_dirs = [".venv", "migrations", "tests", "bruno"]
 # is the tool for proving that.
 skips = ["B105", "B106"]
 
+[tool.coverage.run]
+# Measured by path so every workspace member counts. The Alembic environment runs
+# only against a real database, never in the in-memory suite.
+source = ["packages", "apps"]
+omit = ["packages/migrations/*"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-# Set before collection imports anything, because app.config validates settings
-# at import time. Kept here rather than in conftest so an import sorter cannot
+# Set before collection imports anything, because cbpupsis_core.config validates
+# settings at import time. Kept here rather than in conftest so an import sorter cannot
 # hoist an app import above them.
 env = [
     "DATABASE_URL=postgresql://test:test@localhost/test",

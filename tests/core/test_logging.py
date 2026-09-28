@@ -15,7 +15,7 @@ import uuid
 
 from httpx import AsyncClient
 
-from app.core.logging import CorrelationFilter, JsonFormatter, request_id_var
+from cbpupsis_core.logging import CorrelationFilter, JsonFormatter, request_id_var
 
 
 def _record(**extra: object) -> logging.LogRecord:
@@ -184,7 +184,7 @@ class TestSecretsAreNotLogged:
     def test_settings_repr_does_not_expose_the_jwt_secret(self) -> None:
         """Config objects get logged whole during debugging more often than
         anyone admits."""
-        from app.config import settings
+        from cbpupsis_core.config import settings
 
         assert settings.jwt_secret.get_secret_value() not in repr(settings)
         assert "**********" in repr(settings)

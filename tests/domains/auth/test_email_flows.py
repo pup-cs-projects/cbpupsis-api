@@ -16,15 +16,15 @@ from httpx import AsyncClient
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import UnauthorizedError
-from app.domains.auth import service as auth_service
-from app.domains.auth.models import OneTimeToken, TokenPurpose
-from app.domains.auth.security import (
+from cbpupsis_core.exceptions import UnauthorizedError
+from cbpupsis_database.models.auth import OneTimeToken, TokenPurpose
+from cbpupsis_database.models.users import User
+from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.auth.security import (
     generate_one_time_token,
     hash_one_time_token,
 )
-from app.domains.users import service as users_service
-from app.domains.users.models import User
+from cbpupsis_shared.domains.users import service as users_service
 from tests.conftest import token_from_email
 
 
@@ -403,8 +403,11 @@ class TestVerificationIsRequiredToLogIn:
     ) -> None:
         """The dependency is exercised directly — no endpoint in the template
         uses it yet, and a guard nothing calls is a guard nothing tests."""
-        from app.core.exceptions import ForbiddenError
-        from app.domains.auth.dependencies import CurrentUser, require_verified_email
+        from cbpupsis_core.exceptions import ForbiddenError
+        from cbpupsis_shared.domains.auth.dependencies import (
+            CurrentUser,
+            require_verified_email,
+        )
 
         user_id = uuid.UUID(registered_user["id"])
         principal = CurrentUser(id=user_id, email=registered_user["email"])

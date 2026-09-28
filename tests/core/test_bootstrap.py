@@ -12,9 +12,9 @@ import uuid
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domains.auth import service as auth_service
-from app.domains.iam import service as iam_service
-from app.domains.users import service as users_service
+from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.iam import service as iam_service
+from cbpupsis_shared.domains.users import service as users_service
 from scripts.bootstrap_admin import ADMIN_GROUP, bootstrap_admin
 
 

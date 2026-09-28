@@ -1,0 +1,49 @@
+# Build context is the PROJECT ROOT (docker build -f docker/student/Dockerfile.prod .),
+# so this file must live here, not in docker/: Docker reads .dockerignore only
+# from the root of the context.
+#
+# The Dockerfiles COPY only the paths each target needs (the kernel packages,
+# one app or all of them, scripts/), so this file is not what keeps other apps
+# out of an app image. It keeps the context small and keeps secrets out of it:
+# a file in the context can be COPYed by a later edit, a file excluded here
+# cannot.
+
+# Local virtualenv: the image builds its own, and the host's has the wrong
+# platform binaries and interpreter path.
+.venv/
+venv/
+
+# Python caches, at any depth
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+**/*.egg-info/
+
+# Secrets never enter an image: compose passes env/<app>/env.<stage> in at RUN time, so
+# baking it into a layer would both leak it and freeze it.
+env/
+.env
+.env.*
+
+# VCS and CI
+.git/
+.gitignore
+.github/
+
+# Tests, docs, and the HTTP suite are not needed at runtime; the prod image
+# excludes dev deps anyway, so a test file in the image could not run.
+tests/
+docs/
+bruno/
+*.md
+
+# Docker's own files
+docker/
+.dockerignore
+
+# Editor and OS noise
+.vscode/
+.idea/
+.DS_Store

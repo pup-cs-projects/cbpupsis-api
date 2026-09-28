@@ -21,30 +21,42 @@ from fastapi.testclient import TestClient
 DOC_ROUTES = ["/scalar", "/docs", "/redoc", "/openapi.json"]
 
 
+def _reload_app_modules() -> None:
+    """Rebuild the app from a fresh settings object, in dependency order.
+
+    ``create_app`` reads the gate from the settings its module bound at import,
+    so the factory module is reloaded after the config and before ``main``.
+    """
+    import cbpupsis_core.config
+    import cbpupsis_shared.application
+    import main
+
+    importlib.reload(cbpupsis_core.config)
+    importlib.reload(cbpupsis_shared.application)
+    importlib.reload(main)
+
+
 @contextmanager
 def app_for(environment: str) -> Iterator[FastAPI]:
     """Yield a freshly imported app built for ``environment``.
 
-    ``app.config`` caches settings and ``app.main`` reads them at import time,
-    so both modules are reloaded under the patched environment and restored
-    afterwards, leaving the shared app untouched for other tests.
+    ``cbpupsis_core.config`` caches settings and the app is built from them at
+    import time, so the modules are reloaded under the patched environment and
+    restored afterwards, leaving the shared app untouched for other tests.
     """
-    import app.config
-    import app.main
+    import main
 
     previous = os.environ.get("ENVIRONMENT")
     os.environ["ENVIRONMENT"] = environment
     try:
-        importlib.reload(app.config)
-        reloaded = importlib.reload(app.main)
-        yield reloaded.app
+        _reload_app_modules()
+        yield main.app
     finally:
         if previous is None:
             os.environ.pop("ENVIRONMENT", None)
         else:
             os.environ["ENVIRONMENT"] = previous
-        importlib.reload(app.config)
-        importlib.reload(app.main)
+        _reload_app_modules()
 
 
 @pytest.mark.parametrize("environment", ["production", "staging"])

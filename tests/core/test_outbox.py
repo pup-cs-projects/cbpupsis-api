@@ -25,9 +25,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
-from app.core.events import Event
-from app.core.outbox import (
+from cbpupsis_core.config import settings
+from cbpupsis_core.events import Event
+from cbpupsis_shared.outbox import (
     DeliveryReceipt,
     OutboxMessage,
     OutboxStatus,

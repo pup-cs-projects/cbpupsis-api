@@ -26,12 +26,12 @@ import sys
 
 from sqlalchemy import select
 
-from app.core.exceptions import ConflictError
-from app.database import AsyncSessionLocal
-from app.domains.auth import service as auth_service
-from app.domains.iam import service as iam_service
-from app.domains.iam.models import Group
-from app.domains.users.models import User
+from cbpupsis_core.exceptions import ConflictError
+from cbpupsis_database.models.iam import Group
+from cbpupsis_database.models.users import User
+from cbpupsis_database.session import AsyncSessionLocal
+from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.iam import service as iam_service
 
 #: Long enough that a generated development password is not worth cracking, and
 #: comfortably over the 12-character minimum the register schema enforces.

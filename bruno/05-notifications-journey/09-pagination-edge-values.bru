@@ -5,7 +5,7 @@ meta {
 }
 
 get {
-  url: {{api}}/notifications?limit=1&offset=0
+  url: {{student_api}}/notifications?limit=1&offset=0
   body: none
   auth: inherit
 }
@@ -46,7 +46,7 @@ tests {
   // deliberate 422, so each must be unwrapped from err.response. Without the
   // catch the first probe aborts the script and NO test registers — the run
   // reports 0/0 rather than a failure.
-  const api = bru.getEnvVar("api");
+  const api = bru.getEnvVar("student_api");
   const token = bru.getVar("owner_access_token");
 
   const probe = async (query) => {

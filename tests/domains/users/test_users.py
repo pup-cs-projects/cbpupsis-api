@@ -12,10 +12,10 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import NotFoundError
-from app.domains.auth import service as auth_service
-from app.domains.users import client as users_client
-from app.domains.users import service as users_service
+from cbpupsis_core.exceptions import NotFoundError
+from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.users import client as users_client
+from cbpupsis_shared.domains.users import service as users_service
 
 
 class TestUserService:
@@ -63,8 +63,8 @@ class TestUsersClient:
     ) -> None:
         """An ORM object crossing a domain boundary would carry a session and a
         table dependency that a service split cannot preserve."""
-        from app.domains.users.models import User
-        from app.domains.users.schemas import UserRead
+        from cbpupsis_database.models.users import User
+        from cbpupsis_shared.domains.users.schemas import UserRead
 
         created = await auth_service.register(
             db, email="d@example.com", password="a-long-enough-password"
