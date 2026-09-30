@@ -19,10 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.audit import service as audit_service
-from cbpupsis_shared.domains.audit.constants import READ_ALL_AUDIT_ENTRY
 from cbpupsis_shared.domains.audit.schemas import AuditEntryRead
-from cbpupsis_shared.domains.auth.dependencies import CurrentUser
-from cbpupsis_shared.domains.iam.dependencies import require_permission
+from cbpupsis_shared.domains.auth.dependencies import (
+    CurrentUser,
+    require_superadmin_session,
+)
 
 router = APIRouter()
 
@@ -40,7 +41,7 @@ async def list_audit_entries(
     ),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    user: CurrentUser = Depends(require_permission(READ_ALL_AUDIT_ENTRY)),
+    user: CurrentUser = Depends(require_superadmin_session),
     db: AsyncSession = Depends(get_db),
 ) -> Page[AuditEntryRead]:
     """List recorded administrative changes, newest first.

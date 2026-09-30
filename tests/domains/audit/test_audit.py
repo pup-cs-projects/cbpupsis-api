@@ -19,9 +19,12 @@ import uuid
 from datetime import UTC, datetime
 
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_core.events import Event, event_bus
+from cbpupsis_core.events import Event
+from cbpupsis_database.models.outbox import OutboxMessage
+from cbpupsis_shared import worker
 from cbpupsis_shared.domains.audit import service as audit_service
 from cbpupsis_shared.domains.audit.constants import AUDITED_EVENTS
 from cbpupsis_shared.domains.audit.subscribers import register_audit_subscribers
@@ -90,60 +93,63 @@ class TestTheTrailIsWiredUp:
         while recording nothing."""
         register_audit_subscribers()
         for name in AUDITED_EVENTS:
-            assert event_bus.handlers_for(name), f"{name} has no subscriber"
+            assert worker.handlers_for(name), f"{name} has no subscriber"
 
     def test_registering_twice_does_not_double_the_handler(self) -> None:
         """An app rebuilt in a test, or reloaded in development, must not make
         one change produce two audit rows."""
         register_audit_subscribers()
-        before = len(event_bus.handlers_for("iam.group_created"))
+        before = len(worker.handlers_for("iam.group_created"))
         register_audit_subscribers()
-        assert len(event_bus.handlers_for("iam.group_created")) == before
+        assert len(worker.handlers_for("iam.group_created")) == before
 
-    async def test_an_iam_change_reaches_the_handler(self, db: AsyncSession) -> None:
-        """End to end through the bus, with the recorder stubbed.
-
-        The real recorder opens its own session against the application engine,
-        which in this suite points at a database that is not running — so what
-        is verified here is that the event carries the actor and target to a
-        subscriber, not the INSERT itself. The write is covered separately in
-        ``TestTheHandlerActuallyWrites``, which drives ``record_event_on``.
-        """
-        seen: list[Event] = []
-
-        async def spy(event: Event) -> None:
-            seen.append(event)
-
-        event_bus.subscribe("iam.user_added_to_group", spy)
-
+    async def test_an_iam_change_reaches_the_handler(
+        self, db: AsyncSession, make_user
+    ) -> None:
+        """The business change and complete audit payload share a commit."""
         actor = uuid.uuid4()
-        subject = uuid.uuid4()
+        subject = (await make_user("audited-member@example.com")).id
         group = await iam_service.create_group(db, name="Audited")
         await iam_service.add_user_to_group(db, subject, group.id, actor_id=actor)
-        await event_bus.drain()
+        messages = (
+            (
+                await db.execute(
+                    select(OutboxMessage).where(
+                        OutboxMessage.event_name == "iam.user_added_to_group"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
-        assert len(seen) == 1
-        assert seen[0].payload["user_id"] == str(subject)
-        assert seen[0].payload["actor_id"] == str(actor)
-        assert seen[0].payload["group_id"] == group.id
+        assert len(messages) == 1
+        assert messages[0].payload["user_id"] == str(subject)
+        assert messages[0].payload["actor_id"] == str(actor)
+        assert messages[0].payload["group_id"] == group.id
 
-    async def test_an_idempotent_no_op_records_nothing(self, db: AsyncSession) -> None:
+    async def test_an_idempotent_no_op_records_nothing(
+        self, db: AsyncSession, make_user
+    ) -> None:
         """Re-adding an existing member changes nothing, so the trail must not
         claim a grant happened."""
-        seen: list[Event] = []
-
-        async def spy(event: Event) -> None:
-            seen.append(event)
-
-        event_bus.subscribe("iam.user_added_to_group", spy)
-
-        subject = uuid.uuid4()
+        subject = (await make_user("idempotent-member@example.com")).id
         group = await iam_service.create_group(db, name="Audited")
         await iam_service.add_user_to_group(db, subject, group.id)
         await iam_service.add_user_to_group(db, subject, group.id)
-        await event_bus.drain()
+        messages = (
+            (
+                await db.execute(
+                    select(OutboxMessage).where(
+                        OutboxMessage.event_name == "iam.user_added_to_group"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
-        assert len(seen) == 1, "the second, no-op call must not be recorded"
+        assert len(messages) == 1, "the second, no-op call must not be recorded"
 
 
 class TestAuditEndpoint:
@@ -179,16 +185,13 @@ class TestAuditEndpoint:
         self,
         client: AsyncClient,
         db: AsyncSession,
-        auth_headers: dict[str, str],
-        registered_user: dict[str, str],
-        grant,
+        superadmin_headers: dict[str, str],
     ) -> None:
-        await grant(uuid.UUID(registered_user["id"]), "ReadAllAuditEntry")
         await audit_service.record(
             db, action="iam.group_created", target_type="group", target_id="42"
         )
 
-        response = await client.get("/api/v1/audit", headers=auth_headers)
+        response = await client.get("/api/v1/audit", headers=superadmin_headers)
         assert response.status_code == 200, response.text
         body = response.json()
         assert {"items", "total", "limit", "offset"} <= set(body)

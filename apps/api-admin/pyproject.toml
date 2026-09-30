@@ -9,6 +9,8 @@ dependencies = [
     "cbpupsis-shared",
     "fastapi",
     "sqlalchemy[asyncio]",
+    "cryptography",
+    "webauthn",
     "starlette",
     "uvicorn[standard]",
     "sqladmin",

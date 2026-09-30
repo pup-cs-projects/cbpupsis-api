@@ -55,6 +55,11 @@ async def get_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
     return await db.scalar(_live().where(User.id == user_id))
 
 
+async def get_user_for_update(db: AsyncSession, user_id: uuid.UUID) -> User | None:
+    """Lock a live user. SQL:: SELECT * FROM users WHERE id = :user_id FOR UPDATE."""
+    return await db.scalar(_live().where(User.id == user_id).with_for_update())
+
+
 async def get_active_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
     """Return a user only if they exist, are active, and are not soft-deleted.
 

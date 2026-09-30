@@ -104,6 +104,12 @@ async def list_direct_permission_actions_for_user(
     return list(result.scalars().all())
 
 
+async def list_all_permission_actions(db: AsyncSession) -> list[str]:
+    """List all registered actions. SQL:: SELECT action FROM permissions."""
+    result = await db.execute(select(Permission.action))
+    return list(result.scalars().all())
+
+
 # --------------------------------------------------------------------------- #
 # Permissions, policies, groups
 # --------------------------------------------------------------------------- #
@@ -256,6 +262,29 @@ async def exists_user_group(
         )
     )
     return edge is not None
+
+
+async def is_user_in_group_named(
+    db: AsyncSession, user_id: uuid.UUID, group_name: str
+) -> bool:
+    """Return whether ``user_id`` belongs to the group named ``group_name``.
+
+    SQL::
+
+        SELECT user_groups.user_id
+        FROM user_groups
+        JOIN groups ON groups.id = user_groups.group_id
+        WHERE user_groups.user_id = :user_id_1::UUID
+          AND groups.name = :name_1
+        LIMIT 1
+    """
+    result = await db.scalar(
+        select(UserGroup.user_id)
+        .join(Group, Group.id == UserGroup.group_id)
+        .where(UserGroup.user_id == user_id, Group.name == group_name)
+        .limit(1)
+    )
+    return result is not None
 
 
 def add_user_group(db: AsyncSession, user_id: uuid.UUID, group_id: int) -> UserGroup:

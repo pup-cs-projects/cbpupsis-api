@@ -22,37 +22,58 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_core.events import Event, event_bus
+from cbpupsis_core.events import Event
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.models.iam import Group, Permission, Policy
+from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.iam import repository
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
 from cbpupsis_shared.domains.iam.exceptions import (
     GroupNotFoundError,
+    GroupRoleConflictError,
     PermissionNotFoundError,
     PolicyNotFoundError,
     UnknownPermissionsError,
 )
+from cbpupsis_shared.outbox import publish_transactional
 
 
-async def _audit(
-    name: str, actor_id: uuid.UUID | None, payload: dict[str, object]
+def _audit(
+    db: AsyncSession,
+    name: str,
+    actor_id: uuid.UUID | None,
+    payload: dict[str, object],
 ) -> None:
-    """Emit an IAM change event for the audit trail.
-
-    Emitted rather than written: this domain does not know that an audit domain
-    exists, which is what stops "record the change" from becoming a step every
-    future IAM operation must remember. It is also why the audit row is not part
-    of this transaction — see ``cbpupsis_shared.domains.audit.service`` for what
-    that costs.
-
-    Published after the commit, deliberately. An event announcing a change that
-    a later rollback undid is a trail describing something that never happened.
-    """
-    await event_bus.publish(
+    """Stage immediate Superadmin audit or the ordinary durable outbox event."""
+    if actor_id is not None and db.info.get("superadmin_actor") == actor_id:
+        target_type = next(
+            (
+                kind
+                for kind in ("user", "group", "policy", "permission")
+                if f"{kind}_id" in payload
+            ),
+            None,
+        )
+        target_id = str(payload.get(f"{target_type}_id")) if target_type else None
+        prior = payload.get("prior_state")
+        new = payload.get("new_state")
+        audit_client.stage(
+            db,
+            action=name,
+            actor_id=actor_id,
+            target_type=target_type,
+            target_id=target_id,
+            prior_state=prior if isinstance(prior, dict) else {},
+            new_state=new if isinstance(new, dict) else dict(payload),
+            payload={"result": "success"},
+        )
+        return
+    publish_transactional(
+        db,
         Event(
             name=name,
             payload={**payload, "actor_id": str(actor_id) if actor_id else None},
-        )
+        ),
     )
 
 
@@ -77,6 +98,8 @@ async def get_effective_permissions(db: AsyncSession, user_id: uuid.UUID) -> set
     membership or policy change. The database—not the auth token—must remain the
     source of truth so permission changes take effect immediately.
     """
+    if await is_user_in_group(db, user_id, SUPERADMIN_GROUP):
+        return set(await repository.list_all_permission_actions(db))
     from_groups = await repository.list_group_permission_actions_for_user(db, user_id)
     from_direct = await repository.list_direct_permission_actions_for_user(db, user_id)
 
@@ -84,6 +107,18 @@ async def get_effective_permissions(db: AsyncSession, user_id: uuid.UUID) -> set
     # The union is the business rule -- grants are additive, and there is no
     # explicit deny -- so it stays here rather than being folded into a query.
     return set(from_groups) | set(from_direct)
+
+
+async def is_user_in_group(
+    db: AsyncSession, user_id: uuid.UUID, group_name: str
+) -> bool:
+    """Return whether the user currently belongs to ``group_name``.
+
+    Role-sensitive authentication uses live IAM membership rather than a token
+    claim, so removing an account from the Admins group takes effect on its next
+    request.
+    """
+    return await repository.is_user_in_group_named(db, user_id, group_name)
 
 
 # --------------------------------------------------------------------------- #
@@ -102,13 +137,15 @@ async def create_permission(
     a falsehood in the one table that must not contain any.
     """
     permission = repository.add_permission(db, action=action, description=description)
-    await db.commit()
-    await db.refresh(permission)
-    await _audit(
+    await db.flush()
+    _audit(
+        db,
         "iam.permission_created",
         actor_id,
         {"permission_id": permission.id, "action": action},
     )
+    await db.commit()
+    await db.refresh(permission)
     return permission
 
 
@@ -138,9 +175,8 @@ async def create_policy(
     for permission in permissions:
         repository.add_policy_permission(db, policy.id, permission.id)
 
-    await db.commit()
-    await db.refresh(policy)
-    await _audit(
+    _audit(
+        db,
         "iam.policy_created",
         actor_id,
         {
@@ -149,6 +185,8 @@ async def create_policy(
             "permission_actions": sorted(permission_actions),
         },
     )
+    await db.commit()
+    await db.refresh(policy)
     return policy
 
 
@@ -160,9 +198,10 @@ async def create_group(
 ) -> Group:
     """Create a new (empty) group."""
     group = repository.add_group(db, name=name, description=description)
+    await db.flush()
+    _audit(db, "iam.group_created", actor_id, {"group_id": group.id, "name": name})
     await db.commit()
     await db.refresh(group)
-    await _audit("iam.group_created", actor_id, {"group_id": group.id, "name": name})
     return group
 
 
@@ -178,12 +217,13 @@ async def attach_policy_to_group(
     if await repository.exists_group_policy(db, group_id, policy_id):
         return
     repository.add_group_policy(db, group_id, policy_id)
-    await db.commit()
-    await _audit(
+    _audit(
+        db,
         "iam.policy_attached_to_group",
         actor_id,
         {"group_id": group_id, "policy_id": policy_id},
     )
+    await db.commit()
 
 
 async def add_user_to_group(
@@ -197,15 +237,29 @@ async def add_user_to_group(
     Idempotent: re-adding an existing member is a no-op rather than an
     integrity error, so callers need not check membership first.
     """
+    # Deferred because the users service also imports IAM for permission checks.
+    from cbpupsis_shared.domains.users import client as users_client  # noqa: PLC0415
+
+    await users_client.get_user(db, user_id)
     if await repository.exists_user_group(db, user_id, group_id):
         return
+    group = await repository.get_group(db, group_id)
+    if group is None:
+        raise GroupNotFoundError(group_id)
+    opposite = {
+        ADMIN_GROUP: SUPERADMIN_GROUP,
+        SUPERADMIN_GROUP: ADMIN_GROUP,
+    }.get(group.name)
+    if opposite and await is_user_in_group(db, user_id, opposite):
+        raise GroupRoleConflictError
     repository.add_user_group(db, user_id, group_id)
-    await db.commit()
-    await _audit(
+    _audit(
+        db,
         "iam.user_added_to_group",
         actor_id,
         {"user_id": str(user_id), "group_id": group_id},
     )
+    await db.commit()
 
 
 async def remove_user_from_group(
@@ -216,12 +270,13 @@ async def remove_user_from_group(
 ) -> None:
     """Remove a user from a group. Takes effect on their next request."""
     await repository.delete_user_group(db, user_id, group_id)
-    await db.commit()
-    await _audit(
+    _audit(
+        db,
         "iam.user_removed_from_group",
         actor_id,
         {"user_id": str(user_id), "group_id": group_id},
     )
+    await db.commit()
 
 
 async def attach_policy_to_user(
@@ -238,12 +293,13 @@ async def attach_policy_to_user(
     if await repository.exists_user_policy(db, user_id, policy_id):
         return
     repository.add_user_policy(db, user_id, policy_id)
-    await db.commit()
-    await _audit(
+    _audit(
+        db,
         "iam.policy_attached_to_user",
         actor_id,
         {"user_id": str(user_id), "policy_id": policy_id},
     )
+    await db.commit()
 
 
 async def detach_policy_from_user(
@@ -254,12 +310,13 @@ async def detach_policy_from_user(
 ) -> None:
     """Remove a directly attached policy from a user."""
     await repository.delete_user_policy(db, user_id, policy_id)
-    await db.commit()
-    await _audit(
+    _audit(
+        db,
         "iam.policy_detached_from_user",
         actor_id,
         {"user_id": str(user_id), "policy_id": policy_id},
     )
+    await db.commit()
 
 
 # --------------------------------------------------------------------------- #
@@ -328,12 +385,13 @@ async def detach_policy_from_group(
     revocation immediate rather than pending until a token expires.
     """
     await repository.delete_group_policy(db, group_id, policy_id)
-    await db.commit()
-    await _audit(
+    _audit(
+        db,
         "iam.policy_detached_from_group",
         actor_id,
         {"group_id": group_id, "policy_id": policy_id},
     )
+    await db.commit()
 
 
 async def get_permission_breakdown(

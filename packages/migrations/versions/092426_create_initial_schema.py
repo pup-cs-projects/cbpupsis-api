@@ -210,8 +210,9 @@ def upgrade() -> None:
           mfa_used boolean NOT NULL DEFAULT false,
           created_at timestamp NOT NULL DEFAULT clock_timestamp(),
           PRIMARY KEY (id, created_at)
-        ) PARTITION BY RANGE (created_at);
-
+        ) PARTITION BY RANGE (created_at)
+    """))
+    op.execute(sa.text("""
         CREATE TABLE IF NOT EXISTS admin_audit_trails (
           id uuid DEFAULT gen_uuid_v7(),
           user_id uuid NOT NULL,
@@ -223,11 +224,16 @@ def upgrade() -> None:
           updated_state jsonb,
           created_at timestamp NOT NULL DEFAULT clock_timestamp(),
           PRIMARY KEY (id, created_at)
-        ) PARTITION BY RANGE (created_at);
-
-        CREATE TABLE IF NOT EXISTS auth_audit_logs_default PARTITION OF auth_audit_logs DEFAULT;
-        CREATE TABLE IF NOT EXISTS admin_audit_trails_default PARTITION OF admin_audit_trails DEFAULT;
+        ) PARTITION BY RANGE (created_at)
     """))
+    op.execute(sa.text(
+        "CREATE TABLE IF NOT EXISTS auth_audit_logs_default "
+        "PARTITION OF auth_audit_logs DEFAULT"
+    ))
+    op.execute(sa.text(
+        "CREATE TABLE IF NOT EXISTS admin_audit_trails_default "
+        "PARTITION OF admin_audit_trails DEFAULT"
+    ))
 
     # 2. ACADEMIC CALENDAR & TERMS
     op.create_table(
@@ -754,10 +760,12 @@ def upgrade() -> None:
           disk_usage_pct numeric(5,2) NOT NULL,
           recorded_at timestamp NOT NULL DEFAULT clock_timestamp(),
           PRIMARY KEY (id, recorded_at)
-        ) PARTITION BY RANGE (recorded_at);
-
-        CREATE TABLE IF NOT EXISTS system_health_logs_default PARTITION OF system_health_logs DEFAULT;
+        ) PARTITION BY RANGE (recorded_at)
     """))
+    op.execute(sa.text(
+        "CREATE TABLE IF NOT EXISTS system_health_logs_default "
+        "PARTITION OF system_health_logs DEFAULT"
+    ))
 
     op.create_table(
         'system_backups',

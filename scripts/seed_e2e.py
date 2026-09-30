@@ -21,12 +21,13 @@ Three accounts are seeded, all pre-verified and sharing one password:
     A second ordinary member, so the suite can prove object-level
     authorization: what the owner creates, this account must fail to touch.
 ``e2e-admin@example.com``
-    Holds ``ManageIAM``, for exercising the IAM endpoints.
+    A test-only Superadmin. The fixed fixture TOTP seed is encrypted at rest;
+    this account must never be created outside disposable E2E databases.
 
 Idempotent: existing accounts are reused, verification is re-applied, and group
-membership is re-added as a no-op. Re-running only ever adds, never removes —
-in particular it does NOT reset the password of an account that already exists,
-so an environment seeded with a different ``--password`` keeps the old one.
+membership is reconciled. It does NOT reset the password of an existing
+account, so an environment seeded with a different ``--password`` keeps the old
+one.
 """
 
 from __future__ import annotations
@@ -38,20 +39,26 @@ import sys
 
 from sqlalchemy import select
 
+from cbpupsis_api_admin.domains.admin_auth.security import encrypt_secret
 from cbpupsis_core.exceptions import ConflictError
+from cbpupsis_database.models.admin_auth import MfaCredential
 from cbpupsis_database.models.iam import Group
 from cbpupsis_database.models.users import User
 from cbpupsis_database.session import AsyncSessionLocal
 from cbpupsis_shared.domains.auth import service as auth_service
 from cbpupsis_shared.domains.auth.constants import PASSWORD_MIN_LENGTH
 from cbpupsis_shared.domains.iam import service as iam_service
-from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
 from cbpupsis_shared.domains.users import service as users_service
 
 #: The group an ordinary user belongs to. Registration itself grants no groups,
 #: so the API alone cannot produce an account that may create items; seed_iam
 #: creates this one for exactly that purpose.
 MEMBER_GROUP = "Members"
+
+#: Test-only factor for the disposable Bruno fixture; never provision it for a
+#: real account. The value is public because this is an end-to-end test account.
+E2E_TOTP_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
 
 #: Only used when neither --password nor E2E_PASSWORD is set. Long enough to
 #: clear the register schema's minimum, which is asserted below rather than
@@ -67,7 +74,7 @@ DEFAULT_PASSWORD = "E2ETestPassword123!"
 ACCOUNTS: list[tuple[str, list[str]]] = [
     ("e2e-owner@example.com", [MEMBER_GROUP]),
     ("e2e-other@example.com", [MEMBER_GROUP]),
-    ("e2e-admin@example.com", [MEMBER_GROUP, ADMIN_GROUP]),
+    ("e2e-admin@example.com", [SUPERADMIN_GROUP]),
 ]
 
 
@@ -110,6 +117,9 @@ async def seed_e2e(password: str, quiet: bool) -> int:
         group_ids = await _resolve_group_ids(session, wanted)
         if group_ids is None:
             return 1
+        old_admin_group_id = await session.scalar(
+            select(Group.id).where(Group.name == ADMIN_GROUP)
+        )
 
         for email, group_names in ACCOUNTS:
             try:
@@ -138,8 +148,31 @@ async def seed_e2e(password: str, quiet: bool) -> int:
             # and the token to verify it never leaves the console email backend.
             await users_service.mark_email_verified(session, user_id)
 
+            # Repair databases seeded before Admin MFA was separated from the
+            # Bruno IAM fixture. Ordinary login intentionally rejects members
+            # of the product Admin role.
+            if user_email == "e2e-admin@example.com" and old_admin_group_id is not None:
+                await iam_service.remove_user_from_group(
+                    session, user_id, old_admin_group_id
+                )
+
             for name in group_names:
                 await iam_service.add_user_to_group(session, user_id, group_ids[name])
+
+            if user_email == "e2e-admin@example.com":
+                factor = await session.scalar(
+                    select(MfaCredential).where(
+                        MfaCredential.user_id == user_id,
+                        MfaCredential.mfa_type == "totp",
+                    )
+                )
+                if factor is None:
+                    factor = MfaCredential(user_id=user_id, mfa_type="totp")
+                    session.add(factor)
+                factor.totp_secret = encrypt_secret(E2E_TOTP_SECRET)
+                factor.is_enrolled = True
+                factor.last_used_at = None
+                await session.commit()
 
             if not quiet:
                 granted = await iam_service.get_effective_permissions(session, user_id)

@@ -61,6 +61,7 @@ def _encode(
     subject: uuid.UUID,
     token_type: TokenType,
     ttl: timedelta,
+    claims: dict[str, Any] | None = None,
 ) -> tuple[str, str, datetime]:
     """Encode a signed JWT.
 
@@ -79,6 +80,7 @@ def _encode(
         "exp": expires_at,
         "jti": jti,
     }
+    payload.update(claims or {})
     token = jwt.encode(
         payload,
         settings.jwt_secret.get_secret_value(),
@@ -87,20 +89,32 @@ def _encode(
     return token, jti, expires_at
 
 
-def create_access_token(user_id: uuid.UUID) -> str:
+def create_access_token(
+    user_id: uuid.UUID, *, claims: dict[str, Any] | None = None
+) -> str:
     """Issue a short-lived access token for ``user_id``."""
     token, _, _ = _encode(
-        user_id, "access", timedelta(minutes=settings.access_token_ttl_minutes)
+        user_id,
+        "access",
+        timedelta(minutes=settings.access_token_ttl_minutes),
+        claims,
     )
     return token
 
 
-def create_refresh_token(user_id: uuid.UUID) -> tuple[str, str, datetime]:
+def create_refresh_token(
+    user_id: uuid.UUID, *, claims: dict[str, Any] | None = None
+) -> tuple[str, str, datetime]:
     """Issue a refresh token, returning it with its ``jti`` and expiry.
 
     The caller persists the ``jti`` so the token can be revoked on rotation.
     """
-    return _encode(user_id, "refresh", timedelta(days=settings.refresh_token_ttl_days))
+    return _encode(
+        user_id,
+        "refresh",
+        timedelta(days=settings.refresh_token_ttl_days),
+        claims,
+    )
 
 
 def decode_token(token: str, expected_type: TokenType) -> dict[str, Any]:

@@ -11,6 +11,7 @@ from collections.abc import Iterable
 
 from cbpupsis_core.exceptions import (
     AppError,
+    ConflictError,
     ForbiddenError,
     NotFoundError,
     UnauthorizedError,
@@ -74,6 +75,18 @@ class ProfileAccessDeniedError(UsersError, ForbiddenError):
 
     def __init__(self, permission: str) -> None:
         super().__init__(f"Missing required permission(s): {[permission]}")
+
+
+class ProtectedRoleTargetError(UsersError, ForbiddenError):
+    def __init__(self) -> None:
+        super().__init__(
+            "Protected administrative accounts require an explicit override"
+        )
+
+
+class UserAlreadyInactiveError(UsersError, ConflictError):
+    def __init__(self) -> None:
+        super().__init__("Account is already inactive")
 
 
 class CannotAdministerSelfError(UsersError, ValidationError):

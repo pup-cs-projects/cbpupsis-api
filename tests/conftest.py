@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -24,13 +25,17 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from cbpupsis_api_admin.domains.admin_auth.security import totp_at
+
 # Imported for its side effect: registering every table on Base.metadata before
 # create_all, the same way packages/migrations/env.py does.
 from cbpupsis_database import models as _models  # noqa: F401
 from cbpupsis_database.base import Base
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.auth.security import hash_password
 from cbpupsis_shared.domains.iam import service as iam_service
+from cbpupsis_shared.domains.iam.constants import SUPERADMIN_GROUP
 from cbpupsis_shared.domains.notifications.constants import NOTIFICATION_TYPES
 from cbpupsis_shared.domains.users import service as users_service
 from main import app
@@ -82,6 +87,14 @@ async def grant(db: AsyncSession):
     """
 
     async def _grant(user_id: uuid.UUID, action: str) -> None:
+        if await users_service.get_active_user(db, user_id) is None:
+            user = users_service.stage_new_user(
+                db,
+                email=f"fixture-{user_id}@example.com",
+                password_hash=hash_password("a-long-enough-password"),
+            )
+            user.id = user_id
+            await db.commit()
         permission = await iam_service.create_permission(db, action=action)
         policy = await iam_service.create_policy(
             db, name=f"policy-{action}", permission_actions=[action]
@@ -227,3 +240,42 @@ async def auth_headers(
     )
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+@pytest.fixture
+async def superadmin_pair(
+    client: AsyncClient, db: AsyncSession, registered_user: dict[str, str]
+) -> dict[str, str]:
+    """Authenticate a real Superadmin through enrollment and factor proof."""
+    group = await iam_service.create_group(db, name=SUPERADMIN_GROUP)
+    await iam_service.create_permission(db, action="ReadAllUser")
+    await iam_service.create_permission(db, action="ManageUser")
+    await iam_service.add_user_to_group(db, uuid.UUID(registered_user["id"]), group.id)
+    login = await client.post(
+        "/api/v1/auth/superadmin/login",
+        json={
+            "email": registered_user["email"],
+            "password": registered_user["password"],
+        },
+    )
+    assert login.status_code == 200, login.text
+    challenge = login.json()["challenge_token"]
+    enrollment = await client.post(
+        "/api/v1/auth/superadmin/mfa/totp/enroll",
+        json={"challenge_token": challenge},
+    )
+    assert enrollment.status_code == 200, enrollment.text
+    code = totp_at(
+        enrollment.json()["secret"], int(datetime.now(UTC).timestamp()) // 30
+    )
+    verified = await client.post(
+        "/api/v1/auth/superadmin/mfa/totp/confirm",
+        json={"challenge_token": challenge, "code": code},
+    )
+    assert verified.status_code == 200, verified.text
+    return verified.json()
+
+
+@pytest.fixture
+def superadmin_headers(superadmin_pair: dict[str, str]) -> dict[str, str]:
+    return {"Authorization": f"Bearer {superadmin_pair['access_token']}"}

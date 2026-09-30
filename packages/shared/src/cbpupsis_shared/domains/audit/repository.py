@@ -28,6 +28,8 @@ def add_entry(
     target_type: str | None = None,
     target_id: str | None = None,
     payload: dict[str, Any] | None = None,
+    prior_state: dict[str, Any] | None = None,
+    new_state: dict[str, Any] | None = None,
 ) -> AuditEntry:
     """Stage one audit entry on the session and return it.
 
@@ -37,9 +39,10 @@ def add_entry(
     Emits no SQL here. On the service's commit::
 
         INSERT INTO audit_entries (action, actor_id, target_type, target_id,
-                                   payload, occurred_at, id)
+                                   payload, prior_state, new_state,
+                                   occurred_at, id)
         VALUES (:action, :actor_id::UUID, :target_type, :target_id,
-                :payload, :occurred_at, :id::UUID)
+                :payload, :prior_state, :new_state, :occurred_at, :id::UUID)
     """
     entry = AuditEntry(
         action=action,
@@ -47,6 +50,8 @@ def add_entry(
         target_type=target_type,
         target_id=target_id,
         payload=payload or {},
+        prior_state=prior_state,
+        new_state=new_state,
         occurred_at=occurred_at,
     )
     db.add(entry)

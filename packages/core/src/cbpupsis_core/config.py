@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     #: asyncpg actually uses — *are* supported by the pooler, which is why the
     #: app's own traffic is fine on the pooled URL.)
     direct_database_url: str | None = None
+    audit_runtime_role: str | None = None
 
     # --- Connection pool ---
     #: Connections held open per worker process. The arithmetic that matters is
@@ -85,6 +86,20 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = 15
     #: Long-lived but single-use: rotated on every refresh (see auth.service).
     refresh_token_ttl_days: int = 30
+
+    # --- Administrative MFA ---
+    #: Short-lived and non-privileged: a challenge proves only that the password
+    #: step completed, never that the holder may call an administrative route.
+    mfa_challenge_ttl_minutes: int = 5
+    mfa_lockout_threshold: int = 5
+    mfa_lockout_window_minutes: int = 15
+    mfa_lockout_minutes: int = 15
+    #: A dedicated production value is recommended. When omitted, a separate
+    #: 256-bit sub-key is derived from JWT_SECRET so local/test setups remain
+    #: operable without weakening AES-256-GCM.
+    mfa_encryption_key: SecretStr | None = None
+    webauthn_rp_id: str = "admin.cbpupsis"
+    webauthn_origin: str = "https://admin.cbpupsis"
 
     # --- One-time tokens (email verification, password reset) ---
     #: Verification links are low-risk and mailed once, so a day is generous

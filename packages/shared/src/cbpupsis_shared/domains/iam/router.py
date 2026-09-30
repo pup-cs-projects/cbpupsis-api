@@ -18,10 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.session import get_db
-from cbpupsis_shared.domains.auth.dependencies import CurrentUser
+from cbpupsis_shared.domains.auth.dependencies import (
+    CurrentUser,
+    require_superadmin_session,
+)
 from cbpupsis_shared.domains.iam import service as iam_service
-from cbpupsis_shared.domains.iam.constants import MANAGE_IAM
-from cbpupsis_shared.domains.iam.dependencies import require_permission
 from cbpupsis_shared.domains.iam.schemas import (
     AddUserToGroupRequest,
     AttachPolicyRequest,
@@ -37,7 +38,7 @@ from cbpupsis_shared.domains.iam.schemas import (
 router = APIRouter()
 
 # Every management endpoint requires this permission. Declared once and reused.
-_manage = Depends(require_permission(MANAGE_IAM))
+_manage = Depends(require_superadmin_session)
 
 
 @router.post(

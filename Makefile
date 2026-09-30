@@ -55,7 +55,7 @@ up:  ## Start the stack in the background ($(env))
 	$(COMPOSE) up -d
 	@echo "Student  http://localhost:8001  docs /scalar$(if $(filter staging,$(env)),  (closed in staging),)"
 	@echo "Faculty  http://localhost:8002  docs /scalar$(if $(filter staging,$(env)),  (closed in staging),)"
-	@echo "Admin    http://localhost:8003  docs /scalar, panel /admin$(if $(filter staging,$(env)),  (closed in staging),  (sign in with an account holding ManageIAM))"
+	@echo "Admin    http://localhost:8003  docs /scalar$(if $(filter staging,$(env)),  (closed in staging),)"
 	@echo "Logs     make logs env=$(env)"
 
 down:  ## Stop the stack. Add wipe=1 to also delete the database volume
