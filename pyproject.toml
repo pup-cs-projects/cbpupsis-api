@@ -112,3 +112,25 @@ env = [
     # The tests that cover rate limiting turn it back on around themselves.
     "RATE_LIMIT_ENABLED=false",
 ]
+
+[tool.pyrefly]
+search-path = [
+    "packages/core/src",
+    "packages/database/src",
+    "packages/shared/src",
+    "packages/migrations",
+    "apps/api-admin/src",
+    "apps/api-faculty/src",
+    "apps/api-student/src",
+]
+
+[tool.pyright]
+extraPaths = [
+    "packages/core/src",
+    "packages/database/src",
+    "packages/shared/src",
+    "packages/migrations",
+    "apps/api-admin/src",
+    "apps/api-faculty/src",
+    "apps/api-student/src",
+]

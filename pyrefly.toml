@@ -1,0 +1,9 @@
+search-path = [
+    "packages/core/src",
+    "packages/database/src",
+    "packages/shared/src",
+    "packages/migrations",
+    "apps/api-admin/src",
+    "apps/api-faculty/src",
+    "apps/api-student/src",
+]
