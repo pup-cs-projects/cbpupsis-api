@@ -36,8 +36,24 @@ target_metadata = Base.metadata
 _migration_url = to_asyncpg_url(settings.direct_database_url or settings.database_url)
 
 
+def include_object(object, name, type_, reflected, compare_to):
+    return not (
+        type_ == "table"
+        and name
+        in {
+            "auth_audit_logs_default",
+            "admin_audit_trails_default",
+            "system_health_logs_default",
+        }
+    )
+
+
 def do_run_migrations(connection):
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_object=include_object,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

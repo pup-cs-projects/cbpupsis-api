@@ -10,9 +10,21 @@ Only this domain reads or writes this table; other domains go through
 
 from __future__ import annotations
 
-from datetime import datetime
+import uuid
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, String, Text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    SmallInteger,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from cbpupsis_database.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
@@ -103,3 +115,149 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     anonymized_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
+
+
+class UserProfile(Base):
+    """Personal details, demographics, and contact addresses."""
+
+    __tablename__ = "user_profiles"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    first_name: Mapped[str] = mapped_column(String(100))
+    middle_name: Mapped[str | None] = mapped_column(String(100), default=None)
+    last_name: Mapped[str] = mapped_column(String(100))
+    birthdate: Mapped[date | None] = mapped_column(Date, default=None)
+    gender: Mapped[str | None] = mapped_column(String(20), default=None)
+    civil_status: Mapped[str | None] = mapped_column(String(30), default=None)
+    personal_email: Mapped[str | None] = mapped_column(String(255), default=None)
+    institutional_email: Mapped[str | None] = mapped_column(String(255), default=None)
+    phone_number: Mapped[str | None] = mapped_column(String(25), default=None)
+    avatar_url: Mapped[str | None] = mapped_column(Text, default=None)
+    home_address: Mapped[str | None] = mapped_column(Text, default=None)
+    current_address: Mapped[str | None] = mapped_column(Text, default=None)
+    profile_completed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    email_notifications: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class AdminProfile(Base):
+    """Administrative staff profile and assigned department/college."""
+
+    __tablename__ = "admin_profiles"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    employee_id: Mapped[str | None] = mapped_column(
+        String(30), unique=True, default=None
+    )
+    position: Mapped[str] = mapped_column(String(50))
+    department: Mapped[str | None] = mapped_column(String(100), default=None)
+    college: Mapped[str | None] = mapped_column(String(100), default=None)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true"
+    )
+    active_mfa_challenge_jti: Mapped[str | None] = mapped_column(
+        String(36), default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class FacultyProfile(Base):
+    """Faculty instructor employment details and rank."""
+
+    __tablename__ = "faculty_profiles"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    employee_id: Mapped[str | None] = mapped_column(
+        String(30), unique=True, default=None
+    )
+    college: Mapped[str | None] = mapped_column(String(100), default=None)
+    department: Mapped[str] = mapped_column(String(100))
+    academic_rank: Mapped[str | None] = mapped_column(String(50), default=None)
+    employment_type: Mapped[str] = mapped_column(
+        String(30), default="full_time", server_default="full_time"
+    )
+    office_location: Mapped[str | None] = mapped_column(String(100), default=None)
+    office_hours: Mapped[str | None] = mapped_column(String(255), default=None)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true"
+    )
+
+
+class StudentProfile(Base):
+    """Student profile, program attachment, and academic holds."""
+
+    __tablename__ = "student_profiles"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    student_number: Mapped[str] = mapped_column(String(30), unique=True)
+    program_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("programs.id", ondelete="RESTRICT")
+    )
+    curriculum_id: Mapped[uuid.UUID | None] = mapped_column(default=None)
+    year_level: Mapped[int] = mapped_column(SmallInteger)
+    section: Mapped[str | None] = mapped_column(String(20), default=None)
+    enrollment_status: Mapped[str] = mapped_column(
+        String(30), default="pending", server_default="pending"
+    )
+    fhe_qualified: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true"
+    )
+    fhe_forfeited: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    fhe_forfeiture_reason: Mapped[str | None] = mapped_column(String(255), default=None)
+    is_graduating_senior: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    has_financial_hold: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    has_academic_hold: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["curriculum_id", "program_id"],
+            ["curricula.id", "curricula.program_id"],
+            ondelete="SET NULL",
+        ),
+        Index("idx_fk_student_profiles_program_id", "program_id"),
+        Index("ix_student_profiles_student_number", "student_number", unique=True),
+    )
+
+
+class EmergencyContact(UUIDMixin, Base):
+    """Emergency contacts for students/staff."""
+
+    __tablename__ = "emergency_contacts"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    contact_name: Mapped[str] = mapped_column(String(150))
+    relationship: Mapped[str] = mapped_column(String(50))
+    phone_number: Mapped[str] = mapped_column(String(25))
+    email: Mapped[str | None] = mapped_column(String(255), default=None)
+    address: Mapped[str | None] = mapped_column(Text, default=None)
+    is_primary: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+
+    __table_args__ = (Index("idx_fk_emergency_contacts_user_id", "user_id"),)

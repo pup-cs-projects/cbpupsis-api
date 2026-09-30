@@ -1,6 +1,6 @@
 """cbpupsis initial schema
 
-Revision ID: f1a2b3c4d5e6
+Revision ID: 092426_create_initial_schema
 Revises: e5df35334433
 Create Date: 2026-09-24 21:45:00.000000
 """
@@ -8,7 +8,7 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = 'f1a2b3c4d5e6'
+revision = '092426_create_initial_schema'
 down_revision = 'e5df35334433'
 branch_labels = None
 depends_on = None
