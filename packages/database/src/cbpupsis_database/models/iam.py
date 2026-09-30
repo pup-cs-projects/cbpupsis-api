@@ -50,11 +50,21 @@ to scoped/multi-tenant RBAC without restructuring the core tables.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from cbpupsis_database.base import Base, TimestampMixin
+from cbpupsis_database.base import Base, TimestampMixin, UUIDMixin
 
 ACTION_MAX_LENGTH = 100
 NAME_MAX_LENGTH = 100
@@ -203,4 +213,75 @@ class UserPolicy(Base):
     policy_id: Mapped[int] = mapped_column(
         ForeignKey("policies.id", ondelete="CASCADE"),
         primary_key=True,
+    )
+
+
+class Role(UUIDMixin, Base):
+    """Institutional system role (e.g., student, faculty, admin)."""
+
+    __tablename__ = "roles"
+
+    code: Mapped[str] = mapped_column(String(50), unique=True)
+    name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str | None] = mapped_column(Text, default=None)
+
+
+class RolePermission(Base):
+    """Association table mapping permissions to roles."""
+
+    __tablename__ = "role_permissions"
+
+    role_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True
+    )
+    permission_id: Mapped[int] = mapped_column(
+        ForeignKey("permissions.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    __table_args__ = (Index("idx_fk_role_permissions_permission_id", "permission_id"),)
+
+
+class UserRole(Base):
+    """User assigned role association table."""
+
+    __tablename__ = "user_roles"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    role_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("roles.id", ondelete="RESTRICT"), primary_key=True
+    )
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (Index("idx_fk_user_roles_role_id", "role_id"),)
+
+
+class UserPermissionOverride(UUIDMixin, Base):
+    """Explicit grant or denial of specific permission overriding role permissions."""
+
+    __tablename__ = "user_permission_overrides"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    permission_id: Mapped[int] = mapped_column(
+        ForeignKey("permissions.id", ondelete="CASCADE")
+    )
+    is_granted: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true"
+    )
+    granted_by: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "permission_id", name="uq_user_permission_overrides"
+        ),
     )

@@ -15,10 +15,25 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Enum, String, Text
-from sqlalchemy.dialects.postgresql import INET
+import sqlalchemy as sa
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import JSON
 
 from cbpupsis_database.base import Base, TimestampMixin, UUIDMixin
 
@@ -48,20 +63,6 @@ class RefreshToken(UUIDMixin, TimestampMixin, Base):
     revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
-
-
-class ActiveSession(UUIDMixin, Base):
-    """Server-side session state used for idle-revocable Superadmin tokens."""
-
-    __tablename__ = "user_active_sessions"
-
-    user_id: Mapped[uuid.UUID] = mapped_column(index=True)
-    session_token_hash: Mapped[str] = mapped_column(String(64))
-    device_info: Mapped[str] = mapped_column(Text)
-    ip_address: Mapped[str] = mapped_column(INET().with_variant(String(45), "sqlite"))
-    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
-    last_activity_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class TokenPurpose(enum.StrEnum):
@@ -111,8 +112,7 @@ class OneTimeToken(UUIDMixin, TimestampMixin, Base):
             TokenPurpose,
             native_enum=False,
             length=32,
-            create_constraint=True,
-            name="ck_one_time_tokens_purpose",
+            create_constraint=False,
         ),
         index=True,
     )
@@ -121,4 +121,139 @@ class OneTimeToken(UUIDMixin, TimestampMixin, Base):
     #: the unique ``token_hash`` this is what makes redemption single-use.
     consumed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "purpose IN ('email_verification', 'password_reset')",
+            name="ck_one_time_tokens_purpose",
+        ),
+    )
+
+
+class UserMfaCredential(UUIDMixin, Base):
+    """MFA factors registered by a user (TOTP, WebAuthn, FIDO2)."""
+
+    __tablename__ = "user_mfa_credentials"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    mfa_type: Mapped[str] = mapped_column(String(20))
+    totp_secret: Mapped[str | None] = mapped_column(String(255), default=None)
+    credential_id: Mapped[str | None] = mapped_column(Text, default=None)
+    credential_id_digest: Mapped[str | None] = mapped_column(String(64), default=None)
+    public_key: Mapped[str | None] = mapped_column(Text, default=None)
+    sign_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    is_enrolled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("idx_fk_user_mfa_credentials_user_id", "user_id"),
+        Index(
+            "ix_user_mfa_credential_id_digest",
+            "credential_id_digest",
+            unique=True,
+            postgresql_where=sa.text("credential_id_digest IS NOT NULL"),
+        ),
+    )
+
+
+class UserMfaRecoveryCode(UUIDMixin, Base):
+    """One-time recovery backup codes for MFA."""
+
+    __tablename__ = "user_mfa_recovery_codes"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    code_hash: Mapped[str] = mapped_column(String(64))
+    is_used: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (Index("idx_fk_user_mfa_recovery_codes_user_id", "user_id"),)
+
+
+_INET_TYPE = postgresql.INET().with_variant(String(45), "sqlite")
+_JSON_TYPE = postgresql.JSONB(astext_type=Text()).with_variant(JSON(), "sqlite")
+
+
+class UserActiveSession(UUIDMixin, Base):
+    """Tracks active login sessions for concurrency controls and device tracking."""
+
+    __tablename__ = "user_active_sessions"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    session_token_hash: Mapped[str] = mapped_column(String(64))
+    device_info: Mapped[str] = mapped_column(Text)
+    ip_address: Mapped[str] = mapped_column(_INET_TYPE)
+    is_current: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    last_activity_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (Index("idx_fk_user_active_sessions_user_id", "user_id"),)
+
+
+# Existing Superadmin session call sites use this name for the canonical table.
+ActiveSession = UserActiveSession
+
+
+class IdempotencyKey(UUIDMixin, Base):
+    """Prevents duplicate execution of critical financial and academic requests."""
+
+    __tablename__ = "idempotency_keys"
+
+    idempotency_key: Mapped[str] = mapped_column(String(255))
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), default=None
+    )
+    request_method: Mapped[str] = mapped_column(String(10))
+    request_path: Mapped[str] = mapped_column(String(255))
+    request_payload_hash: Mapped[str | None] = mapped_column(String(64), default=None)
+    response_code: Mapped[int | None] = mapped_column(Integer, default=None)
+    response_body: Mapped[dict[str, Any] | None] = mapped_column(
+        _JSON_TYPE, default=None
+    )
+    status: Mapped[str] = mapped_column(
+        String(30), default="processing", server_default="processing"
+    )
+    locked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.clock_timestamp()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.clock_timestamp()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_idempotency_key"),
+        Index(
+            "ix_idempotency_keys_key_user",
+            "idempotency_key",
+            "user_id",
+            unique=True,
+        ),
+        Index("ix_idempotency_keys_expires_at", "expires_at", unique=False),
     )

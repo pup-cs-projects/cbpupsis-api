@@ -13,25 +13,43 @@ tables public.
 from __future__ import annotations
 
 from cbpupsis_database.models import (
+    academics,
     admin_auth,
+    announcements,
     audit,
     auth,
+    billing,
+    curriculum,
+    enrollment,
+    evaluations,
+    grading,
     iam,
     items,
     notifications,
     outbox,
+    sections,
     superadmin_ops,
+    system,
     users,
 )
 
 __all__ = [
+    "academics",
     "admin_auth",
+    "announcements",
     "audit",
     "auth",
+    "billing",
+    "curriculum",
+    "enrollment",
+    "evaluations",
+    "grading",
     "iam",
     "items",
     "notifications",
     "outbox",
+    "sections",
     "superadmin_ops",
+    "system",
     "users",
 ]

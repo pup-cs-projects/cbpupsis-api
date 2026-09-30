@@ -15,9 +15,11 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+import sqlalchemy as sa
 from sqlalchemy import (
     Boolean,
     DateTime,
+    ForeignKey,
     Index,
     String,
     Text,
@@ -162,4 +164,34 @@ class DigestRun(UUIDMixin, Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "period_start", name="uq_digest_run_period"),
+    )
+
+
+class CBPUPSISNotification(UUIDMixin, Base):
+    """Domain notification entity mapped to cbpupsis_notifications."""
+
+    __tablename__ = "cbpupsis_notifications"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    title: Mapped[str] = mapped_column(String(255))
+    message: Mapped[str] = mapped_column(Text)
+    category: Mapped[str | None] = mapped_column(
+        String(50), default="general", server_default="general"
+    )
+    link_url: Mapped[str | None] = mapped_column(String(255), default=None)
+    is_read: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index(
+            "idx_fk_cbpupsis_notifications_user_unread",
+            "user_id",
+            postgresql_where=sa.text("is_read = false"),
+        ),
     )

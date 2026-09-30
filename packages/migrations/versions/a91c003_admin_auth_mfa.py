@@ -1,7 +1,7 @@
 """Admin authentication, MFA challenge state, lockout, and immutable audit
 
 Revision ID: a91c003admin
-Revises: f1a2b3c4d5e6
+Revises: 092426_create_initial_schema
 Create Date: 2026-09-28 00:00:00.000000
 """
 
@@ -10,7 +10,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "a91c003admin"
-down_revision = "f1a2b3c4d5e6"
+down_revision = "092426_create_initial_schema"
 branch_labels = None
 depends_on = None
 
