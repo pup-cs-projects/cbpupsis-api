@@ -184,6 +184,7 @@ def sent_emails(monkeypatch) -> list[dict[str, str]]:
     monkeypatch.setattr(
         "cbpupsis_shared.domains.notifications.channels.send_email", _capture
     )
+    monkeypatch.setattr("cbpupsis_api_student.auth.service.send_email", _capture)
     return captured
 
 

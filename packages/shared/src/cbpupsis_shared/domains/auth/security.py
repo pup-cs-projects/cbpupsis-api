@@ -23,6 +23,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
+import bcrypt
 import jwt
 from passlib.context import CryptContext
 from passlib.exc import UnknownHashError
@@ -40,9 +41,16 @@ def hash_password(raw_password: str) -> str:
     return _pwd_context.hash(raw_password)
 
 
+def hash_password_bcrypt(raw_password: str, rounds: int = 12) -> str:
+    """Return a bcrypt hash of ``raw_password`` at cost ``rounds`` (default 12)."""
+    salt = bcrypt.gensalt(rounds=rounds)
+    return bcrypt.hashpw(raw_password.encode("utf-8")[:72], salt).decode("utf-8")
+
+
 def verify_password(raw_password: str, password_hash: str) -> bool:
     """Return whether ``raw_password`` matches ``password_hash``.
 
+    Supports both bcrypt and argon2 hashes.
     A stored value that is not a recognisable hash returns ``False`` rather than
     raising. Deleted accounts deliberately hold an unusable marker instead of a
     real digest (see ``users.service.soft_delete``), and passlib raises
@@ -51,6 +59,13 @@ def verify_password(raw_password: str, password_hash: str) -> bool:
     unhandled 500, and a 500 where every other account gives 401 is exactly the
     kind of difference that identifies deleted accounts to an attacker.
     """
+    if password_hash.startswith(("$2a$", "$2b$", "$2y$")):
+        try:
+            return bcrypt.checkpw(
+                raw_password.encode("utf-8")[:72], password_hash.encode("utf-8")
+            )
+        except Exception:
+            return False
     try:
         return _pwd_context.verify(raw_password, password_hash)
     except UnknownHashError:
