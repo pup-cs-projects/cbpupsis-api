@@ -16,6 +16,8 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Match the preexisting dev PostgreSQL defaults. ORM timestamps stay
+    # portable for SQLite fixtures.
     op.create_table(
         "delivery_receipts",
         sa.Column("outbox_message_id", sa.Uuid(), nullable=False),
@@ -23,10 +25,12 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.text("clock_timestamp()"),
             nullable=False,
         ),
-        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column(
+            "id", sa.Uuid(), server_default=sa.text("gen_uuid_v7()"), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "outbox_message_id", "channel", name="uq_delivery_receipt_message_channel"
@@ -44,10 +48,12 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.text("clock_timestamp()"),
             nullable=False,
         ),
-        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column(
+            "id", sa.Uuid(), server_default=sa.text("gen_uuid_v7()"), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("user_id", "period_start", name="uq_digest_run_period"),
     )
@@ -57,18 +63,22 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Uuid(), nullable=False),
         sa.Column("notification_type", sa.String(length=100), nullable=False),
         sa.Column("channel", sa.String(length=32), nullable=False),
-        sa.Column("enabled", sa.Boolean(), nullable=False),
-        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column(
+            "enabled", sa.Boolean(), server_default=sa.text("true"), nullable=False
+        ),
+        sa.Column(
+            "id", sa.Uuid(), server_default=sa.text("gen_uuid_v7()"), nullable=False
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.text("clock_timestamp()"),
             nullable=False,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.text("clock_timestamp()"),
             nullable=False,
         ),
         sa.PrimaryKeyConstraint("id"),
@@ -94,17 +104,19 @@ def upgrade() -> None:
         ),
         sa.Column("read_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("source_message_id", sa.Uuid(), nullable=True),
-        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column(
+            "id", sa.Uuid(), server_default=sa.text("gen_uuid_v7()"), nullable=False
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.text("clock_timestamp()"),
             nullable=False,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.text("clock_timestamp()"),
             nullable=False,
         ),
         sa.PrimaryKeyConstraint("id"),
@@ -125,23 +137,32 @@ def upgrade() -> None:
             postgresql.JSONB(astext_type=sa.Text()).with_variant(sa.JSON(), "sqlite"),
             nullable=False,
         ),
-        sa.Column("status", sa.String(length=20), nullable=False),
+        sa.Column(
+            "status",
+            sa.String(length=20),
+            server_default=sa.text("'pending'"),
+            nullable=False,
+        ),
         sa.Column(
             "available_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.text("clock_timestamp()"),
             nullable=False,
         ),
-        sa.Column("attempts", sa.Integer(), nullable=False),
+        sa.Column(
+            "attempts", sa.Integer(), server_default=sa.text("0"), nullable=False
+        ),
         sa.Column("last_error", sa.Text(), nullable=True),
         sa.Column("dispatched_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.text("clock_timestamp()"),
             nullable=False,
         ),
-        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column(
+            "id", sa.Uuid(), server_default=sa.text("gen_uuid_v7()"), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
