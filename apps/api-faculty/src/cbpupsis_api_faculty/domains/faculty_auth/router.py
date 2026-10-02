@@ -30,6 +30,7 @@ from cbpupsis_api_faculty.domains.faculty_auth.security import (
 )
 from cbpupsis_core.middleware import rate_limit
 from cbpupsis_database.session import get_db
+from cbpupsis_shared.domains.auth import client as auth_client
 from cbpupsis_shared.domains.auth import service as auth_service
 from cbpupsis_shared.domains.auth.dependencies import CurrentUser, get_current_user
 from cbpupsis_shared.domains.auth.exceptions import NotAuthenticatedError
@@ -39,7 +40,6 @@ from cbpupsis_shared.domains.auth.schemas import (
     RefreshRequest,
     TokenPair,
 )
-from cbpupsis_shared.domains.auth.security import decode_token
 
 router = APIRouter()
 _bearer_scheme = HTTPBearer(auto_error=False)
@@ -60,8 +60,8 @@ async def _resolve_user_id(
         raise NotAuthenticatedError
     token = credentials.credentials
     try:
-        claims = decode_token(token, expected_type="access")
-        return uuid.UUID(claims["sub"])
+        claims = auth_client.decode_access_session(token)
+        return uuid.UUID(str(claims["sub"]))
     except Exception:
         claims = None
 

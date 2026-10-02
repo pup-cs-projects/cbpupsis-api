@@ -48,7 +48,7 @@ from cbpupsis_api_faculty.domains.faculty_auth.validation import (
     validate_faculty_identifier,
 )
 from cbpupsis_core.emails.sender import send_email
-from cbpupsis_shared.domains.auth.security import verify_password
+from cbpupsis_shared.domains.auth import client as auth_client
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +137,9 @@ async def login_faculty(
 
     user, faculty_profile, _user_profile = faculty_record
 
-    if not user.is_active or not verify_password(password, user.password_hash):
+    if not user.is_active or not auth_client.check_password(
+        password, user.password_hash
+    ):
         await repository.record_audit_log(
             db,
             attempted_id=attempted_id,

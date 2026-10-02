@@ -9,15 +9,17 @@ from datetime import UTC, datetime
 from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_database.models.audit import AuthAuditLog
-from cbpupsis_database.models.auth import (
+from cbpupsis_database.models.faculty_auth import (
+    AuthAuditLog,
+    CourseSection,
+    FacultyProfile,
     IdempotencyKey,
+    User,
     UserActiveSession,
     UserMfaCredential,
     UserMfaRecoveryCode,
+    UserProfile,
 )
-from cbpupsis_database.models.sections import CourseSection
-from cbpupsis_database.models.users import FacultyProfile, User, UserProfile
 
 
 async def get_recent_failed_attempts(
