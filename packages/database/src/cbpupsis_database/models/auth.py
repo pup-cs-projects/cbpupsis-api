@@ -141,7 +141,8 @@ class UserMfaCredential(UUIDMixin, Base):
     )
     mfa_type: Mapped[str] = mapped_column(String(20))
     totp_secret: Mapped[str | None] = mapped_column(String(255), default=None)
-    credential_id: Mapped[str | None] = mapped_column(String(255), default=None)
+    credential_id: Mapped[str | None] = mapped_column(Text, default=None)
+    credential_id_digest: Mapped[str | None] = mapped_column(String(64), default=None)
     public_key: Mapped[str | None] = mapped_column(Text, default=None)
     sign_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     is_enrolled: Mapped[bool] = mapped_column(
@@ -157,10 +158,10 @@ class UserMfaCredential(UUIDMixin, Base):
     __table_args__ = (
         Index("idx_fk_user_mfa_credentials_user_id", "user_id"),
         Index(
-            "ix_user_mfa_credential_id",
-            "credential_id",
+            "ix_user_mfa_credential_id_digest",
+            "credential_id_digest",
             unique=True,
-            postgresql_where=sa.text("credential_id IS NOT NULL"),
+            postgresql_where=sa.text("credential_id_digest IS NOT NULL"),
         ),
     )
 

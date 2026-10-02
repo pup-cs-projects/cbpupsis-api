@@ -50,6 +50,10 @@ class Notification(UUIDMixin, TimestampMixin, Base):
 
     __tablename__ = "notifications"
 
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, default=uuid.uuid4, server_default=sa.text("gen_uuid_v7()")
+    )
+
     #: Who it is for. Bare id, no FK: see the module docstring.
     user_id: Mapped[uuid.UUID] = mapped_column(index=True)
 
@@ -115,6 +119,10 @@ class NotificationPreference(UUIDMixin, TimestampMixin, Base):
 
     __tablename__ = "notification_preferences"
 
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, default=uuid.uuid4, server_default=sa.text("gen_uuid_v7()")
+    )
+
     #: Bare id, no FK — see the module docstring.
     user_id: Mapped[uuid.UUID] = mapped_column(index=True)
 
@@ -124,7 +132,9 @@ class NotificationPreference(UUIDMixin, TimestampMixin, Base):
     #: ``notification_type``.
     channel: Mapped[str] = mapped_column(String(32))
 
-    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=sa.true()
+    )
 
     __table_args__ = (
         # One preference per user per type per channel. Without this, two
@@ -152,6 +162,10 @@ class DigestRun(UUIDMixin, Base):
     """
 
     __tablename__ = "digest_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, default=uuid.uuid4, server_default=sa.text("gen_uuid_v7()")
+    )
 
     #: Bare id, no FK — see the module docstring.
     user_id: Mapped[uuid.UUID] = mapped_column(index=True)

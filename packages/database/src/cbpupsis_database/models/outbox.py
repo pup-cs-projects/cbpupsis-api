@@ -24,6 +24,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -79,6 +80,10 @@ class OutboxMessage(UUIDMixin, Base):
 
     __tablename__ = "outbox_messages"
 
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, default=uuid.uuid4, server_default=text("gen_uuid_v7()")
+    )
+
     #: The same string as ``Event.name``, so the outbox and the in-process bus
     #: share one vocabulary and a handler can be registered against either.
     event_name: Mapped[str] = mapped_column(String(EVENT_NAME_MAX_LENGTH))
@@ -93,7 +98,9 @@ class OutboxMessage(UUIDMixin, Base):
     #: Not separately indexed: ix_outbox_claimable below leads with this column,
     #: so a standalone index would be redundant write cost on every claim.
     status: Mapped[str] = mapped_column(
-        String(STATUS_MAX_LENGTH), default=OutboxStatus.PENDING
+        String(STATUS_MAX_LENGTH),
+        default=OutboxStatus.PENDING,
+        server_default=OutboxStatus.PENDING.value,
     )
 
     #: When the row becomes claimable. Backoff is implemented by pushing this
@@ -106,7 +113,7 @@ class OutboxMessage(UUIDMixin, Base):
     #: Incremented in the claim transaction, before dispatch. A crash mid-send
     #: therefore leaves it already incremented, so a poison message backs off and
     #: eventually dead-letters instead of retrying forever.
-    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     #: Truncated exception text from the last failure — the only clue an operator
     #: has about a dead-lettered row.
@@ -151,6 +158,10 @@ class DeliveryReceipt(UUIDMixin, Base):
     """
 
     __tablename__ = "delivery_receipts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, default=uuid.uuid4, server_default=text("gen_uuid_v7()")
+    )
 
     #: The outbox message this delivery satisfies. A bare UUID with no foreign
     #: key: receipts are pruned on a different schedule than the messages they

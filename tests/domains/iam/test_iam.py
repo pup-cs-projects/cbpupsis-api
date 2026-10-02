@@ -21,11 +21,16 @@ class TestEffectivePermissions:
     async def test_user_with_no_grants_has_none(self, db: AsyncSession) -> None:
         assert await iam_service.get_effective_permissions(db, uuid.uuid4()) == set()
 
+    async def test_unknown_user_cannot_join_group(self, db: AsyncSession) -> None:
+        group = await iam_service.create_group(db, name="Things")
+        with pytest.raises(NotFoundError):
+            await iam_service.add_user_to_group(db, uuid.uuid4(), group.id)
+
     async def test_permissions_resolve_through_the_group_path(
-        self, db: AsyncSession
+        self, db: AsyncSession, make_user
     ) -> None:
         """user -> group -> policy -> permission, the primary grant path."""
-        user_id = uuid.uuid4()
+        user_id = (await make_user("member@example.com")).id
         await iam_service.create_permission(db, action="ReadThing")
         await iam_service.create_permission(db, action="WriteThing")
         policy = await iam_service.create_policy(
@@ -52,8 +57,10 @@ class TestEffectivePermissions:
             "DirectAction"
         }
 
-    async def test_both_paths_union_without_duplicates(self, db: AsyncSession) -> None:
-        user_id = uuid.uuid4()
+    async def test_both_paths_union_without_duplicates(
+        self, db: AsyncSession, make_user
+    ) -> None:
+        user_id = (await make_user("member@example.com")).id
         await iam_service.create_permission(db, action="Shared")
         await iam_service.create_permission(db, action="GroupOnly")
 
@@ -73,9 +80,9 @@ class TestEffectivePermissions:
             "GroupOnly",
         }
 
-    async def test_multiple_groups_union(self, db: AsyncSession) -> None:
+    async def test_multiple_groups_union(self, db: AsyncSession, make_user) -> None:
         """A user in several groups inherits the union, not the intersection."""
-        user_id = uuid.uuid4()
+        user_id = (await make_user("member@example.com")).id
         for action in ("AlphaAction", "BetaAction"):
             await iam_service.create_permission(db, action=action)
             policy = await iam_service.create_policy(
@@ -91,11 +98,11 @@ class TestEffectivePermissions:
         }
 
     async def test_revoking_group_membership_takes_effect_at_once(
-        self, db: AsyncSession
+        self, db: AsyncSession, make_user
     ) -> None:
         """Permissions are resolved per request, so removal is immediate — the
         reason they must never be baked into a token."""
-        user_id = uuid.uuid4()
+        user_id = (await make_user("member@example.com")).id
         await iam_service.create_permission(db, action="Temporary")
         policy = await iam_service.create_policy(
             db, name="TempPolicy", permission_actions=["Temporary"]
@@ -350,11 +357,15 @@ class TestIAMReadEndpoints:
         assert response.status_code == 404, response.text
 
     async def test_reports_a_users_effective_permissions_by_source(
-        self, client: AsyncClient, db: AsyncSession, admin_headers: dict[str, str]
+        self,
+        client: AsyncClient,
+        db: AsyncSession,
+        admin_headers: dict[str, str],
+        make_user,
     ) -> None:
         """Both grant paths are reported separately, and the union is what the
         guards resolve against."""
-        subject = uuid.uuid4()
+        subject = (await make_user("subject@example.com")).id
         await iam_service.create_permission(db, action="ReadWidget")
         await iam_service.create_permission(db, action="ModerateWidget")
         group_policy = await iam_service.create_policy(
@@ -383,9 +394,9 @@ class TestDetachingRevokesAccess:
     one that works. These assert the effective permission, not the status."""
 
     async def test_detaching_a_policy_from_a_group_removes_the_permission(
-        self, db: AsyncSession
+        self, db: AsyncSession, make_user
     ) -> None:
-        user_id = uuid.uuid4()
+        user_id = (await make_user("member@example.com")).id
         await iam_service.create_permission(db, action="ReadWidget")
         policy = await iam_service.create_policy(
             db, name="WidgetReader", permission_actions=["ReadWidget"]
@@ -412,10 +423,11 @@ class TestDetachingRevokesAccess:
         auth_headers: dict[str, str],
         registered_user: dict[str, str],
         grant,
+        make_user,
     ) -> None:
         await grant(uuid.UUID(registered_user["id"]), "ManageIAM")
 
-        subject = uuid.uuid4()
+        subject = (await make_user("subject@example.com")).id
         await iam_service.create_permission(db, action="ReadWidget")
         policy = await iam_service.create_policy(
             db, name="WidgetReader", permission_actions=["ReadWidget"]
@@ -438,10 +450,11 @@ class TestDetachingRevokesAccess:
         auth_headers: dict[str, str],
         registered_user: dict[str, str],
         grant,
+        make_user,
     ) -> None:
         await grant(uuid.UUID(registered_user["id"]), "ManageIAM")
 
-        subject = uuid.uuid4()
+        subject = (await make_user("subject@example.com")).id
         await iam_service.create_permission(db, action="ReadWidget")
         policy = await iam_service.create_policy(
             db, name="WidgetReader", permission_actions=["ReadWidget"]

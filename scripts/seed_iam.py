@@ -88,6 +88,13 @@ POLICIES: dict[str, list[str]] = {
     "NotificationAdmin": ["ReadAllNotification", "ManageNotificationDelivery"],
 }
 
+#: Policies reserved for the separate Superadmin role. They are seeded now
+#: because their handlers already exist, but attaching them to the Admin role
+#: would cross the product boundary for issue #91.
+RESERVED_POLICIES: frozenset[str] = frozenset(
+    {"UserAdmin", "IAMAdmin", "AuditReader", "NotificationAdmin"}
+)
+
 #: Groups and the policies attached to each. name -> [policy names]
 GROUPS: dict[str, list[str]] = {
     "Members": ["ItemAuthor"],
@@ -97,16 +104,11 @@ GROUPS: dict[str, list[str]] = {
         "UserModerator",
         "NotificationModerator",
     ],
-    # Keyed by the constant, not the literal: bootstrap_admin looks this
-    # group up by the same name, and a drift would leave it unfindable.
-    ADMIN_GROUP: [
-        "ItemAuthor",
-        "ItemModerator",
-        "UserAdmin",
-        "IAMAdmin",
-        "AuditReader",
-        "NotificationAdmin",
-    ],
+    # Admin is one authenticated role whose position controls data scope. Its
+    # product permissions (Home, Calendar, Courses, Enrollment) will be attached
+    # by those domains. User administration, IAM, and audit reading belong to
+    # the separate Superadmin story and must not leak through this seed.
+    ADMIN_GROUP: [],
 }
 
 

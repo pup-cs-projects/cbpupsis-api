@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from cbpupsis_database.models import (
     academics,
+    admin_auth,
     announcements,
     audit,
     auth,
@@ -33,6 +34,7 @@ from cbpupsis_database.models import (
 
 __all__ = [
     "academics",
+    "admin_auth",
     "announcements",
     "audit",
     "auth",

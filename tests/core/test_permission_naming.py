@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.seed_iam import GROUPS, PERMISSIONS, POLICIES
+from scripts.seed_iam import GROUPS, PERMISSIONS, POLICIES, RESERVED_POLICIES
 
 
 #: Every workspace member's source, located by searching upward for the
@@ -171,7 +171,7 @@ class TestModelIsCoherent:
 
     def test_every_policy_is_reachable(self) -> None:
         attached = {p for policies in GROUPS.values() for p in policies}
-        orphans = set(POLICIES) - attached
+        orphans = set(POLICIES) - attached - RESERVED_POLICIES
         assert not orphans, f"policies in no group: {sorted(orphans)}"
 
     def test_elevated_permissions_are_not_universal(self) -> None:
@@ -214,13 +214,20 @@ class TestModelIsCoherent:
         )
 
     def test_admin_bootstrap_group_exists(self) -> None:
-        """Someone must be able to grant the first ManageIAM, and that cannot
-        come through the API — see scripts/bootstrap_admin.py."""
+        """The Admin role exists without Superadmin-owned capabilities."""
         from scripts.bootstrap_admin import ADMIN_GROUP
 
         assert ADMIN_GROUP in GROUPS
         granted = {a for p in GROUPS[ADMIN_GROUP] for a in POLICIES[p]}
-        assert "ManageIAM" in granted
+        assert (
+            not {
+                "ManageIAM",
+                "ManageUser",
+                "ReadAllUser",
+                "ReadAllAuditEntry",
+            }
+            & granted
+        )
 
 
 class TestCodeMatchesSeed:

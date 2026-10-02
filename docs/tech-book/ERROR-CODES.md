@@ -11,7 +11,7 @@ Add the row in the same commit as the code that raises it.
 | | |
 |---|---|
 | **Last updated** | 2026-09-28 |
-| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py` (`auth`, `users`, `iam`, `notifications` in `packages/shared`; `items` in `apps/api-student`) |
+| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py` (`auth`, `users`, `iam`, `notifications` in `packages/shared`; `items` in `apps/api-student`; `admin_auth` in `apps/api-admin`) |
 
 ## The envelope
 
@@ -108,6 +108,26 @@ returns 401, never 403 — that is the enumeration guarantee, and
 
 Clients should branch on `code == "email_not_verified"` and route the user to a
 resend-verification screen rather than back to the login form.
+
+### admin_auth
+
+| Status | Code | When |
+|---|---|---|
+| 401 | `AUTH_MFA_INVALID` | The Google Authenticator code, hardware-key assertion, or registration response is invalid. |
+| 401 | `AUTH_MFA_CODE_REUSED` | A TOTP time-step already completed an earlier challenge. |
+| 401 | `AUTH_MFA_REQUIRED` | An Admin challenge was presented where a completed session is required. |
+| 403 | `AUTH_MFA_ENROLLMENT_REQUIRED` | The Admin has not yet enrolled a factor; only enrollment is reachable. |
+| 403 | `AUTH_ADMIN_PROFILE_REQUIRED` | The Admin has no active position/scope profile. |
+| 403 | `AUTH_INSUFFICIENT_ROLE` | The session is not a current MFA-completed Admin session. |
+| 404 | `RESOURCE_NOT_FOUND` | The record is absent or outside the Admin position's scope. |
+| 423 | `AUTH_ACCOUNT_LOCKED` | Five failures in the rolling window locked both sign-in steps. Includes `Retry-After` and `retry_after_seconds`. |
+
+For `POST /auth/admin/mfa/webauthn/enroll`, an expired or consumed challenge is
+an invalid auth token, an already-enrolled account receives
+`AUTH_MFA_ENROLLMENT_REQUIRED`, and a locked account receives
+`AUTH_ACCOUNT_LOCKED`. `POST /auth/admin/mfa/webauthn/confirm` has those same
+guards; an invalid registration response additionally returns
+`AUTH_MFA_INVALID` and counts toward lockout without issuing a session.
 
 ### iam
 
