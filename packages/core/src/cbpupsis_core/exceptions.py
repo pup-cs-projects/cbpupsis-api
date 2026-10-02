@@ -44,10 +44,19 @@ class AppError(Exception):
     #: Class-level default, so a subclass can pin one code for every instance.
     code: str | None = None
 
-    def __init__(self, detail: str, *, code: str | None = None) -> None:
+    def __init__(
+        self,
+        detail: str,
+        *,
+        code: str | None = None,
+        response_fields: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.detail = detail
         if code is not None:
             self.code = code
+        self.response_fields = response_fields or {}
+        self.headers = headers or {}
         super().__init__(detail)
 
 
@@ -127,11 +136,12 @@ def register_exception_handlers(app: FastAPI) -> None:
         if hasattr(exc, "data") and exc.data is not None:
             content["data"] = exc.data
 
-        headers: dict[str, str] = {}
+        headers: dict[str, str] = dict(getattr(exc, "headers", {}) or {})
         if hasattr(exc, "retry_after_seconds") and exc.retry_after_seconds is not None:
             headers["Retry-After"] = str(exc.retry_after_seconds)
             content["retry_after_seconds"] = exc.retry_after_seconds
 
+        content.update(getattr(exc, "response_fields", {}))
         return JSONResponse(
             status_code=exc.status_code,
             content=content,

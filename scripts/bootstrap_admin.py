@@ -1,9 +1,8 @@
-"""Promote a user to the Admins group — the one grant the API cannot make.
+"""Assign an existing user the Admin role, position, and data scope.
 
-Every IAM management endpoint requires ``ManageIAM``, so on a fresh database
-nobody can grant the first permission: the API is locked behind a permission
-only the API can hand out. That circularity has to be broken from outside the
-HTTP layer, which is what this script is for.
+Admin provisioning is deliberately performed outside the public authentication
+API. The role permits Admin sign-in but does not grant Superadmin-owned IAM,
+user-management, notification-administration, or audit-reading capabilities.
 
 Run it once per environment, after ``seed_iam``::
 
@@ -13,7 +12,7 @@ The user must already exist (register through ``/api/v1/auth/register`` first).
 Creating the account here too would mean this script sets passwords, and a
 password typed on a command line lands in shell history.
 
-Idempotent: re-running for an existing member changes nothing.
+Idempotent: re-running keeps the membership and updates the profile scope.
 """
 
 from __future__ import annotations
@@ -24,6 +23,8 @@ import sys
 
 from sqlalchemy import select
 
+from cbpupsis_api_admin.domains.admin_auth import service as admin_auth_service
+from cbpupsis_database.models.admin_auth import AdminPosition
 from cbpupsis_database.models.iam import Group
 from cbpupsis_database.models.users import User
 from cbpupsis_database.session import AsyncSessionLocal
@@ -37,8 +38,14 @@ from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
 __all__ = ["ADMIN_GROUP", "bootstrap_admin", "main"]
 
 
-async def bootstrap_admin(email: str) -> int:
-    """Add the user with ``email`` to the admin group. Returns an exit code."""
+async def bootstrap_admin(
+    email: str,
+    *,
+    position: AdminPosition = AdminPosition.registrar,
+    department_id: str | None = None,
+    college_id: str | None = None,
+) -> int:
+    """Add the user to Admins and assign the position's data scope."""
     async with AsyncSessionLocal() as session:
         user = await session.scalar(
             select(User).where(User.email == email.lower(), User.deleted_at.is_(None))
@@ -61,6 +68,13 @@ async def bootstrap_admin(email: str) -> int:
             return 1
 
         await iam_service.add_user_to_group(session, user.id, group.id)
+        await admin_auth_service.configure_admin_profile(
+            session,
+            user_id=user.id,
+            position=position,
+            department_id=department_id,
+            college_id=college_id,
+        )
 
         granted = await iam_service.get_effective_permissions(session, user.id)
         print(f"{email} added to {ADMIN_GROUP}.")
@@ -71,8 +85,25 @@ async def bootstrap_admin(email: str) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("email", help="Email of an already-registered user.")
+    parser.add_argument(
+        "--position",
+        type=AdminPosition,
+        choices=list(AdminPosition),
+        default=AdminPosition.registrar,
+    )
+    parser.add_argument("--department-id")
+    parser.add_argument("--college-id")
     args = parser.parse_args()
-    raise SystemExit(asyncio.run(bootstrap_admin(args.email)))
+    raise SystemExit(
+        asyncio.run(
+            bootstrap_admin(
+                args.email,
+                position=args.position,
+                department_id=args.department_id,
+                college_id=args.college_id,
+            )
+        )
+    )
 
 
 if __name__ == "__main__":

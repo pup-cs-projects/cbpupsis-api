@@ -16,7 +16,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.auth import service
-from cbpupsis_shared.domains.auth.security import verify_password
+from cbpupsis_shared.domains.auth.security import decode_token, verify_password
 
 
 async def revoke_all_sessions(db: AsyncSession, user_id: uuid.UUID) -> None:
@@ -29,6 +29,11 @@ async def revoke_all_sessions(db: AsyncSession, user_id: uuid.UUID) -> None:
     await service.revoke_all_for_user(db, user_id)
 
 
+async def stage_revoke_all_sessions(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Stage session revocation for a transaction owned by another domain."""
+    await service.stage_revoke_all_for_user(db, user_id)
+
+
 def check_password(raw_password: str, password_hash: str) -> bool:
     """Return whether a raw password matches a stored hash.
 
@@ -37,3 +42,13 @@ def check_password(raw_password: str, password_hash: str) -> bool:
     hashing configurations in one codebase is how one of them ends up weak.
     """
     return verify_password(raw_password, password_hash)
+
+
+def decode_access_session(token: str) -> dict[str, object]:
+    """Validate an access token and expose its typed session claims."""
+    return decode_token(token, expected_type="access")
+
+
+def decode_refresh_session(token: str) -> dict[str, object]:
+    """Validate a refresh token before a role-specific rotation begins."""
+    return decode_token(token, expected_type="refresh")

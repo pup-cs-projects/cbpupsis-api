@@ -29,7 +29,7 @@ APPS: dict[str, FastAPI] = {
 EXPECTED_PREFIXES: dict[str, set[str]] = {
     "student": {"auth", "users", "notifications", "items"},
     "faculty": {"faculty-auth", "users", "notifications"},
-    "admin": {"auth", "users", "notifications", "iam", "audit"},
+    "admin": {"auth", "users", "notifications", "admin", "iam", "audit"},
 }
 
 

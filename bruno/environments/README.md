@@ -19,10 +19,10 @@ uses by hand.
 
 ## A note on rate limiting
 
-The suite makes roughly two dozen `/auth/login` calls, which is more than the
-template's default `RATE_LIMIT_LOGIN=10/minute` allows. Against an API running
-that default, folders 03 and 04 fail with 429s that have nothing to do with what
-they test.
+The suite makes roughly two dozen calls across `/auth/login` and
+`/auth/admin/login`, which is more than the template's default
+`RATE_LIMIT_LOGIN=10/minute` allows. Against an API running that default,
+folders 03 and 04 fail with 429s that have nothing to do with what they test.
 
 Run the API with a relaxed login limit — the CI workflow sets
 `RATE_LIMIT_LOGIN=200/minute` for exactly this reason. Leave `RATE_LIMIT_ENABLED`

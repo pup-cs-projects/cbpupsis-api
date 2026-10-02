@@ -78,6 +78,8 @@ from cbpupsis_shared.domains.auth.security import (
     hash_password,
     verify_password,
 )
+from cbpupsis_shared.domains.iam import service as iam_service
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
 from cbpupsis_shared.domains.users import service as users_service
 from cbpupsis_shared.outbox import publish_transactional
 
@@ -151,6 +153,10 @@ async def login(db: AsyncSession, email: str, password: str) -> TokenPair:
     if not user.is_active or user.deleted_at is not None:
         raise InvalidCredentialsError
     _require_verified_email(user)
+    if await iam_service.is_user_in_group(db, user.id, ADMIN_GROUP):
+        # Administrative accounts must enter through /auth/admin/login so a
+        # password can never mint a privileged session without MFA.
+        raise InvalidCredentialsError
     return await _issue_pair(db, user.id)
 
 
@@ -168,7 +174,12 @@ def _require_verified_email(user) -> None:
         )
 
 
-async def refresh(db: AsyncSession, refresh_token: str) -> TokenPair:
+async def refresh(
+    db: AsyncSession,
+    refresh_token: str,
+    *,
+    session_claims: dict[str, object] | None = None,
+) -> TokenPair:
     """Rotate a refresh token, returning a fresh pair.
 
     Raises :class:`UnauthorizedError` if the token is invalid, expired, or has
@@ -182,10 +193,12 @@ async def refresh(db: AsyncSession, refresh_token: str) -> TokenPair:
     state is re-read from the database on every rotation rather than trusted
     from the token, which is what makes the gate take effect immediately.
     """
-    claims = decode_token(refresh_token, expected_type="refresh")
-    user_id = uuid.UUID(claims["sub"])
+    token_claims = decode_token(refresh_token, expected_type="refresh")
+    if token_claims.get("role") == "admin" and session_claims is None:
+        raise InvalidAuthTokenError
+    user_id = uuid.UUID(token_claims["sub"])
 
-    record = await repository.get_refresh_token(db, claims["jti"])
+    record = await repository.get_refresh_token(db, token_claims["jti"])
     if record is None:
         raise InvalidAuthTokenError
 
@@ -209,7 +222,10 @@ async def refresh(db: AsyncSession, refresh_token: str) -> TokenPair:
     await db.commit()
     _require_verified_email(user)
 
-    return await _issue_pair(db, user_id)
+    claims = (
+        session_claims if session_claims is not None else _session_claims(token_claims)
+    )
+    return await _issue_pair(db, user_id, claims=claims)
 
 
 async def logout(db: AsyncSession, refresh_token: str) -> None:
@@ -236,10 +252,36 @@ async def revoke_all_for_user(db: AsyncSession, user_id: uuid.UUID) -> None:
     await db.commit()
 
 
-async def _issue_pair(db: AsyncSession, user_id: uuid.UUID) -> TokenPair:
+async def stage_revoke_all_for_user(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Stage refresh-token revocation in a caller-owned transaction."""
+    await repository.revoke_all_refresh_tokens_for_user(db, user_id, datetime.now(UTC))
+
+
+async def issue_session(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    claims: dict[str, object] | None = None,
+) -> TokenPair:
+    """Issue and persist a typed session for another authentication domain."""
+    return await _issue_pair(db, user_id, claims=claims)
+
+
+def _session_claims(claims: dict[str, object]) -> dict[str, object]:
+    """Keep role/scope claims while dropping JWT control claims on rotation."""
+    control = {"sub", "type", "iat", "exp", "jti"}
+    return {name: value for name, value in claims.items() if name not in control}
+
+
+async def _issue_pair(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    claims: dict[str, object] | None = None,
+) -> TokenPair:
     """Mint an access/refresh pair and record the refresh token's id."""
-    access_token = create_access_token(user_id)
-    refresh_token, jti, expires_at = create_refresh_token(user_id)
+    access_token = create_access_token(user_id, claims=claims)
+    refresh_token, jti, expires_at = create_refresh_token(user_id, claims=claims)
 
     repository.add_refresh_token(db, user_id, jti, expires_at)
     await db.commit()

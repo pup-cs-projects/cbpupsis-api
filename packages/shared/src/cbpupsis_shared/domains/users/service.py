@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_core.events import Event, event_bus
+from cbpupsis_core.events import Event
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.models.users import User
 from cbpupsis_shared.domains.auth import client as auth_client
@@ -37,6 +37,7 @@ from cbpupsis_shared.domains.users.exceptions import (
     ProfileIncompleteError,
     UserNotFoundError,
 )
+from cbpupsis_shared.outbox import publish_transactional
 
 
 async def get_by_id(db: AsyncSession, user_id: uuid.UUID) -> User:
@@ -349,14 +350,24 @@ async def deactivate_as_admin(
     if actor_id == user_id:
         raise CannotAdministerSelfError
 
-    user = await deactivate(db, user_id)
-    await auth_client.revoke_all_sessions(db, user_id)
-    await event_bus.publish(
+    user = await get_by_id(db, user_id)
+    prior_state = {"is_active": user.is_active}
+    repository.update_user(db, user, is_active=False)
+    await auth_client.stage_revoke_all_sessions(db, user_id)
+    publish_transactional(
+        db,
         Event(
             name="user.deactivated",
-            payload={"user_id": str(user_id), "actor_id": str(actor_id)},
-        )
+            payload={
+                "user_id": str(user_id),
+                "actor_id": str(actor_id),
+                "prior_state": prior_state,
+                "new_state": {"is_active": False},
+            },
+        ),
     )
+    await db.commit()
+    await db.refresh(user)
     return user
 
 
@@ -372,11 +383,23 @@ async def reactivate_as_admin(
     if MANAGE_USER not in granted:
         raise ProfileAccessDeniedError(MANAGE_USER)
 
-    user = await reactivate(db, user_id)
-    await event_bus.publish(
+    user = await get_by_id(db, user_id)
+    if user.anonymized_at is not None:
+        raise AccountDeletedError
+    prior_state = {"is_active": user.is_active}
+    repository.update_user(db, user, is_active=True)
+    publish_transactional(
+        db,
         Event(
             name="user.reactivated",
-            payload={"user_id": str(user_id), "actor_id": str(actor_id)},
-        )
+            payload={
+                "user_id": str(user_id),
+                "actor_id": str(actor_id),
+                "prior_state": prior_state,
+                "new_state": {"is_active": True},
+            },
+        ),
     )
+    await db.commit()
+    await db.refresh(user)
     return user

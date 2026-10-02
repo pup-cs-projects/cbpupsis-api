@@ -26,7 +26,6 @@ from cbpupsis_core.exceptions import register_exception_handlers
 from cbpupsis_core.logging import configure_logging
 from cbpupsis_core.middleware import limiter, register_middleware
 from cbpupsis_database.session import engine
-from cbpupsis_shared.domains.audit.subscribers import register_audit_subscribers
 
 logger = logging.getLogger(__name__)
 
@@ -111,11 +110,6 @@ def create_app(
     register_middleware(app)
     # Registered after the limiter is attached, since it installs the 429 handler.
     register_exception_handlers(app)
-
-    # Every app registers the audit trail, not only the admin app: a student
-    # deactivating their own account emits an audited event in whichever
-    # process served the request. Idempotent, so the composed process is safe.
-    register_audit_subscribers()
 
     v1_router = APIRouter()
     for mount in dict.fromkeys(mounts):
