@@ -8,8 +8,10 @@ import uuid
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_api_student.auth import service as student_service
-from cbpupsis_api_student.auth.exceptions import StudentResourceNotFoundError
+from cbpupsis_api_student.domains.student_auth import service as student_service
+from cbpupsis_api_student.domains.student_auth.exceptions import (
+    StudentResourceNotFoundError,
+)
 from cbpupsis_database.session import get_db
 
 logger = logging.getLogger(__name__)

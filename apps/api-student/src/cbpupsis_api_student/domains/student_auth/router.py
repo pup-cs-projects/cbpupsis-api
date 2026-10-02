@@ -4,22 +4,23 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_api_student.auth import service as student_service
-from cbpupsis_api_student.auth.dependencies import get_current_student_id
-from cbpupsis_api_student.auth.schemas import (
+from cbpupsis_api_student.domains.student_auth import service as student_service
+from cbpupsis_api_student.domains.student_auth.dependencies import (
+    get_current_student_id,
+)
+from cbpupsis_api_student.domains.student_auth.schemas import (
     StudentLoginRequest,
     StudentLoginResponse,
 )
-from cbpupsis_api_student.auth.validation import validate_student_id
+from cbpupsis_api_student.domains.student_auth.validation import validate_student_id
 from cbpupsis_core.middleware import rate_limit
 from cbpupsis_database.session import get_db
-from cbpupsis_shared.domains.auth import service as auth_service
-from cbpupsis_shared.domains.auth.schemas import LoginRequest, TokenPair
 
 router = APIRouter()
 
@@ -33,7 +34,7 @@ def _extract_client_ip(request: Request) -> str:
 
 @router.post(
     "/login",
-    response_model=StudentLoginResponse | TokenPair,
+    response_model=StudentLoginResponse,
     status_code=status.HTTP_200_OK,
     operation_id="student_login",
 )
@@ -42,24 +43,25 @@ async def student_login(
     request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
-) -> Any:
+) -> StudentLoginResponse:
     """Authenticate student using student number, birthdate, and password.
 
     Sets a refresh token in an HttpOnly, Secure, SameSite=Lax cookie.
-    Email input falls back to template auth for legacy tests.
+    This route deliberately accepts only student credentials. Generic email/password
+    authentication belongs to the shared ``/auth/login`` endpoint.
     """
     body = await request.json()
-    if isinstance(body, dict) and "email" in body and "student_number" not in body:
-        login_req = LoginRequest.model_validate(body)
-        return await auth_service.login(
-            db, email=login_req.email, password=login_req.password
-        )
 
     # Validate the ID before schema or credential operations (AC-001.2).
     if isinstance(body, dict) and "student_number" in body:
         validate_student_id(str(body["student_number"]))
 
-    data = StudentLoginRequest.model_validate(body)
+    try:
+        data = StudentLoginRequest.model_validate(body)
+    except ValidationError as exc:
+        # Manual body handling lets the student-number format check run first;
+        # preserve FastAPI's normal 422 contract for every other invalid body.
+        raise RequestValidationError(exc.errors()) from exc
     client_ip = _extract_client_ip(request)
     user_agent = request.headers.get("user-agent")
 
@@ -97,33 +99,25 @@ async def student_logout(
 ) -> None:
     """Terminate student session server-side, revoke refresh token, and clear cookie.
 
-    Supports both student session termination (Bearer header / cookie) and legacy
-    refresh token revocation ({'refresh_token': ...} body) so all apps and tests
-    function seamlessly.
+    A student access token identifies the server-side idle session. Refresh
+    token revocation is delegated to shared auth through the service boundary.
     """
-    refresh_token = None
+    refresh_token = request.cookies.get("refresh_token")
     try:
         body = await request.json()
-        if isinstance(body, dict):
-            refresh_token = body.get("refresh_token")
     except json.JSONDecodeError:
-        pass
-
-    if not refresh_token:
-        refresh_token = request.cookies.get("refresh_token")
-
-    if refresh_token:
-        await auth_service.logout(db, refresh_token)
+        body = None
+    if isinstance(body, dict):
+        refresh_token = body.get("refresh_token", refresh_token)
 
     token = (
         authorization.removeprefix("Bearer ").strip()
         if authorization and authorization.startswith("Bearer ")
         else None
     )
-    if token:
-        await student_service.logout_student(db, token)
+    await student_service.logout_student(db, token, refresh_token)
 
-    response.delete_cookie("refresh_token")
+    response.delete_cookie("refresh_token", path="/")
 
 
 # --------------------------------------------------------------------------- #

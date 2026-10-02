@@ -13,35 +13,7 @@ from datetime import datetime
 from sqlalchemy import delete, desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_database.models.audit import AuthAuditLog
-from cbpupsis_database.models.auth import UserActiveSession
-from cbpupsis_database.models.users import StudentProfile, User, UserProfile
-
-
-async def get_student_auth_context(
-    db: AsyncSession, student_number: str
-) -> tuple[User, StudentProfile, UserProfile] | None:
-    """Fetch the User, StudentProfile, and UserProfile for a given student number.
-
-    SQL::
-
-        SELECT users, student_profiles, user_profiles
-        FROM student_profiles
-        JOIN users ON users.id = student_profiles.user_id
-        LEFT JOIN user_profiles ON user_profiles.user_id = student_profiles.user_id
-        WHERE student_profiles.student_number = :student_number
-    """
-    stmt = (
-        select(User, StudentProfile, UserProfile)
-        .join(User, User.id == StudentProfile.user_id)
-        .outerjoin(UserProfile, UserProfile.user_id == StudentProfile.user_id)
-        .where(StudentProfile.student_number == student_number)
-    )
-    result = await db.execute(stmt)
-    row = result.first()
-    if row is None:
-        return None
-    return row[0], row[1], row[2]
+from cbpupsis_database.models.student_auth import AuthAuditLog, UserActiveSession
 
 
 async def create_active_session(

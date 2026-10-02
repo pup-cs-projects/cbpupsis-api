@@ -242,6 +242,15 @@ async def logout(db: AsyncSession, refresh_token: str) -> None:
     await db.commit()
 
 
+async def issue_token_pair(db: AsyncSession, user_id: uuid.UUID) -> TokenPair:
+    """Issue a token pair for a caller that has already authenticated a user.
+
+    Role-specific domains own their credential checks; this domain alone owns
+    JWT construction and the refresh-token ledger.
+    """
+    return await _issue_pair(db, user_id)
+
+
 async def revoke_all_for_user(db: AsyncSession, user_id: uuid.UUID) -> None:
     """Revoke every live refresh token for a user.
 

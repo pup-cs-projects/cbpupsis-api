@@ -16,29 +16,26 @@ import hashlib
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import NoReturn
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_api_student.auth import repository as student_repo
-from cbpupsis_api_student.auth.exceptions import (
+from cbpupsis_api_student.domains.student_auth import repository as student_repo
+from cbpupsis_api_student.domains.student_auth.exceptions import (
     StudentAccountLockedError,
     StudentAuthFailedError,
     StudentSessionExpiredError,
 )
-from cbpupsis_api_student.auth.schemas import (
+from cbpupsis_api_student.domains.student_auth.schemas import (
     StudentLoginRequest,
     StudentLoginResponse,
     StudentLoginResponseData,
 )
-from cbpupsis_api_student.auth.validation import validate_student_id
+from cbpupsis_api_student.domains.student_auth.validation import validate_student_id
 from cbpupsis_core.emails import send_email
-from cbpupsis_database.models.users import User
-from cbpupsis_shared.domains.auth import repository as auth_repo
-from cbpupsis_shared.domains.auth.security import (
-    create_access_token,
-    create_refresh_token,
-    verify_password,
-)
+from cbpupsis_shared.domains.auth import client as auth_client
+from cbpupsis_shared.domains.users import client as users_client
+from cbpupsis_shared.domains.users.schemas import StudentLoginCredentials
 
 logger = logging.getLogger(__name__)
 
@@ -103,15 +100,17 @@ async def login_student(
 
         raise StudentAccountLockedError(retry_after_seconds=remaining_seconds)
 
-    # Step 3: Fetch student credentials and master profile
-    auth_ctx = await student_repo.get_student_auth_context(db, data.student_number)
+    # Step 3: Fetch student credentials through the users domain boundary.
+    credentials = await users_client.get_student_login_credentials(
+        db, data.student_number
+    )
 
-    if auth_ctx is None:
+    if credentials is None:
         # Unknown student number: record failure and raise generic 401
         await _handle_login_failure(
             db,
             student_number=data.student_number,
-            user=None,
+            credentials=None,
             client_ip=client_ip,
             user_agent=user_agent,
             reason="unknown_student_number",
@@ -119,13 +118,11 @@ async def login_student(
             recent_failures_count=len(recent_failures),
         )
 
-    user, _student_profile, user_profile = auth_ctx
-
-    if not user.is_active or getattr(user, "anonymized_at", None) is not None:
+    if not credentials.is_active or credentials.anonymized_at is not None:
         await _handle_login_failure(
             db,
             student_number=data.student_number,
-            user=user,
+            credentials=credentials,
             client_ip=client_ip,
             user_agent=user_agent,
             reason="inactive_account",
@@ -135,18 +132,18 @@ async def login_student(
 
     # Step 4: Compare credentials
     birthdate_match = (
-        user_profile is not None
-        and user_profile.birthdate is not None
-        and user_profile.birthdate == data.birthdate
+        credentials.birthdate is not None and credentials.birthdate == data.birthdate
     )
-    password_match = verify_password(data.password, user.password_hash)
+    password_match = auth_client.check_password(
+        data.password, credentials.password_hash
+    )
 
     if not birthdate_match or not password_match:
         reason = "wrong_birthdate" if not birthdate_match else "wrong_password"
         await _handle_login_failure(
             db,
             student_number=data.student_number,
-            user=user,
+            credentials=credentials,
             client_ip=client_ip,
             user_agent=user_agent,
             reason=reason,
@@ -158,7 +155,7 @@ async def login_student(
     await student_repo.record_audit_log(
         db,
         attempted_id=data.student_number,
-        user_id=user.id,
+        user_id=credentials.user_id,
         ip_address=client_ip,
         user_agent=user_agent,
         success=True,
@@ -166,20 +163,14 @@ async def login_student(
         occurred_at=now,
     )
 
-    # Generate tokens
-    access_token = create_access_token(user.id)
-    raw_refresh_token, jti, refresh_expires_at = create_refresh_token(user.id)
-
-    # Record refresh token in auth domain ledger
-    auth_repo.add_refresh_token(
-        db, user_id=user.id, jti=jti, expires_at=refresh_expires_at
-    )
+    # Shared auth owns JWT construction and the refresh-token ledger.
+    token_pair = await auth_client.issue_token_pair(db, credentials.user_id)
 
     # Create server-side active session in user_active_sessions (AC-001.7)
-    token_hash = hashlib.sha256(access_token.encode("utf-8")).hexdigest()
+    token_hash = hashlib.sha256(token_pair.access_token.encode("utf-8")).hexdigest()
     await student_repo.create_active_session(
         db,
-        user_id=user.id,
+        user_id=credentials.user_id,
         session_token_hash=token_hash,
         ip_address=client_ip or "127.0.0.1",
         device_info=user_agent or "",
@@ -188,37 +179,37 @@ async def login_student(
     await db.commit()
 
     response_data = StudentLoginResponseData(
-        access_token=access_token,
+        access_token=token_pair.access_token,
         expires_in=900,
         token_type="bearer",
         role="student",
-        refresh_token=raw_refresh_token,
+        refresh_token=token_pair.refresh_token,
     )
 
     response = StudentLoginResponse(
         status="success",
         data=response_data,
-        access_token=access_token,
+        access_token=token_pair.access_token,
         token_type="bearer",
         role="student",
-        refresh_token=raw_refresh_token,
+        refresh_token=token_pair.refresh_token,
     )
-    return response, raw_refresh_token
+    return response, token_pair.refresh_token
 
 
 async def _handle_login_failure(
     db: AsyncSession,
     *,
     student_number: str,
-    user: User | None,
+    credentials: StudentLoginCredentials | None,
     client_ip: str | None,
     user_agent: str | None,
     reason: str,
     now: datetime,
     recent_failures_count: int,
-) -> None:
+) -> NoReturn:
     """Record audit log, evaluate lockout triggering, and raise generic 401 or 423."""
-    user_id = user.id if user else None
+    user_id = credentials.user_id if credentials else None
     await student_repo.record_audit_log(
         db,
         attempted_id=student_number,
@@ -234,7 +225,7 @@ async def _handle_login_failure(
     new_failure_count = recent_failures_count + 1
     if new_failure_count >= LOCKOUT_THRESHOLD:
         # Trigger lockout: send security notice email (AC-001.4)
-        recipient = user.email if user else None
+        recipient = str(credentials.email) if credentials else None
         if recipient:
             await send_email(
                 to=recipient,
@@ -287,8 +278,11 @@ async def validate_active_student_session(
 async def logout_student(
     db: AsyncSession,
     access_token: str | None,
+    refresh_token: str | None = None,
 ) -> None:
     """Terminate the active session on logout."""
+    if refresh_token:
+        await auth_client.revoke_refresh_token(db, refresh_token)
     if access_token:
         token_hash = hashlib.sha256(access_token.encode("utf-8")).hexdigest()
         session_record = await student_repo.get_active_session_by_token_hash(

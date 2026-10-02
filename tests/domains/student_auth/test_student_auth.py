@@ -10,9 +10,8 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_api_student.auth import service as student_service
-from cbpupsis_database.models.audit import AuthAuditLog
-from cbpupsis_database.models.auth import UserActiveSession
+from cbpupsis_api_student.domains.student_auth import service as student_service
+from cbpupsis_database.models.student_auth import AuthAuditLog, UserActiveSession
 from cbpupsis_database.models.users import StudentProfile, User, UserProfile
 from cbpupsis_shared.domains.auth.security import hash_password_bcrypt
 
@@ -100,7 +99,7 @@ class TestStudentLoginHappyPath:
         cookie is HttpOnly, Secure, SameSite=Lax.
         """
         response = await client.post(
-            "/api/v1/auth/login",
+            "/api/v1/student-auth/login",
             json={
                 "student_number": student_user["student_number"],
                 "birthdate": str(student_user["birthdate"]),
@@ -134,9 +133,11 @@ class TestStudentIdFormatValidation:
         Expected: 422 with AUTH_ID_FORMAT_INVALID and no password-verification
         operation.
         """
-        with patch("cbpupsis_api_student.auth.service.verify_password") as mock_verify:
+        with patch(
+            "cbpupsis_api_student.domains.student_auth.service.auth_client.check_password"
+        ) as mock_verify:
             response = await client.post(
-                "/api/v1/auth/login",
+                "/api/v1/student-auth/login",
                 json={
                     # Malformed pattern with a missing check digit.
                     "student_number": "2021-123-MN",
@@ -161,7 +162,7 @@ class TestCredentialIndistinguishability:
         Expected: 401, code AUTH_FAILED, response body byte-identical.
         """
         wrong_birthdate_res = await client.post(
-            "/api/v1/auth/login",
+            "/api/v1/student-auth/login",
             json={
                 "student_number": student_user["student_number"],
                 "birthdate": "1999-01-01",  # wrong birthdate
@@ -169,7 +170,7 @@ class TestCredentialIndistinguishability:
             },
         )
         wrong_password_res = await client.post(
-            "/api/v1/auth/login",
+            "/api/v1/student-auth/login",
             json={
                 "student_number": student_user["student_number"],
                 "birthdate": str(student_user["birthdate"]),
@@ -206,7 +207,7 @@ class TestAccountLockout:
         # Submit 4 failed attempts
         for i in range(4):
             res = await client.post(
-                "/api/v1/auth/login",
+                "/api/v1/student-auth/login",
                 json={
                     "student_number": student_user["student_number"],
                     "birthdate": str(student_user["birthdate"]),
@@ -217,7 +218,7 @@ class TestAccountLockout:
 
         # 5th attempt triggers lockout
         res_5th = await client.post(
-            "/api/v1/auth/login",
+            "/api/v1/student-auth/login",
             json={
                 "student_number": student_user["student_number"],
                 "birthdate": str(student_user["birthdate"]),
@@ -248,7 +249,7 @@ class TestAccountLockout:
         # Drive 5 failures to trigger lockout
         for _ in range(5):
             await client.post(
-                "/api/v1/auth/login",
+                "/api/v1/student-auth/login",
                 json={
                     "student_number": student_user["student_number"],
                     "birthdate": str(student_user["birthdate"]),
@@ -258,12 +259,12 @@ class TestAccountLockout:
 
         # Submit fully correct credentials 60s into the lockout
         with patch(
-            "cbpupsis_api_student.auth.service._get_utc8_now",
+            "cbpupsis_api_student.domains.student_auth.service._get_utc8_now",
             return_value=datetime.now(student_service.UTC_PLUS_8)
             + timedelta(seconds=60),
         ):
             res_locked = await client.post(
-                "/api/v1/auth/login",
+                "/api/v1/student-auth/login",
                 json={
                     "student_number": student_user["student_number"],
                     "birthdate": str(student_user["birthdate"]),
@@ -294,7 +295,7 @@ class TestAuditLedger:
         """
         # 1 Success
         await client.post(
-            "/api/v1/auth/login",
+            "/api/v1/student-auth/login",
             json={
                 "student_number": student_user["student_number"],
                 "birthdate": str(student_user["birthdate"]),
@@ -304,7 +305,7 @@ class TestAuditLedger:
 
         # 1 Failure
         await client.post(
-            "/api/v1/auth/login",
+            "/api/v1/student-auth/login",
             json={
                 "student_number": student_user["student_number"],
                 "birthdate": "2000-01-01",
@@ -341,7 +342,7 @@ class TestSessionIdleTimeout:
         """
         # Login
         login_res = await client.post(
-            "/api/v1/auth/login",
+            "/api/v1/student-auth/login",
             json={
                 "student_number": student_user["student_number"],
                 "birthdate": str(student_user["birthdate"]),
@@ -355,11 +356,11 @@ class TestSessionIdleTimeout:
         future_time = datetime.now(student_service.UTC_PLUS_8) + timedelta(minutes=16)
 
         with patch(
-            "cbpupsis_api_student.auth.service._get_utc8_now",
+            "cbpupsis_api_student.domains.student_auth.service._get_utc8_now",
             return_value=future_time,
         ):
             me_res = await client.get(
-                "/api/v1/auth/me",
+                "/api/v1/student-auth/me",
                 headers={"Authorization": f"Bearer {token}"},
             )
             assert me_res.status_code == 401
@@ -384,10 +385,12 @@ class TestHorizontalAccessOwnership:
 
         Must never return 403 to prevent record enumeration.
         """
-        from cbpupsis_api_student.auth.dependencies import (
+        from cbpupsis_api_student.domains.student_auth.dependencies import (
             check_student_resource_ownership,
         )
-        from cbpupsis_api_student.auth.exceptions import StudentResourceNotFoundError
+        from cbpupsis_api_student.domains.student_auth.exceptions import (
+            StudentResourceNotFoundError,
+        )
 
         # Another student's resource returns 404 to prevent enumeration.
         with pytest.raises(StudentResourceNotFoundError) as exc_info:
@@ -416,7 +419,7 @@ class TestSecurityLogHygiene:
         plain_secret_password = "SuperSecretUnstoredPassword999!"
         with caplog.at_level(logging.DEBUG):
             await client.post(
-                "/api/v1/auth/login",
+                "/api/v1/student-auth/login",
                 json={
                     "student_number": student_user["student_number"],
                     "birthdate": str(student_user["birthdate"]),

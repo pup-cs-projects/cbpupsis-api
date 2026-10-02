@@ -11,7 +11,7 @@ Add the row in the same commit as the code that raises it.
 | | |
 |---|---|
 | **Last updated** | 2026-10-02 |
-| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py` (`auth`, `users`, `iam`, `notifications` in `packages/shared`; `auth` and `items` in `apps/api-student`) |
+| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py` (`auth`, `users`, `iam`, `notifications` in `packages/shared`; `student_auth` and `items` in `apps/api-student`) |
 
 ## The envelope
 
@@ -192,11 +192,11 @@ outbox.
 
 | Status | Message | When | Raised in |
 |---|---|---|---|
-| 401 | Invalid credentials. Please verify your Student ID, birthdate, and password. (`code: AUTH_FAILED`) | Student login failed. Byte-identical whether student number is unknown, birthdate is incorrect, or password fails. | `cbpupsis_api_student/auth/service.py` |
-| 422 | Invalid Student ID format. (`code: AUTH_ID_FORMAT_INVALID`) | Student ID fails regex (`YYYY-NNNNN-XX-N`) or check-digit verification. Rejected before any database query or password hash calculation. | `cbpupsis_api_student/auth/validation.py` |
-| 423 | Account locked due to 5 consecutive failed attempts. Try again in 15 minutes. (`code: ACCOUNT_LOCKED`) | 5 consecutive failed login attempts in 15 minutes. Carries `Retry-After` header and `retry_after_seconds` in payload. | `cbpupsis_api_student/auth/service.py` |
-| 401 | Your session has expired due to inactivity. (`code: AUTH_SESSION_EXPIRED`) | Session has had no activity for more than 15 minutes. Session record is invalidated server-side. | `cbpupsis_api_student/auth/service.py` |
-| 404 | Resource not found. (`code: RESOURCE_NOT_FOUND`) | Requested student resource does not exist or caller attempts horizontal access on another student's record. 404 over 403 to prevent ID enumeration. | `cbpupsis_api_student/auth/dependencies.py` |
+| 401 | Invalid credentials. Please verify your Student ID, birthdate, and password. (`code: AUTH_FAILED`) | Student login failed. Byte-identical whether student number is unknown, birthdate is incorrect, or password fails. | `cbpupsis_api_student/domains/student_auth/service.py` |
+| 422 | Invalid Student ID format. (`code: AUTH_ID_FORMAT_INVALID`) | Student ID fails regex (`YYYY-NNNNN-XX-N`) or check-digit verification. Rejected before any database query or password hash calculation. | `cbpupsis_api_student/domains/student_auth/validation.py` |
+| 423 | Account locked due to 5 consecutive failed attempts. Try again in 15 minutes. (`code: ACCOUNT_LOCKED`) | 5 consecutive failed login attempts in 15 minutes. Carries `Retry-After` header and `retry_after_seconds` in payload. | `cbpupsis_api_student/domains/student_auth/service.py` |
+| 401 | Your session has expired due to inactivity. (`code: AUTH_SESSION_EXPIRED`) | Session has had no activity for more than 15 minutes. Session record is invalidated server-side. | `cbpupsis_api_student/domains/student_auth/service.py` |
+| 404 | Resource not found. (`code: RESOURCE_NOT_FOUND`) | Requested student resource does not exist or caller attempts horizontal access on another student's record. 404 over 403 to prevent ID enumeration. | `cbpupsis_api_student/domains/student_auth/dependencies.py` |
 
 ## Adding a code
 
