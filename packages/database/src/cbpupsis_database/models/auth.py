@@ -192,30 +192,6 @@ _INET_TYPE = postgresql.INET().with_variant(String(45), "sqlite")
 _JSON_TYPE = postgresql.JSONB(astext_type=Text()).with_variant(JSON(), "sqlite")
 
 
-class UserActiveSession(UUIDMixin, Base):
-    """Tracks active login sessions for concurrency controls and device tracking."""
-
-    __tablename__ = "user_active_sessions"
-
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE")
-    )
-    session_token_hash: Mapped[str] = mapped_column(String(64))
-    device_info: Mapped[str] = mapped_column(Text)
-    ip_address: Mapped[str] = mapped_column(_INET_TYPE)
-    is_current: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="false"
-    )
-    last_activity_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-    __table_args__ = (Index("idx_fk_user_active_sessions_user_id", "user_id"),)
-
-
 class IdempotencyKey(UUIDMixin, Base):
     """Prevents duplicate execution of critical financial and academic requests."""
 

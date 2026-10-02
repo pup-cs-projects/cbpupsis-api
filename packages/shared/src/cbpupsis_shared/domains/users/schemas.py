@@ -12,7 +12,7 @@ through a response by accident.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -146,6 +146,22 @@ class UserRead(UserBase):
     timezone: str | None = None
     locale: str | None = None
     phone_number: str | None = None
+
+
+class StudentLoginCredentials(BaseModel):
+    """Minimal internal DTO required by the student-auth domain.
+
+    This is intentionally not an HTTP response schema. It exposes only the
+    credential material required to verify a student login and crosses the
+    domain boundary through ``users.client`` rather than an ORM model.
+    """
+
+    user_id: uuid.UUID
+    email: EmailStr
+    password_hash: str
+    is_active: bool
+    anonymized_at: datetime | None = None
+    birthdate: date | None = None
 
 
 class DeleteAccountRequest(BaseModel):

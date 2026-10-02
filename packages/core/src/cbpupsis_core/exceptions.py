@@ -131,9 +131,17 @@ def register_exception_handlers(app: FastAPI) -> None:
         }
         if exc.code is not None:
             content["code"] = exc.code
-        content.update(exc.response_fields)
+        if hasattr(exc, "data") and exc.data is not None:
+            content["data"] = exc.data
+
+        headers: dict[str, str] = {}
+        if hasattr(exc, "retry_after_seconds") and exc.retry_after_seconds is not None:
+            headers["Retry-After"] = str(exc.retry_after_seconds)
+
         return JSONResponse(
-            status_code=exc.status_code, content=content, headers=exc.headers
+            status_code=exc.status_code,
+            content=content,
+            headers=headers if headers else None,
         )
 
     @app.exception_handler(RateLimitExceeded)

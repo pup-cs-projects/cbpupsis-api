@@ -16,7 +16,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.users import service
-from cbpupsis_shared.domains.users.schemas import UserRead
+from cbpupsis_shared.domains.users.schemas import StudentLoginCredentials, UserRead
 
 
 async def get_user(db: AsyncSession, user_id: uuid.UUID) -> UserRead:
@@ -32,3 +32,10 @@ async def user_exists(db: AsyncSession, user_id: uuid.UUID) -> bool:
     """Return whether a live user exists — the cross-domain integrity check
     that replaces a database-level foreign key."""
     return await service.get_active_user(db, user_id) is not None
+
+
+async def get_student_login_credentials(
+    db: AsyncSession, student_number: str
+) -> StudentLoginCredentials | None:
+    """Return student-login credentials without exposing users ORM models."""
+    return await service.get_student_login_credentials(db, student_number)
