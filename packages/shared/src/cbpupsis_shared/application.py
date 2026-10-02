@@ -111,11 +111,6 @@ def create_app(
     # Registered after the limiter is attached, since it installs the 429 handler.
     register_exception_handlers(app)
 
-    # Every app registers the audit trail, not only the admin app: a student
-    # deactivating their own account emits an audited event in whichever
-    # process served the request. Idempotent, so the composed process is safe.
-    register_audit_subscribers()
-
     unique_mounts = tuple(dict.fromkeys(mounts))
     _reject_duplicate_routes(unique_mounts)
 
