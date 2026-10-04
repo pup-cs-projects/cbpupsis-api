@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
-from datetime import date
+import uuid
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class StudentLoginCredentials(BaseModel):
+    """Internal credentials assembled by the student-auth repository."""
+
+    user_id: uuid.UUID
+    email: str
+    password_hash: str
+    is_active: bool
+    anonymized_at: datetime | None = None
+    birthdate: date | None = None
 
 
 class StudentLoginRequest(BaseModel):

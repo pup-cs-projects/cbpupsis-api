@@ -28,7 +28,7 @@ import uuid
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_database.models.users import StudentProfile, User, UserProfile
+from cbpupsis_database.models.users import User
 
 
 def _live() -> Select[tuple[User]]:
@@ -95,33 +95,6 @@ async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
         WHERE users.deleted_at IS NULL AND users.email = :email_1
     """
     return await db.scalar(_live().where(User.email == email))
-
-
-async def get_student_login_context(
-    db: AsyncSession, student_number: str
-) -> tuple[User, UserProfile | None] | None:
-    """Return the user and birthdate profile for one student number.
-
-    SQL::
-
-        SELECT users.*, user_profiles.*
-        FROM student_profiles
-        JOIN users ON users.id = student_profiles.user_id
-        LEFT JOIN user_profiles ON user_profiles.user_id = users.id
-        WHERE student_profiles.student_number = :student_number
-          AND users.deleted_at IS NULL
-    """
-    stmt = (
-        select(User, UserProfile)
-        .join(StudentProfile, StudentProfile.user_id == User.id)
-        .outerjoin(UserProfile, UserProfile.user_id == User.id)
-        .where(
-            StudentProfile.student_number == student_number,
-            User.deleted_at.is_(None),
-        )
-    )
-    row = (await db.execute(stmt)).first()
-    return None if row is None else (row[0], row[1])
 
 
 def add_user(

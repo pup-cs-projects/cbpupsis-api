@@ -27,6 +27,7 @@ from cbpupsis_api_student.domains.student_auth.exceptions import (
     StudentSessionExpiredError,
 )
 from cbpupsis_api_student.domains.student_auth.schemas import (
+    StudentLoginCredentials,
     StudentLoginRequest,
     StudentLoginResponse,
     StudentLoginResponseData,
@@ -34,8 +35,6 @@ from cbpupsis_api_student.domains.student_auth.schemas import (
 from cbpupsis_api_student.domains.student_auth.validation import validate_student_id
 from cbpupsis_core.emails import send_email
 from cbpupsis_shared.domains.auth import client as auth_client
-from cbpupsis_shared.domains.users import client as users_client
-from cbpupsis_shared.domains.users.schemas import StudentLoginCredentials
 
 logger = logging.getLogger(__name__)
 
@@ -100,10 +99,19 @@ async def login_student(
 
         raise StudentAccountLockedError(retry_after_seconds=remaining_seconds)
 
-    # Step 3: Fetch student credentials through the users domain boundary.
-    credentials = await users_client.get_student_login_credentials(
-        db, data.student_number
-    )
+    # Step 3: Fetch student credentials from the student-auth repository.
+    context = await student_repo.get_student_login_context(db, data.student_number)
+    credentials = None
+    if context is not None:
+        user, profile = context
+        credentials = StudentLoginCredentials(
+            user_id=user.id,
+            email=user.email,
+            password_hash=user.password_hash,
+            is_active=user.is_active,
+            anonymized_at=user.anonymized_at,
+            birthdate=profile.birthdate if profile else None,
+        )
 
     if credentials is None:
         # Unknown student number: record failure and raise generic 401

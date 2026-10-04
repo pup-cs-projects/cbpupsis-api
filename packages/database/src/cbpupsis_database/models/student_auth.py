@@ -10,5 +10,12 @@ from __future__ import annotations
 
 from cbpupsis_database.models.audit import AuthAuditLog
 from cbpupsis_database.models.auth import UserActiveSession
+from cbpupsis_database.models.users import StudentProfile, User, UserProfile
 
-__all__ = ["AuthAuditLog", "UserActiveSession"]
+__all__ = [
+    "AuthAuditLog",
+    "StudentProfile",
+    "User",
+    "UserActiveSession",
+    "UserProfile",
+]

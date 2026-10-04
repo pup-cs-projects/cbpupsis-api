@@ -37,7 +37,6 @@ from cbpupsis_shared.domains.users.exceptions import (
     ProfileIncompleteError,
     UserNotFoundError,
 )
-from cbpupsis_shared.domains.users.schemas import StudentLoginCredentials
 from cbpupsis_shared.outbox import publish_transactional
 
 
@@ -56,24 +55,6 @@ async def get_by_email(db: AsyncSession, email: str) -> User | None:
     distinguish "no such account" from "wrong password".
     """
     return await repository.get_user_by_email(db, email)
-
-
-async def get_student_login_credentials(
-    db: AsyncSession, student_number: str
-) -> StudentLoginCredentials | None:
-    """Return the deliberately narrow internal data required for student login."""
-    context = await repository.get_student_login_context(db, student_number)
-    if context is None:
-        return None
-    user, profile = context
-    return StudentLoginCredentials(
-        user_id=user.id,
-        email=user.email,
-        password_hash=user.password_hash,
-        is_active=user.is_active,
-        anonymized_at=user.anonymized_at,
-        birthdate=profile.birthdate if profile else None,
-    )
 
 
 async def get_active_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
