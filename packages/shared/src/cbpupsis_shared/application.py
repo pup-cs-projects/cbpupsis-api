@@ -111,8 +111,11 @@ def create_app(
     # Registered after the limiter is attached, since it installs the 429 handler.
     register_exception_handlers(app)
 
+    unique_mounts = tuple(dict.fromkeys(mounts))
+    _reject_duplicate_routes(unique_mounts)
+
     v1_router = APIRouter()
-    for mount in dict.fromkeys(mounts):
+    for mount in unique_mounts:
         v1_router.include_router(mount.router, prefix=mount.prefix, tags=[mount.tag])
     app.include_router(v1_router, prefix=API_V1_PREFIX)
 
@@ -124,6 +127,33 @@ def create_app(
     app.add_api_route("/health", health, methods=["GET"], tags=["meta"])
     app.add_api_route("/ready", ready, methods=["GET"], tags=["meta"])
     return app
+
+
+def _reject_duplicate_routes(mounts: Iterable[RouterMount]) -> None:
+    """Reject ambiguous HTTP routes before FastAPI can select one by order.
+
+    FastAPI permits two handlers for the same method and path, then dispatches
+    to whichever was registered first. That is almost never intentional in an
+    application assembled from independent domain routers, and it makes a
+    deployment-order detail into an API contract.
+    """
+    registrations: dict[tuple[str, str], str] = {}
+    duplicates: list[str] = []
+    for mount in mounts:
+        for route in mount.router.routes:
+            methods = getattr(route, "methods", None)
+            path = getattr(route, "path", None)
+            if not methods or path is None:
+                continue
+            full_path = f"{mount.prefix.rstrip('/')}{path}"
+            for method in methods:
+                key = (method, full_path)
+                if owner := registrations.get(key):
+                    duplicates.append(f"{method} {full_path} ({owner}, {mount.tag})")
+                else:
+                    registrations[key] = mount.tag
+    if duplicates:
+        raise ValueError("Duplicate HTTP route registrations: " + "; ".join(duplicates))
 
 
 def _mount_scalar(app: FastAPI, title: str) -> None:

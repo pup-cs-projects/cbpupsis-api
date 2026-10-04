@@ -16,6 +16,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.auth import service
+from cbpupsis_shared.domains.auth.schemas import TokenPair
 from cbpupsis_shared.domains.auth.security import decode_token, verify_password
 
 
@@ -52,3 +53,13 @@ def decode_access_session(token: str) -> dict[str, object]:
 def decode_refresh_session(token: str) -> dict[str, object]:
     """Validate a refresh token before a role-specific rotation begins."""
     return decode_token(token, expected_type="refresh")
+
+
+async def issue_token_pair(db: AsyncSession, user_id: uuid.UUID) -> TokenPair:
+    """Issue shared credentials after another domain authenticates the caller."""
+    return await service.issue_token_pair(db, user_id)
+
+
+async def revoke_refresh_token(db: AsyncSession, refresh_token: str) -> None:
+    """Revoke one refresh token without exposing the auth token ledger."""
+    await service.logout(db, refresh_token)
