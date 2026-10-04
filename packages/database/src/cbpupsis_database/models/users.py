@@ -1,7 +1,7 @@
 """SQLAlchemy models for the users domain.
 
 This table owns identity and profile data, including the password hash. The raw
-password is never stored — only an argon2 digest produced by
+password is never stored — only a bcrypt digest produced by
 ``cbpupsis_shared.domains.auth.security`` — and no read schema exposes even the hash.
 
 Only this domain reads or writes this table; other domains go through
@@ -20,6 +20,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    Integer,
     SmallInteger,
     String,
     Text,
@@ -52,13 +53,14 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     email: Mapped[str] = mapped_column(
         String(EMAIL_MAX_LENGTH), unique=True, index=True
     )
-    #: Argon2 digest. Sized for argon2 output plus room for future parameters.
+    #: Password digest. Existing Argon2 values remain valid until changed.
     password_hash: Mapped[str] = mapped_column(String(255))
     full_name: Mapped[str | None] = mapped_column(
         String(FULL_NAME_MAX_LENGTH), default=None
     )
     #: Cleared to suspend an account without deleting it. Checked at login and
     #: on every authenticated request.
+    session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true"
     )

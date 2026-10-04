@@ -257,3 +257,68 @@ def test_webauthn_registration_verifies_challenge_rp_origin_and_user(
     assert (
         security.verify_webauthn_registration(credential={}, challenge="AQID") is None
     )
+
+
+async def test_password_reset_expires_admin_session_and_pending_challenge(
+    client, db, admin_user, sent_emails, drain_outbox
+):
+    from datetime import timedelta
+
+    from sqlalchemy import func, select
+
+    from cbpupsis_database.models.admin_auth import (
+        AuthenticationFailure,
+        AuthenticationLockout,
+        AuthFailureStep,
+    )
+    from tests.conftest import token_from_email
+
+    challenge = await _challenge(client, admin_user)
+    pair, _code = await _totp_pair(client, challenge["challenge_token"])
+    pending = await _challenge(client, admin_user)
+    uid = uuid.UUID(admin_user["id"])
+    db.add(
+        AuthenticationLockout(
+            user_id=uid, locked_until=datetime.now(UTC) + timedelta(minutes=15)
+        )
+    )
+    db.add(
+        AuthenticationFailure(
+            user_id=uid, step=AuthFailureStep.credentials, occurred_at=datetime.now(UTC)
+        )
+    )
+    await db.commit()
+    sent_emails.clear()
+    request = await client.post(
+        f"{AUTH}/forgot-password", json={"email": admin_user["email"]}
+    )
+    assert request.status_code == 202
+    await drain_outbox()
+    token = token_from_email(sent_emails[0])
+    reset = await client.post(
+        f"{AUTH}/reset-password", json={"token": token, "new_password": "Strong1!"}
+    )
+    assert reset.status_code == 200
+    assert reset.json()["sessionsRevoked"] == 1
+    access = await client.get(
+        "/api/v1/admin/me", headers={"Authorization": "Bearer " + pair["access_token"]}
+    )
+    refresh = await client.post(
+        f"{AUTH}/admin/refresh", json={"refresh_token": pair["refresh_token"]}
+    )
+    assert access.status_code == refresh.status_code == 401
+    assert access.json()["code"] == refresh.json()["code"] == "AUTH_SESSION_EXPIRED"
+    replay = await client.post(
+        f"{AUTH}/admin/mfa/verify",
+        json={"challenge_token": pending["challenge_token"], "code": "000000"},
+    )
+    assert replay.status_code == 401
+    assert await db.get(AuthenticationLockout, uid) is None
+    assert (
+        await db.scalar(
+            select(func.count())
+            .select_from(AuthenticationFailure)
+            .where(AuthenticationFailure.user_id == uid)
+        )
+        == 0
+    )
