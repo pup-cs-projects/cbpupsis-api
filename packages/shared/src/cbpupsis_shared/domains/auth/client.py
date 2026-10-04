@@ -16,9 +16,8 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.auth import service
-from cbpupsis_shared.domains.auth.security import decode_token, verify_password
 from cbpupsis_shared.domains.auth.schemas import TokenPair
-from cbpupsis_shared.domains.auth.security import verify_password
+from cbpupsis_shared.domains.auth.security import decode_token, verify_password
 
 
 async def revoke_all_sessions(db: AsyncSession, user_id: uuid.UUID) -> None:

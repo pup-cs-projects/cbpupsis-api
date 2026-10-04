@@ -37,8 +37,8 @@ from cbpupsis_shared.domains.users.exceptions import (
     ProfileIncompleteError,
     UserNotFoundError,
 )
-from cbpupsis_shared.outbox import publish_transactional
 from cbpupsis_shared.domains.users.schemas import StudentLoginCredentials
+from cbpupsis_shared.outbox import publish_transactional
 
 
 async def get_by_id(db: AsyncSession, user_id: uuid.UUID) -> User:
