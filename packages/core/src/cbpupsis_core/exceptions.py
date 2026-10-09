@@ -126,14 +126,26 @@ def register_exception_handlers(app: FastAPI) -> None:
         no key appears with a null value for them to misread as meaningful.
         """
         content: dict[str, object] = {
+            "status": "error",
+            "message": exc.detail,
             "detail": exc.detail,
             "request_id": _request_id(request),
         }
         if exc.code is not None:
             content["code"] = exc.code
-        content.update(exc.response_fields)
+        if hasattr(exc, "data") and exc.data is not None:
+            content["data"] = exc.data
+
+        headers: dict[str, str] = dict(getattr(exc, "headers", {}) or {})
+        if hasattr(exc, "retry_after_seconds") and exc.retry_after_seconds is not None:
+            headers["Retry-After"] = str(exc.retry_after_seconds)
+            content["retry_after_seconds"] = exc.retry_after_seconds
+
+        content.update(getattr(exc, "response_fields", {}))
         return JSONResponse(
-            status_code=exc.status_code, content=content, headers=exc.headers
+            status_code=exc.status_code,
+            content=content,
+            headers=headers if headers else None,
         )
 
     @app.exception_handler(RateLimitExceeded)

@@ -194,11 +194,19 @@ accepted a recipient and a body would let any authenticated caller forge a
 message appearing to come from the platform. Notifications arrive through the
 outbox.
 
-### <your domain>
+### faculty-auth
 
 | Status | Message | When | Raised in |
 |---|---|---|---|
-| | | | |
+| 400 | Invalid identifier format. Expected format: YYYY-NNNNN-XX-N (`code: INVALID_INPUT`) | Malformed payload or invalid student/faculty ID format. Rejected before querying credentials or checking password. | `cbpupsis_api_faculty/domains/faculty_auth/validation.py` |
+| 401 | Invalid ID or password. {n} attempts remaining before lockout. (`code: AUTH_FAILED`) | Invalid credentials (unknown employee ID, wrong password, or inactive account). Byte-identical to avoid field enumeration. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
+| 401 | Invalid authentication code. (`code: AUTH_MFA_INVALID`) | Submitted TOTP code does not match the enrolled secret or is beyond narrow clock drift tolerance. Failure increments rolling lockout counter. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
+| 401 | This code has already been used. Please wait for the next code. (`code: AUTH_MFA_CODE_REUSED`) | A TOTP code is resubmitted within its validity window after already being consumed. Replay guard blocks reuse. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
+| 403 | Multi-factor authentication enrollment is required to access student data. (`code: AUTH_MFA_ENROLLMENT_REQUIRED`) | Privileged faculty account attempts to reach student records or section rosters before enrolling MFA. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
+| 403 | Audit records are immutable and append-only. Deletion is prohibited by BR-AUTH-006. (`code: PERMISSION_DENIED`) | Client attempts to delete or alter authentication audit ledger records. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
+| 404 | Resource not found. (`code: RESOURCE_NOT_FOUND`) | Faculty member requests course section not assigned to them. Does not confirm section existence to non-owners (AC-002.7). | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
+| 423 | Account locked due to 5 consecutive failed attempts. Try again in 15 minutes. (`code: AUTH_ACCOUNT_LOCKED`) | 5 consecutive failed login attempts within rolling 15 minutes across sign-in and MFA steps. Carries `Retry-After: 900` header and `retry_after_seconds: 900`. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
+| 503 | Database service temporarily unavailable. (`code: SERVICE_UNAVAILABLE`) | Database node is unreachable during authentication resolution. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
 
 ## Adding a code
 
