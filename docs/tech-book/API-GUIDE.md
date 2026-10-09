@@ -301,7 +301,7 @@ file: `get_X` (one row or None), `list_X` (returns `(rows, total)`), `add_X`,
 
 ## Authentication
 
-Self-contained: argon2 password hashes, a short-lived access token (15 min) and
+Self-contained: bcrypt password hashes at cost 12 or higher, a short-lived access token (15 min) and
 a long-lived refresh token (30 days) that **rotates on every use**. Reusing an
 already-rotated token is treated as theft and revokes the user's whole token
 family.
@@ -322,8 +322,8 @@ column. The authorization half is untouched either way.
 | `POST /auth/login` | Creates a non-admin session; admin accounts must use `/auth/admin/login`. |
 | `POST /auth/verify-email` | Consumes a single-use token. |
 | `POST /auth/resend-verification` | Always 204; invalidates any earlier token. Rate limited. |
-| `POST /auth/forgot-password` | Always 204, registered or not. Rate limited. |
-| `POST /auth/reset-password` | Consumes a token, then revokes **all** refresh tokens. |
+| `POST /auth/forgot-password` | Always 202 with the same body, registered or not. Queues a reset email and records the request. |
+| `POST /auth/reset-password` | Atomically changes the password, spends the token, ends access/refresh sessions, clears lockout, and records completion. Returns `sessionsRevoked`. |
 | `POST /auth/change-password` | Needs the current password; returns a fresh pair. |
 | `POST /auth/admin/login` | Verifies admin credentials and returns an MFA challenge, never a session. |
 | `POST /auth/admin/mfa/verify` | Completes an admin challenge with TOTP or WebAuthn and sets the secure admin cookie. |
@@ -347,6 +347,48 @@ column. The authorization half is untouched either way.
 There is deliberately **no** admin delete: account deletion stays self-service
 and password-confirmed, because an administrator cannot supply the password that
 authorizes it.
+
+### Password recovery API
+
+The parent story owns acceptance criteria; this section documents the API contract.
+All paths below use the `/api/v1/auth` prefix.
+
+`POST /forgot-password` accepts `{"email":"user@example.com"}`. Valid addresses
+receive the same 202 body whether registered or not:
+`{"message":"If that address is registered, a reset link has been sent."}`.
+Malformed email returns 400 `INVALID_EMAIL_ADDRESS`. Only eligible registered
+accounts get a queued email. No password or raw token enters an audit row.
+
+Before displaying its form, the frontend can call `POST /reset-password` with
+`{"token":"...","verify_only":true}`. A valid link returns 200 with
+`valid`, `minimumLength`, and `requiredRules`, without consuming it. The same
+endpoint accepts `{"token":"...","new_password":"..."}` to complete the reset.
+Success returns 200 `{"sessionsRevoked":2}` (the count varies by account).
+Expired and spent links return 410 `AUTH_RESET_TOKEN_EXPIRED` and
+`AUTH_RESET_TOKEN_USED`; the frontend should offer another reset request.
+Password failures return 422 `AUTH_PASSWORD_TOO_WEAK` with `unmet_rules`.
+The reset policy accepts eight characters with uppercase, lowercase, a number,
+and a symbol. Inputs exceeding bcrypt's 72 UTF-8 byte limit are refused rather
+than silently truncated. Existing Argon2 hashes remain verifiable; new hashes
+use bcrypt with `BCRYPT_ROUNDS` constrained to 12 or higher.
+
+The default lifetime is `PASSWORD_RESET_TTL_MINUTES=1440`. Address allowance is
+configured by `PASSWORD_RESET_REQUEST_LIMIT=3` and
+`PASSWORD_RESET_REQUEST_WINDOW_SECONDS=3600`; it applies equally to unknown
+addresses and across API instances. A 429 carries `RATE_LIMIT_EXCEEDED` and
+`Retry-After`. Asking again keeps earlier links usable, including while the
+request allowance is exhausted. A successful reset spends all outstanding reset
+links and increments the account's session version; earlier access and refresh
+tokens then return 401 `AUTH_SESSION_EXPIRED`, including Admin sessions.
+
+Run the existing outbox worker (`python -m cbpupsis_shared.worker`) alongside the
+API. Reset delivery retries with the configured exponential backoff and uses a
+receipt to skip completed jobs. Every retry mails the original token, so it
+cannot create another reset. The redemption ledger stores a SHA-256 digest; the
+outbox holds an AES-GCM encrypted delivery copy with a purpose-separated key
+from `JWT_SECRET`. The API and worker need the same secret and shared database.
+Console delivery records metadata only. Audit instants are stored in UTC and
+serialized in UTC+8. Apply migration `b005reset` before deploying this version.
 
 ### Email verification is required to log in
 
@@ -434,7 +476,7 @@ the decorators) so they can be retuned without a code change:
 | Endpoint | Default | Why |
 |---|---|---|
 | `POST /auth/resend-verification` | 3/hour | sends mail to an address the caller names |
-| `POST /auth/forgot-password` | 3/hour | same — mail-bombing a stranger, on your SES bill |
+| `POST /auth/forgot-password` | 3/hour/address, 60/minute/IP | shared address allowance prevents inbox flooding |
 | `POST /auth/login`, `POST /auth/admin/login` | 10/minute | credential stuffing |
 | `POST /auth/register` | 5/hour | signup spam |
 
@@ -488,15 +530,17 @@ would duplicate the redemption logic — the one part that must not have two
 subtly different versions. A token presented to the wrong flow does not match on
 purpose and is rejected.
 
-Only a **SHA-256 digest** is stored; the raw 256-bit secret exists in the email
-and nowhere else, so a database leak yields nothing replayable. A plain digest
-rather than argon2 is correct here: the token carries full entropy, so there is
-no dictionary to slow an attacker over. Redemption is a conditional
+The redemption ledger stores only a **SHA-256 digest** of the 256-bit secret.
+Queued reset email also carries the encrypted delivery copy described above;
+it cannot be redeemed without the application secret. A plain digest is
+suitable for this random token because there is no dictionary to attack.
+Redemption is a conditional
 `UPDATE ... WHERE consumed_at IS NULL`, so two requests racing the same token
 produce exactly one winner.
 
-Every failure — unknown, expired, already used, wrong purpose — returns one
-identical 401, so the endpoint cannot be used to probe which.
+Email verification failures return an identical 401 for unknown, expired,
+already used, and wrong-purpose tokens. Password reset distinguishes expired
+and spent links with the 410 codes documented above.
 
 ### What account deletion keeps
 

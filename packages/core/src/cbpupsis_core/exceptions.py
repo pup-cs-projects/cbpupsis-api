@@ -152,6 +152,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         can only guess, and well-behaved ones typically retry immediately.
         """
         retry_after = retry_after_seconds(exc)
+        observer = getattr(request.app.state, "rate_limit_observer", None)
+        if observer is not None:
+            await observer(request)
         # Deliberately not a warning: being rate limited is the system working,
         # and at scale a warning per refused request is what buries the real
         # ones. The key is included so an operator can see who is hitting it;
@@ -171,7 +174,11 @@ def register_exception_handlers(app: FastAPI) -> None:
                     f"Too many requests. Please try again in {retry_after} seconds."
                 ),
                 "request_id": _request_id(request),
-                "code": "rate_limited",
+                "code": (
+                    "RATE_LIMIT_EXCEEDED"
+                    if request.url.path.endswith("/auth/forgot-password")
+                    else "rate_limited"
+                ),
             },
             headers={"Retry-After": str(retry_after)},
         )

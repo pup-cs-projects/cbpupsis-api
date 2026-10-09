@@ -32,7 +32,7 @@ from cbpupsis_shared.domains.auth.exceptions import (
     NotAuthenticatedError,
     UnverifiedEmailError,
 )
-from cbpupsis_shared.domains.auth.security import decode_token
+from cbpupsis_shared.domains.auth.security import decode_token, require_session_version
 from cbpupsis_shared.domains.users import service as users_service
 
 # auto_error=False so a MISSING header reaches our own code instead of raising
@@ -71,6 +71,8 @@ async def get_current_user(
     user = await users_service.get_active_user(db, uuid.UUID(claims["sub"]))
     if user is None:
         raise InactiveUserError
+
+    require_session_version(claims, user.session_version)
 
     # Published for the rate limiter, which keys authenticated callers by
     # identity rather than by address so users behind one NAT do not consume

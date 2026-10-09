@@ -159,12 +159,14 @@ class TestEmailVerification:
         client: AsyncClient,
         registered_user: dict[str, str],
         sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
         """The purpose column is what keeps one table from crossing two flows."""
         sent_emails.clear()
         await client.post(
             "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
         )
+        await drain_outbox()
         reset_token = token_from_email(sent_emails[-1])
 
         response = await client.post(
@@ -423,17 +425,24 @@ class TestVerificationIsRequiredToLogIn:
 
 
 class TestForgotPassword:
-    async def test_known_address_returns_204_and_sends(
+    async def test_known_address_returns_202_and_queues(
         self,
         client: AsyncClient,
         registered_user: dict[str, str],
         sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
         sent_emails.clear()
         response = await client.post(
             "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
         )
-        assert response.status_code == 204
+        assert response.status_code == 202
+        assert (
+            response.json()["message"]
+            == "If that address is registered, a reset link has been sent."
+        )
+        assert sent_emails == []
+        await drain_outbox()
         assert len(sent_emails) == 1
 
     async def test_unknown_address_is_indistinguishable(
@@ -450,8 +459,12 @@ class TestForgotPassword:
         unknown = await client.post(
             "/api/v1/auth/forgot-password", json={"email": "ghost@example.com"}
         )
-        assert known.status_code == unknown.status_code == 204
-        assert known.content == unknown.content == b""
+        assert known.status_code == unknown.status_code == 202
+        assert known.content == unknown.content
+        assert (
+            known.json()["message"]
+            == "If that address is registered, a reset link has been sent."
+        )
 
     async def test_deactivated_account_gets_no_reset_mail(
         self,
@@ -466,16 +479,28 @@ class TestForgotPassword:
         response = await client.post(
             "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
         )
-        assert response.status_code == 204
+        assert response.status_code == 202
+        assert (
+            response.json()["message"]
+            == "If that address is registered, a reset link has been sent."
+        )
         assert sent_emails == []
+
+
+COMPLEX_NEW_PASSWORD = "A-freshly-chosen-password-1!"
 
 
 class TestResetPassword:
     async def _request_reset(
-        self, client: AsyncClient, email: str, sent_emails: list[dict[str, str]]
+        self,
+        client: AsyncClient,
+        email: str,
+        sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> str:
         sent_emails.clear()
         await client.post("/api/v1/auth/forgot-password", json={"email": email})
+        await drain_outbox()
         return token_from_email(sent_emails[0])
 
     async def test_reset_sets_the_new_password(
@@ -483,19 +508,23 @@ class TestResetPassword:
         client: AsyncClient,
         registered_user: dict[str, str],
         sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
-        token = await self._request_reset(client, registered_user["email"], sent_emails)
+        token = await self._request_reset(
+            client, registered_user["email"], sent_emails, drain_outbox
+        )
         response = await client.post(
             "/api/v1/auth/reset-password",
-            json={"token": token, "new_password": "a-freshly-chosen-password"},
+            json={"token": token, "new_password": COMPLEX_NEW_PASSWORD},
         )
-        assert response.status_code == 204
+        assert response.status_code == 200
+        assert "sessionsRevoked" in response.json()
 
         new_login = await client.post(
             "/api/v1/auth/login",
             json={
                 "email": registered_user["email"],
-                "password": "a-freshly-chosen-password",
+                "password": COMPLEX_NEW_PASSWORD,
             },
         )
         assert new_login.status_code == 200
@@ -505,11 +534,14 @@ class TestResetPassword:
         client: AsyncClient,
         registered_user: dict[str, str],
         sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
-        token = await self._request_reset(client, registered_user["email"], sent_emails)
+        token = await self._request_reset(
+            client, registered_user["email"], sent_emails, drain_outbox
+        )
         await client.post(
             "/api/v1/auth/reset-password",
-            json={"token": token, "new_password": "a-freshly-chosen-password"},
+            json={"token": token, "new_password": COMPLEX_NEW_PASSWORD},
         )
         response = await client.post(
             "/api/v1/auth/login",
@@ -525,6 +557,7 @@ class TestResetPassword:
         client: AsyncClient,
         registered_user: dict[str, str],
         sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
         """A reset is often recovery from compromise; a session the attacker
         already holds must not survive it."""
@@ -537,34 +570,42 @@ class TestResetPassword:
         )
         attacker_refresh = login.json()["refresh_token"]
 
-        token = await self._request_reset(client, registered_user["email"], sent_emails)
-        await client.post(
-            "/api/v1/auth/reset-password",
-            json={"token": token, "new_password": "a-freshly-chosen-password"},
+        token = await self._request_reset(
+            client, registered_user["email"], sent_emails, drain_outbox
         )
-
         response = await client.post(
+            "/api/v1/auth/reset-password",
+            json={"token": token, "new_password": COMPLEX_NEW_PASSWORD},
+        )
+        assert response.status_code == 200
+        assert response.json()["sessionsRevoked"] >= 1
+
+        revoked_response = await client.post(
             "/api/v1/auth/refresh", json={"refresh_token": attacker_refresh}
         )
-        assert response.status_code == 401
+        assert revoked_response.status_code == 401
 
     async def test_token_cannot_be_reused(
         self,
         client: AsyncClient,
         registered_user: dict[str, str],
         sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
-        token = await self._request_reset(client, registered_user["email"], sent_emails)
+        token = await self._request_reset(
+            client, registered_user["email"], sent_emails, drain_outbox
+        )
         first = await client.post(
             "/api/v1/auth/reset-password",
-            json={"token": token, "new_password": "a-freshly-chosen-password"},
+            json={"token": token, "new_password": COMPLEX_NEW_PASSWORD},
         )
         second = await client.post(
             "/api/v1/auth/reset-password",
-            json={"token": token, "new_password": "another-attempt-password"},
+            json={"token": token, "new_password": "Another-complex-pass-2@"},
         )
-        assert first.status_code == 204
-        assert second.status_code == 401
+        assert first.status_code == 200
+        assert second.status_code == 410
+        assert second.json()["code"] == "AUTH_RESET_TOKEN_USED"
 
     async def test_expired_reset_token_is_rejected(
         self,
@@ -572,15 +613,19 @@ class TestResetPassword:
         db: AsyncSession,
         registered_user: dict[str, str],
         sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
-        token = await self._request_reset(client, registered_user["email"], sent_emails)
+        token = await self._request_reset(
+            client, registered_user["email"], sent_emails, drain_outbox
+        )
         await _expire_tokens(db, uuid.UUID(registered_user["id"]))
 
         response = await client.post(
             "/api/v1/auth/reset-password",
-            json={"token": token, "new_password": "a-freshly-chosen-password"},
+            json={"token": token, "new_password": COMPLEX_NEW_PASSWORD},
         )
-        assert response.status_code == 401
+        assert response.status_code == 410
+        assert response.json()["code"] == "AUTH_RESET_TOKEN_EXPIRED"
 
     async def test_a_verification_token_cannot_reset_a_password(
         self, client: AsyncClient, sent_emails: list[dict[str, str]]
@@ -595,7 +640,7 @@ class TestResetPassword:
             "/api/v1/auth/reset-password",
             json={
                 "token": verification_token,
-                "new_password": "should-not-work-here",
+                "new_password": COMPLEX_NEW_PASSWORD,
             },
         )
         assert response.status_code == 401
@@ -605,13 +650,111 @@ class TestResetPassword:
         client: AsyncClient,
         registered_user: dict[str, str],
         sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
-        token = await self._request_reset(client, registered_user["email"], sent_emails)
+        token = await self._request_reset(
+            client, registered_user["email"], sent_emails, drain_outbox
+        )
         response = await client.post(
             "/api/v1/auth/reset-password",
             json={"token": token, "new_password": "short"},
         )
         assert response.status_code == 422
+
+    async def test_ac_005_3_weak_password_rejected_with_unmet_rules(
+        self,
+        client: AsyncClient,
+        registered_user: dict[str, str],
+        sent_emails: list[dict[str, str]],
+        drain_outbox,
+    ) -> None:
+        """AC-005.3: Password complexity rejects missing sets (uppercase,
+        lowercase, digits, symbols) with 422 AUTH_PASSWORD_TOO_WEAK.
+        """
+        token = await self._request_reset(
+            client, registered_user["email"], sent_emails, drain_outbox
+        )
+        response = await client.post(
+            "/api/v1/auth/reset-password",
+            json={"token": token, "new_password": "alllowercasepassword"},
+        )
+        assert response.status_code == 422
+        body = response.json()
+        assert body["code"] == "AUTH_PASSWORD_TOO_WEAK"
+        assert "uppercase" in body["unmet_rules"]
+        assert "digit" in body["unmet_rules"]
+        assert "symbol" in body["unmet_rules"]
+
+    async def test_ac_005_6_sessions_revoked_count_accurate(
+        self,
+        client: AsyncClient,
+        registered_user: dict[str, str],
+        sent_emails: list[dict[str, str]],
+        drain_outbox,
+    ) -> None:
+        """AC-005.6: Successful password reset returns 200 with sessionsRevoked."""
+        # Open 2 sessions
+        s1 = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": registered_user["email"],
+                "password": registered_user["password"],
+            },
+        )
+        s2 = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": registered_user["email"],
+                "password": registered_user["password"],
+            },
+        )
+        assert s1.status_code == 200
+        assert s2.status_code == 200
+
+        token = await self._request_reset(
+            client, registered_user["email"], sent_emails, drain_outbox
+        )
+        response = await client.post(
+            "/api/v1/auth/reset-password",
+            json={"token": token, "new_password": COMPLEX_NEW_PASSWORD},
+        )
+        assert response.status_code == 200
+        assert response.json()["sessionsRevoked"] == 2
+
+    async def test_ac_005_8_audit_trail_recorded(
+        self,
+        client: AsyncClient,
+        db: AsyncSession,
+        registered_user: dict[str, str],
+        sent_emails: list[dict[str, str]],
+        drain_outbox,
+    ) -> None:
+        """AC-005.8: Audit trail records password reset requested and completed
+        without leaking passwords or tokens into payloads.
+        """
+        from cbpupsis_shared.domains.audit import service as audit_service
+
+        token = await self._request_reset(
+            client, registered_user["email"], sent_emails, drain_outbox
+        )
+        reset_res = await client.post(
+            "/api/v1/auth/reset-password",
+            json={"token": token, "new_password": COMPLEX_NEW_PASSWORD},
+        )
+        assert reset_res.status_code == 200
+
+        user_id = uuid.UUID(registered_user["id"])
+        page = await audit_service.list_entries(db, actor_id=user_id)
+        actions = [entry.action for entry in page.items]
+        assert "auth.password_reset_requested" in actions
+        assert "auth.password_reset_completed" in actions
+
+        # Verify no token or password leaked into audit payloads
+        for entry in page.items:
+            payload_str = str(entry.payload)
+            assert token not in payload_str
+            assert COMPLEX_NEW_PASSWORD not in payload_str
+            assert registered_user["password"] not in payload_str
 
 
 class TestChangePassword:

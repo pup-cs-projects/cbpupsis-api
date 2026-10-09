@@ -18,6 +18,7 @@ character would silently truncate the token at the receiving end.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta, timezone
 from urllib.parse import quote
 
 from cbpupsis_core.config import settings
@@ -41,15 +42,23 @@ def verification_email(token: str) -> tuple[str, str]:
     return VERIFICATION_SUBJECT, body
 
 
-def password_reset_email(token: str) -> tuple[str, str]:
+def password_reset_email(
+    token: str, *, expires_at: datetime | None = None
+) -> tuple[str, str]:
     """Return (subject, body) for a password-reset message."""
     link = f"{settings.frontend_base_url}/reset-password?token={quote(token, safe='')}"
     minutes = settings.password_reset_ttl_minutes
+    if expires_at is None:
+        expiry = f"in {minutes} minutes"
+    else:
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        expiry = "at " + expires_at.astimezone(timezone(timedelta(hours=8))).isoformat()
     body = (
         f"We received a request to reset your {settings.app_name} password.\n\n"
         f"Choose a new password here:\n\n"
         f"{link}\n\n"
-        f"The link expires in {minutes} minutes and can only be used once.\n\n"
+        f"The link expires {expiry} and can only be used once.\n\n"
         f"If you did not request this, no action is needed — your password has "
         f"not changed."
     )
