@@ -148,3 +148,94 @@ async def test_AC0045_runtime_role_has_append_only_ledger_grants() -> None:
     finally:
         await runtime.dispose()
         await owner.dispose()
+
+
+@pytest.mark.skipif(
+    not (RUNTIME_URL and OWNER_URL),
+    reason="Both PostgreSQL role URLs are required",
+)
+async def test_AC0045_runtime_role_cannot_write_alembic_version() -> None:
+    runtime = create_async_engine(to_asyncpg_url(RUNTIME_URL))
+    owner = create_async_engine(to_asyncpg_url(OWNER_URL))
+    try:
+        async with runtime.connect() as connection:
+            runtime_name = await connection.scalar(text("SELECT current_user"))
+            privileges = await connection.execute(
+                text(
+                    "SELECT has_table_privilege(current_user, "
+                    "'public.alembic_version', 'SELECT'), "
+                    "has_table_privilege(current_user, "
+                    "'public.alembic_version', 'INSERT'), "
+                    "has_table_privilege(current_user, "
+                    "'public.alembic_version', 'UPDATE'), "
+                    "has_table_privilege(current_user, "
+                    "'public.alembic_version', 'DELETE'), "
+                    "has_table_privilege(current_user, "
+                    "'public.alembic_version', 'TRUNCATE')"
+                )
+            )
+            assert privileges.one() == (True, False, False, False, False)
+            with pytest.raises(DBAPIError):
+                await connection.execute(
+                    text(
+                        "UPDATE public.alembic_version "
+                        "SET version_num = version_num WHERE false"
+                    )
+                )
+            await connection.rollback()
+
+        async with owner.connect() as connection:
+            owner_name = await connection.scalar(
+                text(
+                    "SELECT pg_get_userbyid(relowner) FROM pg_class "
+                    "WHERE oid = 'public.alembic_version'::regclass"
+                )
+            )
+            assert runtime_name != owner_name
+            assert not await connection.scalar(
+                text("SELECT pg_has_role(:runtime, :owner, 'member')"),
+                {"runtime": runtime_name, "owner": owner_name},
+            )
+            role_flags = await connection.execute(
+                text(
+                    "SELECT rolcanlogin, rolsuper, rolcreaterole "
+                    "FROM pg_roles WHERE rolname = :runtime"
+                ),
+                {"runtime": runtime_name},
+            )
+            assert role_flags.one() == (True, False, False)
+            public_write = await connection.scalar(
+                text(
+                    "SELECT EXISTS ("
+                    "  SELECT 1 FROM pg_class c "
+                    "  CROSS JOIN LATERAL aclexplode("
+                    "    COALESCE(c.relacl, acldefault('r', c.relowner))"
+                    "  ) acl "
+                    "  WHERE c.oid = 'public.alembic_version'::regclass "
+                    "    AND acl.grantee = 0 "
+                    "    AND acl.privilege_type IN ("
+                    "      'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE')"
+                    ")"
+                )
+            )
+            assert not public_write
+            settable_write = await connection.scalar(
+                text(
+                    "SELECT EXISTS ("
+                    "  SELECT 1 FROM pg_class c "
+                    "  CROSS JOIN LATERAL aclexplode("
+                    "    COALESCE(c.relacl, acldefault('r', c.relowner))"
+                    "  ) acl "
+                    "  JOIN pg_roles grantee ON grantee.oid = acl.grantee "
+                    "  WHERE c.oid = 'public.alembic_version'::regclass "
+                    "    AND acl.privilege_type IN ("
+                    "      'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE') "
+                    "    AND pg_has_role(:runtime, grantee.rolname, 'member')"
+                    ")"
+                ),
+                {"runtime": runtime_name},
+            )
+            assert not settable_write
+    finally:
+        await runtime.dispose()
+        await owner.dispose()

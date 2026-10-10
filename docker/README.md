@@ -109,7 +109,7 @@ can read every layer of it.
 |---|---|---|
 | `DATABASE_URL` | yes | pooled URL using the restricted API/worker role |
 | `DIRECT_DATABASE_URL` | for migrations | non-pooled URL using the separate migration owner |
-| `AUDIT_RUNTIME_ROLE` | staging/production | name of the restricted API role granted SELECT/INSERT, but no mutation privileges, on the ledgers |
+| `AUDIT_RUNTIME_ROLE` | PostgreSQL migrations | name of the separate restricted API/worker login; required to verify ledger and Alembic metadata grants |
 | `JWT_SECRET` | yes | at least 32 chars, or the app refuses to start; the same value in every app |
 | `ENVIRONMENT` | yes | `production` closes `/docs`, `/scalar`, and `/openapi.json` |
 | `LOG_JSON` | no | `true` in deployed environments |
@@ -128,13 +128,35 @@ docker run --rm -e DIRECT_DATABASE_URL="..." -e DATABASE_URL="..." \
   api-admin:latest alembic upgrade head
 ```
 
-Verify the resulting grants using separate owner and runtime connections. With
-`ISSUE70_POSTGRES_URL` set to the restricted API URL and
-`ISSUE70_POSTGRES_OWNER_URL` set to the migration-owner URL, run
-`uv run pytest tests/integration/test_superadmin_postgres.py -q`. The checks
-assert concurrent restore approval, runtime SELECT/INSERT but no
-UPDATE/DELETE/TRUNCATE on either audit ledger, and the owner-side append-only
-triggers. Do not grant the runtime role membership in the migration-owner role.
+Before a remote upgrade, verify that **every** API and worker `DATABASE_URL`
+authenticates as the restricted runtime login named by `AUDIT_RUNTIME_ROLE`;
+only the one-shot migration uses the separate owner credential in
+`DIRECT_DATABASE_URL`. The runtime role must not own or be a member of the
+Alembic table owner or a superuser role. Do not deploy with the same owner
+credential in both URLs, even if the migration succeeds.
+
+For a database whose `alembic_version` row lags behind its actual schema,
+first obtain a fresh, verified provider snapshot/recovery point and a private
+logical backup, including a separate record of role memberships and grants.
+Rehearse restoring and upgrading on an isolated clone of the **same PostgreSQL
+major version** as the remote target. Compare all effects of the allegedly
+applied revisions before stamping the clone; never upgrade directly from a
+stale revision row or stamp the remote based only on table names. Confirm a
+tested rollback/recovery path, maintenance window, and separate approval before
+any remote stamp, migration, role, grant, or credential change.
+
+Verify the resulting grants on the **isolated clone**, using separate owner and
+runtime connections. With `ISSUE70_POSTGRES_URL` set to the clone's restricted
+API URL and `ISSUE70_POSTGRES_OWNER_URL` set to its migration-owner URL, run
+`uv run pytest tests/integration/test_superadmin_postgres.py -q -k runtime_role`.
+Do not point this mutating test file at remote dev. The focused checks assert
+runtime SELECT/INSERT but no UPDATE/DELETE/TRUNCATE on either audit ledger,
+and no runtime write access to `alembic_version` through direct, `PUBLIC`, or
+role grants. They also verify the owner-side append-only triggers.
+`scripts.seed_iam` creates the `Superadmins`
+group and its policies after migration; `scripts.bootstrap_superadmin` then
+assigns an existing verified, active account. Alembic alone does not seed that
+group.
 
 ## Notes
 
