@@ -27,7 +27,7 @@ from cbpupsis_shared.domains.auth.exceptions import (
     NotAuthenticatedError,
 )
 from cbpupsis_shared.domains.iam import service as iam_service
-from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
 from cbpupsis_shared.domains.users import service as users_service
 
 logger = logging.getLogger(__name__)
@@ -108,6 +108,7 @@ async def require_admin_session(
         claims.get("role") != "admin"
         or claims.get("mfa") is not True
         or not await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP)
+        or await iam_service.is_user_in_group(db, user_id, SUPERADMIN_GROUP)
     ):
         error = InsufficientAdminRoleError()
         _log_refusal(request, error)

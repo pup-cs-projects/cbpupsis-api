@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ipaddress
+
 from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +19,8 @@ from cbpupsis_api_admin.domains.admin_auth.schemas import (
     AdminTokenPair,
     MfaVerifyRequest,
     RefreshRequest,
+    SuperadminSessionRead,
+    SuperadminTokenPair,
     TotpEnrollmentConfirmRequest,
     TotpEnrollmentRead,
     TotpEnrollmentRequest,
@@ -27,9 +31,23 @@ from cbpupsis_api_admin.domains.admin_auth.schemas import (
 from cbpupsis_core.config import settings
 from cbpupsis_core.middleware import rate_limit
 from cbpupsis_database.session import get_db
+from cbpupsis_shared.domains.auth.dependencies import (
+    CurrentUser,
+    require_superadmin_session,
+)
 
 router = APIRouter()
 protected_router = APIRouter()
+superadmin_auth_router = APIRouter()
+superadmin_protected_router = APIRouter()
+
+
+def _client_address(request: Request) -> str:
+    candidate = request.client.host if request.client else "127.0.0.1"
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return "127.0.0.1"
 
 
 def _set_admin_cookie(response: Response, token: str) -> None:
@@ -161,3 +179,77 @@ async def read_admin_session(
         department_id=admin.department_id,
         college_id=admin.college_id,
     )
+
+
+@superadmin_auth_router.post("/login", response_model=AdminLoginChallenge)
+@rate_limit("login")
+async def login_superadmin(
+    request: Request,
+    data: AdminLoginRequest,
+    db: AsyncSession = Depends(get_db),
+) -> AdminLoginChallenge:
+    return await service.login_superadmin(db, email=data.email, password=data.password)
+
+
+@superadmin_auth_router.post("/mfa/verify", response_model=SuperadminTokenPair)
+async def verify_superadmin_mfa(
+    request: Request,
+    data: MfaVerifyRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SuperadminTokenPair:
+    return await service.verify_superadmin_mfa(
+        db,
+        challenge_token=data.challenge_token,
+        code=data.code,
+        assertion=data.assertion,
+        device_info=request.headers.get("user-agent", ""),
+        ip_address=_client_address(request),
+    )
+
+
+@superadmin_auth_router.post("/mfa/totp/enroll", response_model=TotpEnrollmentRead)
+async def enroll_superadmin_totp(
+    data: TotpEnrollmentRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TotpEnrollmentRead:
+    return await service.begin_superadmin_totp_enrollment(
+        db, challenge_token=data.challenge_token
+    )
+
+
+@superadmin_auth_router.post("/mfa/totp/confirm", response_model=SuperadminTokenPair)
+async def confirm_superadmin_totp(
+    request: Request,
+    data: TotpEnrollmentConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SuperadminTokenPair:
+    return await service.confirm_superadmin_totp_enrollment(
+        db,
+        challenge_token=data.challenge_token,
+        code=data.code,
+        device_info=request.headers.get("user-agent", ""),
+        ip_address=_client_address(request),
+    )
+
+
+@superadmin_auth_router.post("/refresh", response_model=SuperadminTokenPair)
+async def refresh_superadmin(
+    data: RefreshRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SuperadminTokenPair:
+    return await service.refresh_superadmin(db, data)
+
+
+@superadmin_auth_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout_superadmin(
+    data: RefreshRequest,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await service.logout_superadmin(db, data)
+
+
+@superadmin_protected_router.get("/me", response_model=SuperadminSessionRead)
+async def read_superadmin_session(
+    user: CurrentUser = Depends(require_superadmin_session),
+) -> SuperadminSessionRead:
+    return SuperadminSessionRead(id=user.id, email=user.email)

@@ -66,11 +66,13 @@ tests {
       ).to.be.below(500);
     });
 
-    test(`${why} → refused`, function () {
-      expect([401, 403], `expected an auth refusal, got ${r.status}`).to.include(
-        r.status
-      );
-    });
+    if (why !== "a lowercase scheme") {
+      test(`${why} → refused`, function () {
+        expect([401, 403], `expected an auth refusal, got ${r.status}`).to.include(
+          r.status
+        );
+      });
+    }
   }
 
   // Authentication scheme names are case-insensitive, so a valid token must

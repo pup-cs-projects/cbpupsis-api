@@ -38,6 +38,7 @@ never constructed here. ``auth.dependencies`` takes the same approach.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import math
 import uuid
@@ -61,10 +62,12 @@ from cbpupsis_core.exceptions import (
     UnauthorizedError,
 )
 from cbpupsis_database.models.auth import TokenPurpose
+from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.audit import service as audit_service
 from cbpupsis_shared.domains.auth import repository
 from cbpupsis_shared.domains.auth.exceptions import (
     AuthError,
+    AuthSessionExpiredError,
     EmailAlreadyRegisteredError,
     InactiveUserError,
     IncorrectCurrentPasswordError,
@@ -94,7 +97,7 @@ from cbpupsis_shared.domains.auth.security import (
     verify_password,
 )
 from cbpupsis_shared.domains.iam import service as iam_service
-from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
 from cbpupsis_shared.domains.users import service as users_service
 from cbpupsis_shared.outbox import publish_transactional
 
@@ -170,11 +173,73 @@ async def login(db: AsyncSession, email: str, password: str) -> TokenPair:
     if not user.is_active or user.deleted_at is not None:
         raise InvalidCredentialsError
     _require_verified_email(user)
-    if await iam_service.is_user_in_group(db, user.id, ADMIN_GROUP):
+    if await iam_service.is_user_in_group(
+        db, user.id, ADMIN_GROUP
+    ) or await iam_service.is_user_in_group(db, user.id, SUPERADMIN_GROUP):
         # Administrative accounts must enter through /auth/admin/login so a
         # password can never mint a privileged session without MFA.
         raise InvalidCredentialsError
     return await _issue_pair(db, user.id)
+
+
+def _session_hash(session_id: uuid.UUID) -> str:
+    return hashlib.sha256(session_id.bytes).hexdigest()
+
+
+async def stage_superadmin_session(
+    db: AsyncSession,
+    *,
+    session_id: uuid.UUID,
+    user_id: uuid.UUID,
+    device_info: str,
+    ip_address: str,
+) -> None:
+    now = datetime.now(UTC)
+    repository.add_active_session(
+        db,
+        session_id=session_id,
+        user_id=user_id,
+        token_hash=_session_hash(session_id),
+        device_info=device_info,
+        ip_address=ip_address,
+        now=now,
+    )
+
+
+async def touch_superadmin_session(
+    db: AsyncSession,
+    *,
+    session_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> None:
+    now = datetime.now(UTC)
+    live = await repository.touch_active_session(
+        db,
+        session_id=session_id,
+        user_id=user_id,
+        token_hash=_session_hash(session_id),
+        cutoff=now - timedelta(minutes=15),
+        now=now,
+    )
+    if not live:
+        await repository.delete_active_session(
+            db, session_id=session_id, user_id=user_id
+        )
+        await db.commit()
+        raise AuthSessionExpiredError
+    await db.commit()
+
+
+async def end_superadmin_session(
+    db: AsyncSession,
+    *,
+    session_id: uuid.UUID,
+    user_id: uuid.UUID,
+    commit: bool = True,
+) -> None:
+    await repository.delete_active_session(db, session_id=session_id, user_id=user_id)
+    if commit:
+        await db.commit()
 
 
 def _require_verified_email(user) -> None:
@@ -196,6 +261,7 @@ async def refresh(
     refresh_token: str,
     *,
     session_claims: dict[str, object] | None = None,
+    commit: bool = True,
 ) -> TokenPair:
     """Rotate a refresh token, returning a fresh pair.
 
@@ -211,7 +277,7 @@ async def refresh(
     from the token, which is what makes the gate take effect immediately.
     """
     token_claims = decode_token(refresh_token, expected_type="refresh")
-    if token_claims.get("role") == "admin" and session_claims is None:
+    if token_claims.get("role") in {"admin", "superadmin"} and session_claims is None:
         raise InvalidAuthTokenError
     user_id = uuid.UUID(token_claims["sub"])
 
@@ -235,11 +301,16 @@ async def refresh(
     if user is None:
         await db.commit()
         raise InactiveUserError
+    if token_claims.get("role") != "superadmin" and await iam_service.is_user_in_group(
+        db, user_id, SUPERADMIN_GROUP
+    ):
+        await db.commit()
+        raise InvalidAuthTokenError
 
-    # Committed before the gate can raise, so the token presented here stays
-    # revoked either way. Letting the rollback resurrect it would hand a
-    # blocked account an endlessly retryable credential.
-    await db.commit()
+    # The ordinary flow commits revocation before the verification gate. A
+    # caller-owned transaction can defer that commit to pair and audit staging.
+    if commit:
+        await db.commit()
     _require_verified_email(user)
 
     claims = (
@@ -250,10 +321,17 @@ async def refresh(
         user_id,
         claims=claims,
         expected_session_version=token_claims.get("session_version", 0),
+        commit=commit,
     )
 
 
-async def logout(db: AsyncSession, refresh_token: str) -> None:
+async def logout(
+    db: AsyncSession,
+    refresh_token: str,
+    *,
+    allow_superadmin: bool = False,
+    commit: bool = True,
+) -> None:
     """Revoke a single refresh token.
 
     Invalid or already-revoked tokens are accepted silently: logout should be
@@ -263,8 +341,11 @@ async def logout(db: AsyncSession, refresh_token: str) -> None:
         claims = decode_token(refresh_token, expected_type="refresh")
     except UnauthorizedError:
         return
+    if claims.get("role") == "superadmin" and not allow_superadmin:
+        raise InvalidAuthTokenError
     await repository.revoke_refresh_token(db, claims["jti"], datetime.now(UTC))
-    await db.commit()
+    if commit:
+        await db.commit()
 
 
 async def revoke_all_for_user(db: AsyncSession, user_id: uuid.UUID) -> int:
@@ -288,6 +369,13 @@ async def stage_revoke_all_for_user(db: AsyncSession, user_id: uuid.UUID) -> int
         db, user_id, datetime.now(UTC)
     )
     return count
+
+
+async def stage_end_all_superadmin_sessions(
+    db: AsyncSession, user_id: uuid.UUID
+) -> None:
+    """Stage removal of the account's server-side privileged sessions."""
+    await repository.delete_active_sessions_for_user(db, user_id)
 
 
 async def issue_session(
@@ -315,6 +403,7 @@ async def _issue_pair(
     user_id: uuid.UUID,
     *,
     claims: dict[str, object] | None = None,
+    commit: bool = True,
     expected_session_version: int | None = None,
 ) -> TokenPair:
     """Mint a pair under the same account lock used by resets."""
@@ -330,7 +419,8 @@ async def _issue_pair(
     refresh_token, jti, expires_at = create_refresh_token(user_id, claims=claims)
 
     repository.add_refresh_token(db, user_id, jti, expires_at)
-    await db.commit()
+    if commit:
+        await db.commit()
 
     return TokenPair(access_token=access_token, refresh_token=refresh_token)
 
@@ -627,6 +717,7 @@ async def change_password(
     user_id: uuid.UUID,
     current_password: str,
     new_password: str,
+    session_claims: dict[str, object] | None = None,
 ) -> TokenPair:
     """Change an authenticated user's password, returning a fresh token pair.
 
@@ -658,6 +749,20 @@ async def change_password(
     await _invalidate_outstanding(db, user_id, TokenPurpose.password_reset)
 
     _notify_password_changed(db, user_id)
+
+    if session_claims is not None and session_claims.get("role") == "superadmin":
+        pair = await _issue_pair(db, user_id, claims=session_claims, commit=False)
+        audit_client.stage(
+            db,
+            action="superadmin.password_changed",
+            actor_id=user_id,
+            target_type="user",
+            target_id=str(user_id),
+            prior_state={"password_changed": False},
+            new_state={"password_changed": True},
+        )
+        await db.commit()
+        return pair
 
     return await _issue_pair(db, user_id)
 

@@ -16,6 +16,7 @@ from cbpupsis_database.models.admin_auth import (
     AuthFailureStep,
     MfaCredential,
     MfaType,
+    SuperadminChallenge,
 )
 
 
@@ -29,6 +30,44 @@ async def get_admin_profile(
         SELECT * FROM admin_profiles WHERE user_id = :user_id
     """
     return await db.scalar(select(AdminProfile).where(AdminProfile.user_id == user_id))
+
+
+async def get_superadmin_challenge(
+    db: AsyncSession, user_id: uuid.UUID
+) -> SuperadminChallenge | None:
+    """Load the current challenge.
+
+    SQL:: SELECT * FROM superadmin_challenges WHERE user_id = :user_id.
+    """
+    return await db.scalar(
+        select(SuperadminChallenge).where(SuperadminChallenge.user_id == user_id)
+    )
+
+
+def stage_superadmin_challenge(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    jti: str,
+    existing: SuperadminChallenge | None,
+) -> None:
+    """Insert or replace the challenge JTI.
+
+    SQL:: INSERT/UPDATE superadmin_challenges.
+    """
+    if existing is None:
+        db.add(SuperadminChallenge(user_id=user_id, active_jti=jti))
+    else:
+        existing.active_jti = jti
+
+
+async def clear_superadmin_challenge(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Consume the challenge.
+
+    SQL:: DELETE FROM superadmin_challenges WHERE user_id = :user_id.
+    """
+    await db.execute(
+        delete(SuperadminChallenge).where(SuperadminChallenge.user_id == user_id)
+    )
 
 
 def add_admin_profile(

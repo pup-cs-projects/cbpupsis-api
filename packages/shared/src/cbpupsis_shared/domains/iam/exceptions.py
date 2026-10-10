@@ -8,11 +8,23 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from cbpupsis_core.exceptions import AppError, ForbiddenError, NotFoundError
+from cbpupsis_core.exceptions import (
+    AppError,
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+)
 
 
 class IAMError(AppError):
     """Base for every error raised by the IAM domain."""
+
+
+class GroupRoleConflictError(IAMError, ConflictError):
+    """An account cannot hold both privileged identity roles."""
+
+    def __init__(self) -> None:
+        super().__init__("Admin and Superadmin memberships are mutually exclusive")
 
 
 class PermissionDeniedError(IAMError, ForbiddenError):

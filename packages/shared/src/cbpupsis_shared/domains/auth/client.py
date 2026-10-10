@@ -38,6 +38,13 @@ async def stage_revoke_all_sessions(db: AsyncSession, user_id: uuid.UUID) -> Non
     await service.stage_revoke_all_for_user(db, user_id)
 
 
+async def stage_end_all_superadmin_sessions(
+    db: AsyncSession, user_id: uuid.UUID
+) -> None:
+    """Stage removal of server-side privileged sessions in a caller transaction."""
+    await service.stage_end_all_superadmin_sessions(db, user_id)
+
+
 def check_password(raw_password: str, password_hash: str) -> bool:
     """Return whether a raw password matches a stored hash.
 

@@ -11,7 +11,7 @@ Add the row in the same commit as the code that raises it.
 | | |
 |---|---|
 | **Last updated** | 2026-09-28 |
-| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py` (`auth`, `users`, `iam`, `notifications` in `packages/shared`; `items` in `apps/api-student`; `admin_auth` in `apps/api-admin`) |
+| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py` (`auth`, `users`, `iam`, `notifications` in `packages/shared`; `items` in `apps/api-student`; `admin_auth`, `superadmin_ops` in `apps/api-admin`) |
 
 ## The envelope
 
@@ -124,7 +124,8 @@ resend-verification screen rather than back to the login form.
 | 401 | `AUTH_MFA_REQUIRED` | An Admin challenge was presented where a completed session is required. |
 | 403 | `AUTH_MFA_ENROLLMENT_REQUIRED` | The Admin has not yet enrolled a factor; only enrollment is reachable. |
 | 403 | `AUTH_ADMIN_PROFILE_REQUIRED` | The Admin has no active position/scope profile. |
-| 403 | `AUTH_INSUFFICIENT_ROLE` | The session is not a current MFA-completed Admin session. |
+| 403 | `AUTH_INSUFFICIENT_ROLE` | The session is not a current MFA-completed Admin or Superadmin session for the requested route. |
+| 401 | `AUTH_SESSION_EXPIRED` | The Superadmin server-side session is missing or idle for 15 minutes; refresh cannot revive it. |
 | 404 | `RESOURCE_NOT_FOUND` | The record is absent or outside the Admin position's scope. |
 | 423 | `AUTH_ACCOUNT_LOCKED` | Five failures in the rolling window locked both sign-in steps. Includes `Retry-After` and `retry_after_seconds`. |
 
@@ -145,6 +146,7 @@ guards; an invalid registration response additionally returns
 | 404 | Permission {id} not found | `GET /iam/permissions/{id}` for an id that does not exist. | `iam/exceptions.py` |
 | 404 | Policy {id} not found | `GET /iam/policies/{id}` for an id that does not exist. | `iam/exceptions.py` |
 | 404 | Group {id} not found | `GET /iam/groups/{id}` for an id that does not exist. | `iam/exceptions.py` |
+| 409 | Admin and Superadmin memberships are mutually exclusive | A privileged group assignment would put an account in both groups. | `iam/exceptions.py` |
 
 ### users
 
@@ -155,6 +157,8 @@ guards; an invalid registration response additionally returns
 | 401 | Password is incorrect | Password confirmation failed on account deletion. | `users/exceptions.py` |
 | 422 | A deleted account cannot be reactivated | Deletion scrubs identity, so there is nothing to restore. | `users/exceptions.py` |
 | 422 | You cannot deactivate your own account through the admin endpoint… | An admin aimed `POST /users/{id}/deactivate` at themselves. Refused because it has no undo through the API: reactivating needs `ManageUser`, which they would just have lost. Self-deactivation is `POST /users/me/deactivate`. | `users/exceptions.py` |
+| 403 | Protected administrative accounts require an explicit override | Ordinary deactivation targeted an Admin or Superadmin account. | `users/exceptions.py` |
+| 409 | Account is already inactive | An override tried to deactivate an already-inactive Admin account. | `users/exceptions.py` |
 | 403 | Missing required permission(s): ['ReadAllUser'] | `GET /users` without `ReadAllUser`. A listing is inherently a cross-ownership read, so unlike `GET /users/{id}` there is no self-service branch. | `users/exceptions.py` |
 | 403 | Missing required permission(s): ['ManageUser'] | Admin deactivate/reactivate without `ManageUser`. Note `ReadAllUser` alone does **not** confer it: seeing every account must not imply suspending one. | `users/exceptions.py` |
 
@@ -171,9 +175,18 @@ guards; an invalid registration response additionally returns
 |---|---|---|---|
 | 403 | Missing required permission(s): ['ReadAllAuditEntry'] | `GET /audit` without the permission. Deliberately **not** implied by `ManageIAM`: reading the trail and reshaping authorization are different powers, and an auditor should not be able to grant. | `iam/exceptions.py` |
 
-The audit trail is append-only and has no write endpoint at all — a trail a
-client can write to is not evidence of anything. Entries arrive through the
-event bus; see `cbpupsis_shared/domains/audit/service.py`.
+The audit trail is append-only and has no write endpoint. Ordinary domain
+events arrive through the outbox; Superadmin operations write one synchronous
+row, with mutations staged in their business transaction.
+
+### superadmin_ops
+
+| Status | Code or message | When |
+|---|---|---|
+| 422 | `OVERRIDE_JUSTIFICATION_REQUIRED` | The override reason is blank; the target is unchanged. |
+| 403 | `DUAL_AUTH_SAME_ACTOR` | The backup-restore requester tried to approve their own request. |
+| 409 | Restore authorization is not pending | A request or approval conflicts with the current authorization state. |
+| 404 | Overridable rule not found / Backup not found | The named rule or backup does not exist. |
 
 ### notifications
 

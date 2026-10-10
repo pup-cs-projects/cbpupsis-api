@@ -16,7 +16,7 @@ port:
 |---|---|---|
 | student | 8001 | auth, users, notifications, items |
 | faculty | 8002 | auth, users, notifications |
-| admin | 8003 | auth, users, notifications, iam, audit, and the `/admin` panel (development only) |
+| admin | 8003 | auth, users, notifications, iam, audit, and Superadmin operations |
 
 The admin images also carry `packages/migrations` (with Alembic) and `scripts/`.
 The one-shot `migrate` service, the outbox worker, and the seed scripts all run
@@ -46,6 +46,8 @@ docker compose -f docker/docker-compose.yml run --rm migrate
 docker compose -f docker/docker-compose.yml run --rm api-admin python -m scripts.seed_iam
 # register a user through POST /api/v1/auth/register on any app, then:
 docker compose -f docker/docker-compose.yml run --rm api-admin python -m scripts.bootstrap_admin you@example.com
+# For a separate verified account with system-wide access:
+docker compose -f docker/docker-compose.yml run --rm api-admin python -m scripts.bootstrap_superadmin owner@example.com
 ```
 
 ## Why `.venv` exists when everything runs in Docker
@@ -89,9 +91,14 @@ docker run -p 8001:8001 \
   api-student:latest
 ```
 
-All three apps must share `DATABASE_URL` and `JWT_SECRET`: a token issued by one
+All three apps must share the runtime `DATABASE_URL` and `JWT_SECRET`: a token issued by one
 app is accepted by the others, because they verify it with the same secret and
 resolve permissions from the same database.
+Use a separate migration-owner credential for `DIRECT_DATABASE_URL`; set
+`AUDIT_RUNTIME_ROLE` to the restricted login role in all app environment files.
+For a fresh local Compose volume, `docker/initdb/10-runtime-role.sql` creates
+the development-only runtime role. Existing volumes require that role to be
+provisioned separately before the new migration runs.
 
 **Secrets are injected at runtime, never baked in.** Anyone who can pull an image
 can read every layer of it.
@@ -100,8 +107,9 @@ can read every layer of it.
 
 | Variable | Required | Notes |
 |---|---|---|
-| `DATABASE_URL` | yes | pooled URL for the app |
-| `DIRECT_DATABASE_URL` | for migrations | non-pooled; Neon's pooler breaks Alembic |
+| `DATABASE_URL` | yes | pooled URL using the restricted API/worker role |
+| `DIRECT_DATABASE_URL` | for migrations | non-pooled URL using the separate migration owner |
+| `AUDIT_RUNTIME_ROLE` | PostgreSQL migrations | name of the separate restricted API/worker login; required to verify ledger and Alembic metadata grants |
 | `JWT_SECRET` | yes | at least 32 chars, or the app refuses to start; the same value in every app |
 | `ENVIRONMENT` | yes | `production` closes `/docs`, `/scalar`, and `/openapi.json` |
 | `LOG_JSON` | no | `true` in deployed environments |
@@ -115,9 +123,40 @@ failed migration inside `CMD` produces a crash-looping deployment rather than a
 clear failure. The admin image carries Alembic and sets `ALEMBIC_CONFIG`, so:
 
 ```bash
-docker run --rm -e DIRECT_DATABASE_URL="..." -e DATABASE_URL="..." -e JWT_SECRET="..." \
+docker run --rm -e DIRECT_DATABASE_URL="..." -e DATABASE_URL="..." \
+  -e AUDIT_RUNTIME_ROLE="app_runtime" -e JWT_SECRET="..." \
   api-admin:latest alembic upgrade head
 ```
+
+Before a remote upgrade, verify that **every** API and worker `DATABASE_URL`
+authenticates as the restricted runtime login named by `AUDIT_RUNTIME_ROLE`;
+only the one-shot migration uses the separate owner credential in
+`DIRECT_DATABASE_URL`. The runtime role must not own or be a member of the
+Alembic table owner or a superuser role. Do not deploy with the same owner
+credential in both URLs, even if the migration succeeds.
+
+For a database whose `alembic_version` row lags behind its actual schema,
+first obtain a fresh, verified provider snapshot/recovery point and a private
+logical backup, including a separate record of role memberships and grants.
+Rehearse restoring and upgrading on an isolated clone of the **same PostgreSQL
+major version** as the remote target. Compare all effects of the allegedly
+applied revisions before stamping the clone; never upgrade directly from a
+stale revision row or stamp the remote based only on table names. Confirm a
+tested rollback/recovery path, maintenance window, and separate approval before
+any remote stamp, migration, role, grant, or credential change.
+
+Verify the resulting grants on the **isolated clone**, using separate owner and
+runtime connections. With `ISSUE70_POSTGRES_URL` set to the clone's restricted
+API URL and `ISSUE70_POSTGRES_OWNER_URL` set to its migration-owner URL, run
+`uv run pytest tests/integration/test_superadmin_postgres.py -q -k runtime_role`.
+Do not point this mutating test file at remote dev. The focused checks assert
+runtime SELECT/INSERT but no UPDATE/DELETE/TRUNCATE on either audit ledger,
+and no runtime write access to `alembic_version` through direct, `PUBLIC`, or
+role grants. They also verify the owner-side append-only triggers.
+`scripts.seed_iam` creates the `Superadmins`
+group and its policies after migration; `scripts.bootstrap_superadmin` then
+assigns an existing verified, active account. Alembic alone does not seed that
+group.
 
 ## Notes
 

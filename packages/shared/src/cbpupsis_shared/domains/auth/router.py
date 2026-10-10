@@ -204,4 +204,9 @@ async def change_password(
         user_id=user.id,
         current_password=data.current_password,
         new_password=data.new_password,
+        session_claims=(
+            {"role": "superadmin", "mfa": True, "sid": str(user.session_id)}
+            if user.role == "superadmin" and user.session_id is not None
+            else None
+        ),
     )

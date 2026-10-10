@@ -131,19 +131,18 @@ class TestUserEndpoints:
         response = await client.get(f"/api/v1/users/{other.id}", headers=auth_headers)
         assert response.status_code == 403
 
-    async def test_reading_another_user_allowed_with_permission(
+    async def test_reading_another_user_allowed_for_superadmin(
         self,
         client: AsyncClient,
         db: AsyncSession,
-        auth_headers: dict[str, str],
-        registered_user: dict[str, str],
-        grant,
+        superadmin_headers: dict[str, str],
     ) -> None:
-        await grant(uuid.UUID(registered_user["id"]), "ReadAllUser")
         other = await auth_service.register(
             db, email="other2@example.com", password="a-long-enough-password"
         )
-        response = await client.get(f"/api/v1/users/{other.id}", headers=auth_headers)
+        response = await client.get(
+            f"/api/v1/users/{other.id}", headers=superadmin_headers
+        )
         assert response.status_code == 200
 
     async def test_reading_yourself_by_id_needs_no_permission(
@@ -171,23 +170,16 @@ class TestUserAdministration:
     @pytest.fixture
     async def reader_headers(
         self,
-        auth_headers: dict[str, str],
-        registered_user: dict[str, str],
-        grant,
+        superadmin_headers: dict[str, str],
     ) -> dict[str, str]:
-        await grant(uuid.UUID(registered_user["id"]), "ReadAllUser")
-        return auth_headers
+        return superadmin_headers
 
     @pytest.fixture
     async def admin_headers(
         self,
-        auth_headers: dict[str, str],
-        registered_user: dict[str, str],
-        grant,
+        superadmin_headers: dict[str, str],
     ) -> dict[str, str]:
-        await grant(uuid.UUID(registered_user["id"]), "ReadAllUser")
-        await grant(uuid.UUID(registered_user["id"]), "ManageUser")
-        return auth_headers
+        return superadmin_headers
 
     async def test_list_is_refused_without_read_all_user(
         self, client: AsyncClient, auth_headers: dict[str, str]
@@ -287,24 +279,24 @@ class TestUserAdministration:
     async def test_deactivate_is_refused_without_manage_user(
         self,
         client: AsyncClient,
-        reader_headers: dict[str, str],
+        auth_headers: dict[str, str],
         make_user,
     ) -> None:
-        """ReadAllUser alone must not confer the power to suspend an account."""
+        """A non-Superadmin session cannot suspend an account."""
         target = await make_user("target@example.com")
 
         response = await client.post(
-            f"/api/v1/users/{target.id}/deactivate", headers=reader_headers
+            f"/api/v1/users/{target.id}/deactivate", headers=auth_headers
         )
         assert response.status_code == 403, response.text
 
     async def test_reactivate_is_refused_without_manage_user(
-        self, client: AsyncClient, reader_headers: dict[str, str], make_user
+        self, client: AsyncClient, auth_headers: dict[str, str], make_user
     ) -> None:
         target = await make_user("target@example.com")
 
         response = await client.post(
-            f"/api/v1/users/{target.id}/reactivate", headers=reader_headers
+            f"/api/v1/users/{target.id}/reactivate", headers=auth_headers
         )
         assert response.status_code == 403, response.text
 

@@ -185,16 +185,13 @@ class TestAuditEndpoint:
         self,
         client: AsyncClient,
         db: AsyncSession,
-        auth_headers: dict[str, str],
-        registered_user: dict[str, str],
-        grant,
+        superadmin_headers: dict[str, str],
     ) -> None:
-        await grant(uuid.UUID(registered_user["id"]), "ReadAllAuditEntry")
         await audit_service.record(
             db, action="iam.group_created", target_type="group", target_id="42"
         )
 
-        response = await client.get("/api/v1/audit", headers=auth_headers)
+        response = await client.get("/api/v1/audit", headers=superadmin_headers)
         assert response.status_code == 200, response.text
         body = response.json()
         assert {"items", "total", "limit", "offset"} <= set(body)

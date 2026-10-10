@@ -216,6 +216,10 @@ class UserActiveSession(UUIDMixin, Base):
     __table_args__ = (Index("idx_fk_user_active_sessions_user_id", "user_id"),)
 
 
+# Existing Superadmin session call sites use this name for the canonical table.
+ActiveSession = UserActiveSession
+
+
 class IdempotencyKey(UUIDMixin, Base):
     """Prevents duplicate execution of critical financial and academic requests."""
 

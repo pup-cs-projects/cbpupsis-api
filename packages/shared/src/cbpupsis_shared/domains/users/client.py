@@ -32,3 +32,11 @@ async def user_exists(db: AsyncSession, user_id: uuid.UUID) -> bool:
     """Return whether a live user exists — the cross-domain integrity check
     that replaces a database-level foreign key."""
     return await service.get_active_user(db, user_id) is not None
+
+
+async def stage_admin_deactivation_override(
+    db: AsyncSession, *, actor_id: uuid.UUID, user_id: uuid.UUID
+) -> tuple[dict[str, bool], dict[str, bool]]:
+    return await service.stage_admin_deactivation_override(
+        db, actor_id=actor_id, user_id=user_id
+    )

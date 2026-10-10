@@ -16,14 +16,17 @@ mkdir -p env/student env/faculty env/admin
 for app in student faculty admin; do cp env.example env/$app/env.dev; done
 make setup                          # build, start, migrate, seed
 make create-admin EMAIL=you@example.com   # after registering through the API
+uv run python -m scripts.bootstrap_superadmin owner@example.com
 ```
 
 Configuration lives in `env/<app>/env.<stage>`, one file per app and stage, never
 committed. `make up env=dev` reads `env/student/env.dev`, `env/faculty/env.dev`,
 and `env/admin/env.dev`; `env=staging` reads the `env.staging` file in each.
 The migrate service and the worker read the admin file, and so does a host-side
-script. `DATABASE_URL`, `DIRECT_DATABASE_URL`, and `JWT_SECRET` must be
-identical in all three files. `env.example` is the committed shape to copy
+script. `DATABASE_URL` and `JWT_SECRET` must be identical in all three files.
+`DATABASE_URL` uses the restricted API role, while `DIRECT_DATABASE_URL` uses
+the separate migration owner. Set `AUDIT_RUNTIME_ROLE` to the API role name.
+`env.example` is the committed shape to copy
 from, and `make up` refuses to start when any file for the chosen env is missing.
 
 `make setup` brings up the three apps (student on :8001, faculty on :8002, admin
@@ -85,12 +88,11 @@ PERMISSION ──> POLICY ──> GROUP ──> USER
 ```
 
 ```bash
-# 1. Register the first user through the API, then break the chicken-and-egg:
-#    every IAM endpoint needs ManageIAM, which only an IAM endpoint can grant.
-uv run python -m scripts.bootstrap_admin admin@example.com
+# 1. Register and verify the first account, then bootstrap the Superadmin role:
+uv run python -m scripts.bootstrap_superadmin owner@example.com
 ```
 
-From there everything is API calls, as that admin:
+From there everything is API calls using a completed Superadmin MFA session:
 
 ```bash
 POST   /api/v1/iam/permissions          {"action": "CreateItem"}
@@ -109,7 +111,7 @@ GET    /api/v1/iam/groups               paginated; also /{id}
 GET    /api/v1/iam/users/{id}/permissions   effective set, split by grant path
 ```
 
-Every one of them requires `ManageIAM`. The reads exist because an admin screen
+Every one of them requires a current Superadmin session. The reads exist because a screen
 cannot render a model it can only write to — and `GET /iam/users/{id}/permissions`
 answers the question that actually gets asked, "why can this person do that?",
 by reporting group-derived and directly-attached grants separately rather than
@@ -136,40 +138,17 @@ Three UIs over the same schema, all **development-only**:
 every endpoint, field, and constraint, and the UIs merely render it. Outside
 development the routes are **not registered at all**, so there is nothing to
 probe — verified in `tests/core/test_docs.py` and against a real production container.
+The client-facing composed contract is exported to `docs/openapi.json` with
+`uv run python -m scripts.export_openapi` after API changes.
 
 Scalar runs with telemetry off and no proxy, so nothing typed into the docs —
 bodies, headers, bearer tokens — reaches a third party.
 
 ## Admin panel
 
-`/admin` is a SQLAdmin panel — a Django-admin-style UI generated from the
-SQLAlchemy models, with list, create, edit, and delete for users, items, and the
-IAM tables. No templates to write: the forms are derived from the model columns,
-so a new column appears automatically.
-
-**Development-only, behind a login, and `ManageIAM` is required.** Sign in with
-an existing account's email and password; a correct password without that
-permission is refused. Permissions are re-read from the database on every
-request, not trusted from the session cookie, so removing someone from `Admins`
-locks them out immediately rather than when their cookie expires. Outside
-development the routes are not registered at all — `/admin` is a 404, not a login
-page.
-
-Two things worth knowing before using it on real data:
-
-- **It writes straight to the tables**, bypassing `service.py` entirely. No
-  business rules, no ownership checks, no events. That is what makes it useful
-  for fixing data and dangerous for routine work.
-- **Credential columns are excluded** from the detail view, the edit form, and
-  CSV export. `column_list` alone would not do this — it constrains only the
-  index page, leaving `password_hash` visible *and editable* in the form. The
-  exclusions are asserted in `tests/core/test_admin_panel.py`.
-
-It is mounted only by processes that serve the admin app: `api-admin` on :8003,
-and the composed `main.py`. To take it out, remove `setup_admin` from
-`DEVELOPMENT_TOOLS` in `apps/api-admin/src/cbpupsis_api_admin/routes.py`; to
-expose it elsewhere, gate it on its own setting rather than widening
-`docs_enabled`.
+The legacy SQLAdmin panel is not mounted, even in development. Its direct table
+writes bypass MFA, explicit overrides, and synchronous audit staging. Use the
+Superadmin API for administrative changes; `/admin` returns 404.
 
 ## Structure
 
@@ -214,7 +193,7 @@ apps/                        # one folder per role; each builds as its own servi
       client.py              #       the extraction swap point (local call now, HTTP later)
       router.py              #       HTTP only (thin): parse -> call service -> return
   api-faculty/               #   the shared routers only, until faculty features land
-  api-admin/                 #   IAM, audit, and admin.py (the SQLAdmin panel)
+  api-admin/                 #   IAM, audit, and Superadmin operations
 
 main.py                      # all three apps in one process: uvicorn main:app
 scripts/seed_iam.py          # idempotent RBAC seed
@@ -319,7 +298,7 @@ column. The authorization half is untouched either way.
 | Endpoint | Notes |
 |---|---|
 | `POST /auth/register` | Creates the account and mails a verification link. Rate limited. |
-| `POST /auth/login` | Creates a non-admin session; admin accounts must use `/auth/admin/login`. |
+| `POST /auth/login` | Creates an ordinary session; Admin and Superadmin accounts use their dedicated MFA routes. |
 | `POST /auth/verify-email` | Consumes a single-use token. |
 | `POST /auth/resend-verification` | Always 204; invalidates any earlier token. Rate limited. |
 | `POST /auth/forgot-password` | Always 202 with the same body, registered or not. Queues a reset email and records the request. |
@@ -334,14 +313,24 @@ column. The authorization half is untouched either way.
 | `POST /auth/admin/refresh` | Rotates an Admin refresh token while retaining role, position, and scope claims. |
 | `POST /auth/admin/logout` | Revokes the Admin refresh token and clears the Admin cookie. |
 | `GET /admin/me` | Requires a live MFA-completed Admin session and returns its current position and data scope. |
+| `POST /auth/superadmin/login` | Verifies Superadmin credentials; returns only a challenge. |
+| `POST /auth/superadmin/mfa/totp/enroll` | Starts encrypted TOTP enrollment from that challenge. |
+| `POST /auth/superadmin/mfa/totp/confirm` | Confirms the TOTP seed and issues a bearer token pair. |
+| `POST /auth/superadmin/mfa/verify` | Verifies enrolled TOTP or WebAuthn and issues a bearer token pair. |
+| `POST /auth/superadmin/refresh` | Rotates the refresh token only while the same server-side session is active. |
+| `POST /auth/superadmin/logout` | Revokes the refresh token and removes the active session. |
+| `GET /superadmin/me` | Returns the current MFA-completed Superadmin identity. |
+| `POST /superadmin/overrides/{rule_id}` | Requires `target_id` and nonblank `justification`; first rule is `users.deactivate_admin`. |
+| `POST /superadmin/backups/{id}/restore-requests` | Marks an existing backup restore authorization pending; does not restore it. |
+| `POST /superadmin/backups/{id}/restore-requests/approve` | A second, distinct active Superadmin approves authorization; does not execute restoration. |
 | `PATCH /users/me` | Partial profile update (`extra="forbid"`). |
 | `POST /users/me/complete-onboarding` | 422 listing whatever is still missing. |
 | `POST /users/me/deactivate` | Reversible; revokes all refresh tokens. |
 | `DELETE /users/me` | Needs the password; soft-deletes and scrubs PII. |
-| `GET /users` | Paginated, `ReadAllUser`. Tri-state `is_active` / `is_verified` filters. |
-| `POST /users/{id}/deactivate` | `ManageUser`. Revokes their sessions. 422 on yourself. |
-| `POST /users/{id}/reactivate` | `ManageUser`. 422 on a deleted (scrubbed) account. |
-| `GET /audit` | `ReadAllAuditEntry`. The administrative trail, newest first. |
+| `GET /users` | Superadmin-only, paginated. Tri-state `is_active` / `is_verified` filters. |
+| `POST /users/{id}/deactivate` | Superadmin-only; refuses Admin and Superadmin targets. |
+| `POST /users/{id}/reactivate` | Superadmin-only. 422 on a deleted (scrubbed) account. |
+| `GET /audit` | Superadmin-only administrative trail, newest first. |
 | `GET /ready` | Readiness probe: queries the database, 503 when it cannot. |
 
 There is deliberately **no** admin delete: account deletion stays self-service
@@ -453,8 +442,45 @@ university. A scope miss is `404 RESOURCE_NOT_FOUND`, never a confirming 403.
 
 Admin MFA does **not** grant IAM, user-management, notification-administration,
 or audit-reading permissions. Those are Superadmin capabilities and remain
-outside this story even though their shared routers are composed into the same
-back-office API process.
+outside the Admin role even though their shared routers are composed into the
+same back-office API process.
+
+### Superadmin sessions, overrides, and dual control
+
+`Admins` and `Superadmins` are mutually exclusive IAM groups. Bootstrap only
+verified, active existing accounts with `scripts.bootstrap_superadmin`; do not
+put one account in both groups. Run the bootstrap separately for each of the two
+named Superadmin accounts required by SRS 2.3. A Superadmin receives all currently registered
+permission actions, including actions registered after bootstrap. User-management,
+IAM, and audit-reading routes additionally require a live Superadmin session,
+not merely a permission grant.
+
+The Superadmin sign-in challenge uses the same encrypted TOTP/WebAuthn factors
+and rolling five-failure lockout as Admin, but issues only bearer tokens. Its
+JWTs carry `role=superadmin`, `mfa=true`, and a stable `sid`. Every authenticated
+request in any app atomically checks and touches that `sid` in
+`user_active_sessions`. A 15-minute idle gap deletes it and returns
+`401 AUTH_SESSION_EXPIRED`; neither shared refresh nor the dedicated refresh
+route can restore an expired session. Membership is checked live on privileged
+requests. No Superadmin cookie or CSRF flow is used.
+
+The generic override route accepts a rule id in the path and a JSON body with
+`target_id` and `justification`. `users.deactivate_admin` is the first registered
+rule. The ordinary user-deactivation route refuses administrative targets, so
+the override cannot be bypassed. Blank or whitespace-only justification returns
+`422 OVERRIDE_JUSTIFICATION_REQUIRED` without changing the account.
+
+Backup restore is *authorization only*: one Superadmin marks an existing backup
+pending, and another distinct, currently active Superadmin approves it. The
+requester cannot approve their own request (`403 DUAL_AUTH_SAME_ACTOR`);
+conflicting repeats return 409. Approval does not run a restore job.
+
+Each authenticated Superadmin operation writes one audit row before returning,
+including protected reads and session lifecycle. Explicit mutations stage their
+row in the business transaction; the request audit fallback records other
+protected activity without request bodies, personal data, or factor secrets.
+The migration owner owns `audit_entries` and `admin_audit_trails`; the API role
+has only SELECT and INSERT on those ledgers, not UPDATE, DELETE, or TRUNCATE.
 
 Credential and factor failures share one rolling counter. The fifth failure in
 15 minutes locks the account; subsequent calls return `423

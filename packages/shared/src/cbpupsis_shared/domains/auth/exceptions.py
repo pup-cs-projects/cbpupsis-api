@@ -18,6 +18,7 @@ from cbpupsis_core.exceptions import (
     AppError,
     ConflictError,
     EmailNotVerifiedError,
+    ForbiddenError,
     UnauthorizedError,
 )
 from cbpupsis_shared.domains.auth.constants import (
@@ -82,6 +83,20 @@ class InactiveUserError(AuthError, UnauthorizedError):
 
     def __init__(self) -> None:
         super().__init__("User is no longer active")
+
+
+class AuthSessionExpiredError(AuthError, UnauthorizedError):
+    code = "AUTH_SESSION_EXPIRED"
+
+    def __init__(self) -> None:
+        super().__init__("Session expired after inactivity")
+
+
+class SuperadminRoleRequiredError(AuthError, ForbiddenError):
+    code = "AUTH_INSUFFICIENT_ROLE"
+
+    def __init__(self) -> None:
+        super().__init__("A Superadmin session is required")
 
 
 class RefreshTokenReusedError(AuthError, UnauthorizedError):

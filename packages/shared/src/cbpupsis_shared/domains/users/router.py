@@ -21,10 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.session import get_db
-from cbpupsis_shared.domains.auth.dependencies import CurrentUser, get_current_user
-from cbpupsis_shared.domains.iam.dependencies import require_permission
+from cbpupsis_shared.domains.auth.dependencies import (
+    CurrentUser,
+    get_current_user,
+    require_superadmin_session,
+)
+from cbpupsis_shared.domains.auth.exceptions import SuperadminRoleRequiredError
 from cbpupsis_shared.domains.users import service as users_service
-from cbpupsis_shared.domains.users.constants import MANAGE_USER, READ_ALL_USER
 from cbpupsis_shared.domains.users.schemas import (
     DeleteAccountRequest,
     UserRead,
@@ -116,7 +119,7 @@ async def list_users(
     ),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    user: CurrentUser = Depends(require_permission(READ_ALL_USER)),
+    user: CurrentUser = Depends(require_superadmin_session),
     db: AsyncSession = Depends(get_db),
 ) -> Page[UserRead]:
     """List user accounts, newest first. Requires ``ReadAllUser``.
@@ -143,7 +146,7 @@ async def list_users(
 @router.post("/{user_id}/deactivate", response_model=UserRead)
 async def deactivate_user(
     user_id: uuid.UUID,
-    user: CurrentUser = Depends(require_permission(MANAGE_USER)),
+    user: CurrentUser = Depends(require_superadmin_session),
     db: AsyncSession = Depends(get_db),
 ) -> UserRead:
     """Suspend another user's account. Requires ``ManageUser``.
@@ -163,7 +166,7 @@ async def deactivate_user(
 @router.post("/{user_id}/reactivate", response_model=UserRead)
 async def reactivate_user(
     user_id: uuid.UUID,
-    user: CurrentUser = Depends(require_permission(MANAGE_USER)),
+    user: CurrentUser = Depends(require_superadmin_session),
     db: AsyncSession = Depends(get_db),
 ) -> UserRead:
     """Restore a suspended account. Requires ``ManageUser``.
@@ -191,5 +194,7 @@ async def read_user(
     ``cbpupsis_api_student.domains.items.service`` for the same pattern on owned
     resources.
     """
+    if user_id != user.id and user.role != "superadmin":
+        raise SuperadminRoleRequiredError
     record = await users_service.get_profile_for(db, viewer_id=user.id, user_id=user_id)
     return UserRead.model_validate(record)

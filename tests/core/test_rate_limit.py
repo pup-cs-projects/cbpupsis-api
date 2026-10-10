@@ -242,7 +242,8 @@ class TestTheRefusalResponse:
         refused = await _exhaust_forgot_password(client)
         body = refused.json()
 
-        assert set(body) == {"detail", "request_id", "code"}
+        # The address throttle can respond before slowapi and add status/message.
+        assert {"detail", "request_id", "code"} <= set(body)
         assert isinstance(body["detail"], str)
         assert body["code"] == "RATE_LIMIT_EXCEEDED"
         assert "error" not in body

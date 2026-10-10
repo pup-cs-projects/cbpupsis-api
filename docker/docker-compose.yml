@@ -20,9 +20,9 @@ name: cbpupsis-api
 # Each app reads its own file, env/<app>/env.<stage>, which is gitignored.
 # ENV_FILE is set by the Makefile from `env=dev|staging`, so one compose file
 # serves both. The migrate service and the worker run the admin image, so they
-# read the admin file. DATABASE_URL, DIRECT_DATABASE_URL, and JWT_SECRET must be
-# identical in all three files: the apps share one database, and a token issued
-# by one app is verified by the others.
+# read the admin file. DATABASE_URL, DIRECT_DATABASE_URL, AUDIT_RUNTIME_ROLE,
+# and JWT_SECRET must each be consistent across the files; DATABASE_URL uses
+# the restricted API role, while DIRECT_DATABASE_URL uses the migration owner.
 
 # What every container that runs workspace code shares.
 x-workspace: &workspace
@@ -107,7 +107,8 @@ services:
     # behaviour, add reserved words, and alter what autogenerate emits.
     image: postgres:16-alpine
     # Inline, not env_file: these are the local container's own credentials, not
-    # application config. They must match the DATABASE_URL in env/<app>/env.<stage>,
+    # application config. App DATABASE_URL uses the app_runtime role created by
+    # the init script; migration DIRECT_DATABASE_URL uses postgres locally.
     # and they are deliberately not secret, because this database exists only on your
     # machine and is destroyed by `make down wipe=1`.
     environment:
@@ -118,6 +119,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./initdb/10-runtime-role.sql:/docker-entrypoint-initdb.d/10-runtime-role.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
       interval: 3s

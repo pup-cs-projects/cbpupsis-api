@@ -1,11 +1,11 @@
 meta {
-  name: Login admin
+  name: Start Superadmin login
   type: http
   seq: 5
 }
 
 post {
-  url: {{student_api}}/auth/login
+  url: {{admin_api}}/auth/superadmin/login
   body: json
   auth: none
 }
@@ -26,15 +26,15 @@ assert {
 }
 
 tests {
-  test("returns a bearer token pair", function () {
-    expect(res.getBody().access_token).to.be.a("string").and.not.be.empty;
+  test("credentials return only an MFA challenge", function () {
+    expect(res.getBody().challenge_token).to.be.a("string").and.not.be.empty;
+    expect(res.getBody()).not.to.have.property("access_token");
   });
 
-  bru.setVar("admin_access_token", res.getBody().access_token);
+  bru.setVar("e2e_admin_challenge", res.getBody().challenge_token);
 }
 
 docs {
-  Establishes the `admin` principal, which holds `ManageIAM`. Seeded by script
-  because that permission cannot be self-granted through the API — the IAM
-  endpoints that would grant it are themselves gated behind it.
+  Starts the test-only Superadmin MFA flow. The next request proves TOTP before
+  the IAM folder can use this principal.
 }

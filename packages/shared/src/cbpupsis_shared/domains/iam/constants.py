@@ -25,3 +25,4 @@ MANAGE_IAM = "ManageIAM"
 
 #: The group bootstrap_admin promotes into. Must exist in seed_iam's GROUPS.
 ADMIN_GROUP = "Admins"
+SUPERADMIN_GROUP = "Superadmins"
