@@ -34,7 +34,7 @@ from cbpupsis_shared.domains.auth.exceptions import (
     SuperadminRoleRequiredError,
     UnverifiedEmailError,
 )
-from cbpupsis_shared.domains.auth.security import decode_token
+from cbpupsis_shared.domains.auth.security import decode_token, require_session_version
 from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
 from cbpupsis_shared.domains.users import service as users_service
@@ -85,6 +85,7 @@ async def get_current_user(
     if user is None:
         raise InactiveUserError
 
+    require_session_version(claims, user.session_version)
     role = claims.get("role")
     session_id = None
     if role != "superadmin" and await iam_service.is_user_in_group(

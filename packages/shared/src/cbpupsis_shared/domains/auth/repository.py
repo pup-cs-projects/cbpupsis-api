@@ -30,12 +30,17 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import case, delete, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.models.auth import (
     ActiveSession,
+    AuthenticationFailure,
+    AuthenticationLockout,
     OneTimeToken,
+    PasswordResetThrottle,
     RefreshToken,
     TokenPurpose,
 )
@@ -214,12 +219,12 @@ async def revoke_refresh_token(
 
 async def revoke_all_refresh_tokens_for_user(
     db: AsyncSession, user_id: uuid.UUID, revoked_at: datetime
-) -> None:
+) -> int:
     """Revoke every live refresh token a user holds.
 
     A set-based UPDATE rather than a loop over loaded rows: it is one round trip
     regardless of how many sessions exist, and it cannot race with a token
-    issued between a SELECT and a write.
+    issued between a SELECT and a write. Returns the count of revoked tokens.
 
     SQL::
 
@@ -228,11 +233,16 @@ async def revoke_all_refresh_tokens_for_user(
         WHERE refresh_tokens.user_id = :user_id_1::UUID
           AND refresh_tokens.revoked_at IS NULL
     """
-    await db.execute(
+    result = await db.execute(
         update(RefreshToken)
-        .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+        .where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > revoked_at,
+        )
         .values(revoked_at=revoked_at)
     )
+    return int(result.rowcount or 0)
 
 
 # --------------------------------------------------------------------------- #
@@ -338,5 +348,108 @@ async def consume_one_time_token(
         )
         .values(consumed_at=now)
         .returning(OneTimeToken.user_id)
+        .execution_options(synchronize_session=False)
     )
     return result.scalar_one_or_none()
+
+
+async def get_one_time_token(
+    db: AsyncSession,
+    token_hash: str,
+    purpose: TokenPurpose,
+) -> OneTimeToken | None:
+    """Return the one-time token record with this digest and purpose, or None.
+
+    Used by the reset flow to distinguish why a token failed (already used vs
+    expired) while preserving the single-query redemption in
+    consume_one_time_token for flows that require indistinguishability.
+
+    SQL::
+
+        SELECT one_time_tokens.id, one_time_tokens.user_id,
+               one_time_tokens.token_hash, one_time_tokens.purpose,
+               one_time_tokens.expires_at, one_time_tokens.consumed_at
+        FROM one_time_tokens
+        WHERE one_time_tokens.token_hash = :token_hash_1
+          AND one_time_tokens.purpose = :purpose_1
+    """
+    return await db.scalar(
+        select(OneTimeToken)
+        .where(
+            OneTimeToken.token_hash == token_hash,
+            OneTimeToken.purpose == purpose,
+        )
+        .execution_options(populate_existing=True)
+    )
+
+
+async def clear_authentication_lockout(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Clear both the active lock and its rolling failure counter.
+
+    SQL::
+
+        DELETE FROM authentication_lockouts WHERE user_id = :user_id;
+        DELETE FROM authentication_failures WHERE user_id = :user_id;
+        DELETE FROM user_active_sessions WHERE user_id = :user_id;
+    """
+    await db.execute(
+        delete(AuthenticationLockout).where(AuthenticationLockout.user_id == user_id)
+    )
+    await db.execute(
+        delete(AuthenticationFailure).where(AuthenticationFailure.user_id == user_id)
+    )
+    await db.execute(delete(ActiveSession).where(ActiveSession.user_id == user_id))
+
+
+async def claim_reset_request(
+    db: AsyncSession, email_hash: str, now: datetime, window_start: datetime, limit: int
+) -> bool:
+    """Atomically spend the shared address allowance, equally for unknown emails.
+
+    SQL::
+
+        INSERT INTO password_reset_throttles (email_hash, window_started_at, requests)
+        VALUES (:email_hash, :now, 1)
+        ON CONFLICT (email_hash) DO UPDATE
+        SET requests = CASE WHEN window_started_at <= :window_start
+                            THEN 1 ELSE password_reset_throttles.requests + 1 END,
+            window_started_at = CASE WHEN window_started_at <= :window_start
+                                     THEN :now ELSE window_started_at END
+        WHERE window_started_at <= :window_start OR requests < :limit
+        RETURNING email_hash
+    """
+    insert = sqlite_insert if db.get_bind().dialect.name == "sqlite" else pg_insert
+    expired = PasswordResetThrottle.window_started_at <= window_start
+    statement = (
+        insert(PasswordResetThrottle)
+        .values(email_hash=email_hash, window_started_at=now, requests=1)
+        .on_conflict_do_update(
+            index_elements=[PasswordResetThrottle.email_hash],
+            set_={
+                "requests": case(
+                    (expired, 1), else_=PasswordResetThrottle.requests + 1
+                ),
+                "window_started_at": case(
+                    (expired, now), else_=PasswordResetThrottle.window_started_at
+                ),
+            },
+            where=expired | (PasswordResetThrottle.requests < limit),
+        )
+        .returning(PasswordResetThrottle.email_hash)
+    )
+    return (await db.execute(statement)).scalar_one_or_none() is not None
+
+
+async def reset_request_retry_after(db: AsyncSession, email_hash: str) -> datetime:
+    """Read the current window to return an actionable retry delay.
+
+    SQL::
+
+        SELECT window_started_at FROM password_reset_throttles
+        WHERE email_hash = :email_hash
+    """
+    return await db.scalar(
+        select(PasswordResetThrottle.window_started_at).where(
+            PasswordResetThrottle.email_hash == email_hash
+        )
+    )

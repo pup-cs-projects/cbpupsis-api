@@ -12,7 +12,9 @@ dependencies = [
     # The outbox wake-up listener holds a raw asyncpg connection for LISTEN.
     "asyncpg",
     "pyjwt",
-    "passlib[argon2]",
+    "passlib[argon2]",  # Verify existing Argon2 credentials during migration.
+    "bcrypt>=5.0.0",
+    "cryptography>=46.0.0",
     "scalar-fastapi>=1.8.2",
     # The IANA time zone database for `zoneinfo`, which validates the user
     # profile's timezone field. Required, not optional: Windows ships no system

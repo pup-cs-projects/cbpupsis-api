@@ -94,10 +94,16 @@ this maintainable: it is how you find the code when the copy needs changing.
 | 401 | Not authenticated | No `Authorization` header. | `auth/dependencies.py` |
 | 401 | Incorrect email or password | Login failed. Identical for unknown account, wrong password, and inactive/deleted user. | `auth/service.py` |
 | 403 | Verify your email address to continue… (`code: email_not_verified`) | Login or refresh with a correct password, but the address is unverified. **Only reachable after the password check passes**, so it cannot be used to enumerate accounts — see below. | `auth/service.py` |
+| 400 | Enter a valid email address (`code: INVALID_EMAIL_ADDRESS`) | A reset request contains malformed email. | `auth/service.py` |
+| 401 | Your session has ended. Sign in again. (`code: AUTH_SESSION_EXPIRED`) | Account-wide revocation changed the session generation. | `auth/security.py` |
 | 401 | User is no longer active | The account was deactivated after the token was issued. | `auth/dependencies.py` |
 | 401 | Refresh token already used | A rotated token was replayed. Revokes the user's whole token family. | `auth/service.py` |
 | 409 | Email already registered | Registration hit the unique constraint on `users.email`. | `auth/service.py` |
-| 429 | Too many requests. Please try again in N seconds. (`code: rate_limited`) | A rate limit was exceeded on `/login`, `/register`, `/forgot-password`, or `/resend-verification`. Carries a `Retry-After` header, in seconds. | `core/exceptions.py` |
+| 410 | The password reset link has expired; request a new one (`code: AUTH_RESET_TOKEN_EXPIRED`) | A reset token older than its TTL was submitted. | `auth/service.py` |
+| 410 | The password reset link has already been used; request a new one (`code: AUTH_RESET_TOKEN_USED`) | An already-redeemed reset token was submitted. | `auth/service.py` |
+| 422 | Password does not meet complexity requirements: … (`code: AUTH_PASSWORD_TOO_WEAK`) | A new password failed complexity requirements (missing uppercase, lowercase, digit, or symbol). Carries `unmet_rules`, including minimum length and bcrypt byte limits. | `auth/service.py` |
+| 429 | Too many requests. Please try again in N seconds. (`code: rate_limited`) | A rate limit was exceeded on `/login`, `/register`, or `/resend-verification`. Carries a `Retry-After` header, in seconds. | `core/exceptions.py` |
+| 429 | Too many requests (`code: RATE_LIMIT_EXCEEDED`) | A reset request exceeded the IP or shared address allowance. Carries `Retry-After`. | `auth/service.py`, `core/exceptions.py` |
 
 **Why the 403 is safe.** It sits *after* the password check, so it only ever
 tells a caller who already holds valid credentials that their own address is
@@ -201,11 +207,19 @@ accepted a recipient and a body would let any authenticated caller forge a
 message appearing to come from the platform. Notifications arrive through the
 outbox.
 
-### <your domain>
+### faculty-auth
 
 | Status | Message | When | Raised in |
 |---|---|---|---|
-| | | | |
+| 400 | Invalid identifier format. Expected format: YYYY-NNNNN-XX-N (`code: INVALID_INPUT`) | Malformed payload or invalid student/faculty ID format. Rejected before querying credentials or checking password. | `cbpupsis_api_faculty/domains/faculty_auth/validation.py` |
+| 401 | Invalid ID or password. {n} attempts remaining before lockout. (`code: AUTH_FAILED`) | Invalid credentials (unknown employee ID, wrong password, or inactive account). Byte-identical to avoid field enumeration. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
+| 401 | Invalid authentication code. (`code: AUTH_MFA_INVALID`) | Submitted TOTP code does not match the enrolled secret or is beyond narrow clock drift tolerance. Failure increments rolling lockout counter. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
+| 401 | This code has already been used. Please wait for the next code. (`code: AUTH_MFA_CODE_REUSED`) | A TOTP code is resubmitted within its validity window after already being consumed. Replay guard blocks reuse. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
+| 403 | Multi-factor authentication enrollment is required to access student data. (`code: AUTH_MFA_ENROLLMENT_REQUIRED`) | Privileged faculty account attempts to reach student records or section rosters before enrolling MFA. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
+| 403 | Audit records are immutable and append-only. Deletion is prohibited by BR-AUTH-006. (`code: PERMISSION_DENIED`) | Client attempts to delete or alter authentication audit ledger records. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
+| 404 | Resource not found. (`code: RESOURCE_NOT_FOUND`) | Faculty member requests course section not assigned to them. Does not confirm section existence to non-owners (AC-002.7). | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
+| 423 | Account locked due to 5 consecutive failed attempts. Try again in 15 minutes. (`code: AUTH_ACCOUNT_LOCKED`) | 5 consecutive failed login attempts within rolling 15 minutes across sign-in and MFA steps. Carries `Retry-After: 900` header and `retry_after_seconds: 900`. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
+| 503 | Database service temporarily unavailable. (`code: SERVICE_UNAVAILABLE`) | Database node is unreachable during authentication resolution. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
 
 ## Adding a code
 

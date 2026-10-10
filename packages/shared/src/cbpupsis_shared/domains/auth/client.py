@@ -16,7 +16,11 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.auth import service
-from cbpupsis_shared.domains.auth.security import decode_token, verify_password
+from cbpupsis_shared.domains.auth.security import (
+    decode_token,
+    require_session_version,
+    verify_password,
+)
 
 
 async def revoke_all_sessions(db: AsyncSession, user_id: uuid.UUID) -> None:
@@ -59,3 +63,8 @@ def decode_access_session(token: str) -> dict[str, object]:
 def decode_refresh_session(token: str) -> dict[str, object]:
     """Validate a refresh token before a role-specific rotation begins."""
     return decode_token(token, expected_type="refresh")
+
+
+def validate_session_version(claims: dict[str, object], current_version: int) -> None:
+    """Apply account-wide access revocation to every role's session guard."""
+    require_session_version(claims, current_version)

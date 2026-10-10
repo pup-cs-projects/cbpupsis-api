@@ -105,9 +105,12 @@ class Settings(BaseSettings):
     #: Verification links are low-risk and mailed once, so a day is generous
     #: enough to survive a delayed inbox without leaving the link useful for long.
     email_verification_ttl_hours: int = 24
-    #: Reset links change a credential, so they expire far sooner: the window in
-    #: which a forwarded or logged link is dangerous should be minutes, not days.
-    password_reset_ttl_minutes: int = 30
+    #: Configurable, with the story's default lifetime of 24 hours.
+    password_reset_ttl_minutes: int = Field(default=1440, ge=1)
+    bcrypt_rounds: int = Field(default=12, ge=12, le=16)
+    #: Shared-store address limits apply equally to known and unknown addresses.
+    password_reset_request_limit: int = Field(default=3, ge=1)
+    password_reset_request_window_seconds: int = Field(default=3600, ge=1)
 
     # --- Outbox (durable side effects) ---
     #: How long the worker waits between claim queries when nothing wakes it.
@@ -176,7 +179,7 @@ class Settings(BaseSettings):
     #: can otherwise use them to mail-bomb a third party at your domain's
     #: reputation.
     rate_limit_resend_verification: str = "3/hour"
-    rate_limit_forgot_password: str = "3/hour"
+    rate_limit_forgot_password: str = "60/minute"
     #: Credential stuffing is the threat here, not a forgetful user. Ten
     #: attempts a minute is far above what a human retyping a password needs and
     #: far below what makes an online guessing attack worthwhile.

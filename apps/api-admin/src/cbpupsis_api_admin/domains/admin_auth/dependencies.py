@@ -103,6 +103,7 @@ async def require_admin_session(
         error = InactiveUserError()
         _log_refusal(request, error)
         raise error
+    auth_client.validate_session_version(claims, user.session_version)
     if (
         claims.get("role") != "admin"
         or claims.get("mfa") is not True

@@ -126,14 +126,26 @@ def register_exception_handlers(app: FastAPI) -> None:
         no key appears with a null value for them to misread as meaningful.
         """
         content: dict[str, object] = {
+            "status": "error",
+            "message": exc.detail,
             "detail": exc.detail,
             "request_id": _request_id(request),
         }
         if exc.code is not None:
             content["code"] = exc.code
-        content.update(exc.response_fields)
+        if hasattr(exc, "data") and exc.data is not None:
+            content["data"] = exc.data
+
+        headers: dict[str, str] = dict(getattr(exc, "headers", {}) or {})
+        if hasattr(exc, "retry_after_seconds") and exc.retry_after_seconds is not None:
+            headers["Retry-After"] = str(exc.retry_after_seconds)
+            content["retry_after_seconds"] = exc.retry_after_seconds
+
+        content.update(getattr(exc, "response_fields", {}))
         return JSONResponse(
-            status_code=exc.status_code, content=content, headers=exc.headers
+            status_code=exc.status_code,
+            content=content,
+            headers=headers if headers else None,
         )
 
     @app.exception_handler(RateLimitExceeded)
@@ -152,6 +164,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         can only guess, and well-behaved ones typically retry immediately.
         """
         retry_after = retry_after_seconds(exc)
+        observer = getattr(request.app.state, "rate_limit_observer", None)
+        if observer is not None:
+            await observer(request)
         # Deliberately not a warning: being rate limited is the system working,
         # and at scale a warning per refused request is what buries the real
         # ones. The key is included so an operator can see who is hitting it;
@@ -171,7 +186,11 @@ def register_exception_handlers(app: FastAPI) -> None:
                     f"Too many requests. Please try again in {retry_after} seconds."
                 ),
                 "request_id": _request_id(request),
-                "code": "rate_limited",
+                "code": (
+                    "RATE_LIMIT_EXCEEDED"
+                    if request.url.path.endswith("/auth/forgot-password")
+                    else "rate_limited"
+                ),
             },
             headers={"Retry-After": str(retry_after)},
         )

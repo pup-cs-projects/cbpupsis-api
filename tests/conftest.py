@@ -71,11 +71,21 @@ async def db() -> AsyncGenerator[AsyncSession, None]:
 async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Yield an HTTP client bound to the app, sharing the test's session."""
     app.dependency_overrides[get_db] = lambda: db
+    previous_observer = app.state.rate_limit_observer
+
+    async def _observe_rate_limit(request):
+        from cbpupsis_core.middleware import client_ip
+
+        if request.url.path.endswith("/auth/forgot-password"):
+            await auth_service.record_request_refusal(db, client_ip(request))
+
+    app.state.rate_limit_observer = _observe_rate_limit
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         yield ac
     app.dependency_overrides.clear()
+    app.state.rate_limit_observer = previous_observer
 
 
 @pytest.fixture
@@ -144,13 +154,18 @@ def drain_outbox(db: AsyncSession):
 
     async def _drain() -> int:
         from cbpupsis_shared import worker
+        from cbpupsis_shared.domains.auth import delivery
         from cbpupsis_shared.domains.notifications import handlers
 
         async def _handle(event, *, message_id):
             await handlers.deliver_event_on(db, event, message_id=message_id)
 
+        async def _reset_email(event, *, message_id):
+            await delivery.deliver_reset_email_on(db, event, message_id=message_id)
+
         previous = dict(worker._HANDLERS)
         worker._HANDLERS.clear()
+        worker.register_handler("auth.password_reset_email", _reset_email)
         for name in NOTIFICATION_TYPES:
             worker.register_handler(name, _handle)
         try:
@@ -179,14 +194,17 @@ def sent_emails(monkeypatch) -> list[dict[str, str]]:
         captured.append({"to": to, "subject": subject, "body": body})
         return True
 
-    # Patched at BOTH lookup sites, because outbound email now leaves by two
-    # routes: auth still sends the one-time-token mails inline (they are the
-    # flow, and a reset link must not arrive a poll interval late), while
-    # everything durable goes through the notifications channel. Patching only
-    # one would silently miss half the mail.
+    # Verification is inline; reset links and security notices are delivered
+    # by durable handlers. Patch each lookup site without auto-draining jobs.
     monkeypatch.setattr("cbpupsis_shared.domains.auth.service.send_email", _capture)
+    monkeypatch.setattr("cbpupsis_shared.domains.auth.delivery.send_email", _capture)
     monkeypatch.setattr(
         "cbpupsis_shared.domains.notifications.channels.send_email", _capture
+    )
+    monkeypatch.setattr(
+        "cbpupsis_api_faculty.domains.faculty_auth.service.send_email",
+        _capture,
+        raising=False,
     )
     return captured
 

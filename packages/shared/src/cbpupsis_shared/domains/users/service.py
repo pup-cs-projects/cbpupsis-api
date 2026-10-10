@@ -501,3 +501,33 @@ async def reactivate_as_admin(
     await db.commit()
     await db.refresh(user)
     return user
+
+
+async def get_by_email_for_update(db: AsyncSession, email: str):
+    """Read a credential while holding the account lock until commit."""
+    return await repository.get_user_by_email_for_update(db, email)
+
+
+async def get_active_user_for_update(db: AsyncSession, user_id: uuid.UUID):
+    """Read a usable account under the shared password/session lock."""
+    user = await repository.get_user_for_update(db, user_id)
+    return user if user is not None and user.is_active else None
+
+
+async def stage_password_reset(
+    db: AsyncSession, user_id: uuid.UUID, password_hash: str
+):
+    """Stage a digest and invalidate access tokens without an intermediate commit."""
+    user = await repository.get_user_for_update(db, user_id)
+    if user is None:
+        raise UserNotFoundError(user_id)
+    repository.update_user(db, user, password_hash=password_hash)
+    await repository.clear_pending_mfa_challenge(db, user_id)
+    return user
+
+
+async def stage_invalidate_sessions(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Stage a generation change so all earlier access tokens stop working."""
+    user = await repository.get_user_for_update(db, user_id)
+    if user is not None:
+        repository.update_user(db, user, session_version=user.session_version + 1)

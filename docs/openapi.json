@@ -262,7 +262,6 @@
             "title": "New State"
           },
           "occurred_at": {
-            "format": "date-time",
             "title": "Occurred At",
             "type": "string"
           },
@@ -318,6 +317,91 @@
           "occurred_at"
         ],
         "title": "AuditEntryRead",
+        "type": "object"
+      },
+      "AuthAuditLogRead": {
+        "description": "Schema for reading an audit ledger record.",
+        "properties": {
+          "attempted_id": {
+            "title": "Attempted Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "ip_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip Address"
+          },
+          "mfa_used": {
+            "title": "Mfa Used",
+            "type": "boolean"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Agent"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "attempted_id",
+          "user_id",
+          "ip_address",
+          "user_agent",
+          "success",
+          "mfa_used",
+          "failure_reason"
+        ],
+        "title": "AuthAuditLogRead",
         "type": "object"
       },
       "ChangePasswordRequest": {
@@ -427,6 +511,268 @@
         "title": "EffectivePermissionsRead",
         "type": "object"
       },
+      "FacultyLoginChallengeData": {
+        "description": "Challenge issued when faculty credentials are valid.",
+        "properties": {
+          "challenge_token": {
+            "title": "Challenge Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "default": 300,
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "mfa_enrolled": {
+            "default": true,
+            "title": "Mfa Enrolled",
+            "type": "boolean"
+          },
+          "mfa_required": {
+            "default": true,
+            "title": "Mfa Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "challenge_token"
+        ],
+        "title": "FacultyLoginChallengeData",
+        "type": "object"
+      },
+      "FacultyLoginResponse": {
+        "description": "HTTP 200 response for successful first-factor credential validation.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/FacultyLoginChallengeData"
+          },
+          "status": {
+            "default": "success",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "FacultyLoginResponse",
+        "type": "object"
+      },
+      "FacultyMfaConfirmData": {
+        "description": "Response data on successful MFA activation.",
+        "properties": {
+          "message": {
+            "default": "MFA enrolled successfully. Save these recovery codes in a secure location.",
+            "title": "Message",
+            "type": "string"
+          },
+          "recovery_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recovery Codes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "recovery_codes"
+        ],
+        "title": "FacultyMfaConfirmData",
+        "type": "object"
+      },
+      "FacultyMfaConfirmRequest": {
+        "description": "Payload to confirm TOTP code and activate MFA enrollment.",
+        "properties": {
+          "code": {
+            "description": "Six-digit code generated from newly scanned authenticator",
+            "maxLength": 6,
+            "minLength": 6,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "FacultyMfaConfirmRequest",
+        "type": "object"
+      },
+      "FacultyMfaConfirmResponse": {
+        "description": "HTTP 200 response upon activating MFA enrollment.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/FacultyMfaConfirmData"
+          },
+          "status": {
+            "default": "success",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "FacultyMfaConfirmResponse",
+        "type": "object"
+      },
+      "FacultyMfaEnrollData": {
+        "description": "Provisioning details returned to enroll Google Authenticator.",
+        "properties": {
+          "account_name": {
+            "title": "Account Name",
+            "type": "string"
+          },
+          "issuer": {
+            "default": "PUP CBPUPSIS",
+            "title": "Issuer",
+            "type": "string"
+          },
+          "mfa_enrolled": {
+            "default": false,
+            "title": "Mfa Enrolled",
+            "type": "boolean"
+          },
+          "provisioning_uri": {
+            "title": "Provisioning Uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provisioning_uri",
+          "account_name"
+        ],
+        "title": "FacultyMfaEnrollData",
+        "type": "object"
+      },
+      "FacultyMfaEnrollResponse": {
+        "description": "HTTP 200 response for starting MFA enrollment.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/FacultyMfaEnrollData"
+          },
+          "status": {
+            "default": "success",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "FacultyMfaEnrollResponse",
+        "type": "object"
+      },
+      "FacultyMfaVerifyRequest": {
+        "description": "Payload submitted to POST /api/v1/auth/mfa/verify.",
+        "properties": {
+          "challengeToken": {
+            "description": "Short-lived challenge token issued by login step",
+            "title": "Challengetoken",
+            "type": "string"
+          },
+          "totp_code": {
+            "description": "Six-digit time-based code from authenticator app",
+            "examples": [
+              "123456"
+            ],
+            "maxLength": 6,
+            "minLength": 6,
+            "title": "Totp Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challengeToken",
+          "totp_code"
+        ],
+        "title": "FacultyMfaVerifyRequest",
+        "type": "object"
+      },
+      "FacultyMfaVerifyResponse": {
+        "description": "HTTP 200 response for successful second-factor verification.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/FacultySessionData"
+          },
+          "status": {
+            "default": "success",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "FacultyMfaVerifyResponse",
+        "type": "object"
+      },
+      "FacultySessionData": {
+        "description": "Session credentials returned upon successful MFA verification.",
+        "properties": {
+          "accessToken": {
+            "title": "Accesstoken",
+            "type": "string"
+          },
+          "expiresIn": {
+            "default": 1800,
+            "title": "Expiresin",
+            "type": "integer"
+          },
+          "role": {
+            "default": "faculty",
+            "title": "Role",
+            "type": "string"
+          },
+          "tokenType": {
+            "default": "Bearer",
+            "title": "Tokentype",
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/FacultyUserData"
+          }
+        },
+        "required": [
+          "accessToken",
+          "user"
+        ],
+        "title": "FacultySessionData",
+        "type": "object"
+      },
+      "FacultyUserData": {
+        "description": "User profile data returned upon successful session issuance.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "firstName": {
+            "title": "Firstname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "lastName": {
+            "title": "Lastname",
+            "type": "string"
+          },
+          "role": {
+            "default": "FACULTY",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "firstName",
+          "lastName",
+          "email"
+        ],
+        "title": "FacultyUserData",
+        "type": "object"
+      },
       "ForgotPasswordRequest": {
         "additionalProperties": false,
         "description": "Payload for requesting a password-reset email.",
@@ -441,6 +787,18 @@
           "email"
         ],
         "title": "ForgotPasswordRequest",
+        "type": "object"
+      },
+      "ForgotPasswordResponse": {
+        "description": "Uniform response for a password-reset request.",
+        "properties": {
+          "message": {
+            "default": "If that address is registered, a reset link has been sent.",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "title": "ForgotPasswordResponse",
         "type": "object"
       },
       "GroupCreate": {
@@ -1397,8 +1755,6 @@
         "description": "Payload for redeeming a reset token and setting a new password.",
         "properties": {
           "new_password": {
-            "maxLength": 128,
-            "minLength": 12,
             "title": "New Password",
             "type": "string"
           },
@@ -1413,6 +1769,44 @@
           "new_password"
         ],
         "title": "ResetPasswordRequest",
+        "type": "object"
+      },
+      "ResetPasswordResponse": {
+        "description": "Response payload for a successful password reset.",
+        "properties": {
+          "sessionsRevoked": {
+            "title": "Sessionsrevoked",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sessionsRevoked"
+        ],
+        "title": "ResetPasswordResponse",
+        "type": "object"
+      },
+      "ResetTokenVerificationResponse": {
+        "description": "Policy information for a valid reset link; does not consume the token.",
+        "properties": {
+          "minimumLength": {
+            "default": 8,
+            "title": "Minimumlength",
+            "type": "integer"
+          },
+          "requiredRules": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Requiredrules",
+            "type": "array"
+          },
+          "valid": {
+            "default": true,
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "title": "ResetTokenVerificationResponse",
         "type": "object"
       },
       "RestoreAuthorizationRead": {
@@ -1460,6 +1854,78 @@
           "requested_at"
         ],
         "title": "RestoreAuthorizationRead",
+        "type": "object"
+      },
+      "SectionItem": {
+        "description": "Summary of a course section assigned to faculty.",
+        "properties": {
+          "capacity": {
+            "title": "Capacity",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "section_name": {
+            "title": "Section Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "section_name",
+          "capacity",
+          "status"
+        ],
+        "title": "SectionItem",
+        "type": "object"
+      },
+      "SectionListResponse": {
+        "description": "HTTP 200 response listing sections.",
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SectionItem"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "status": {
+            "default": "success",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SectionListResponse",
+        "type": "object"
+      },
+      "SectionRosterResponse": {
+        "description": "HTTP 200 response with section roster details.",
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "status": {
+            "default": "success",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SectionRosterResponse",
         "type": "object"
       },
       "SuperadminSessionRead": {
@@ -1890,6 +2356,76 @@
         ],
         "title": "VerifyEmailRequest",
         "type": "object"
+      },
+      "VerifyResetTokenRequest": {
+        "additionalProperties": false,
+        "description": "Non-consuming check on the reset endpoint before displaying the form.",
+        "properties": {
+          "token": {
+            "maxLength": 64,
+            "title": "Token",
+            "type": "string"
+          },
+          "verify_only": {
+            "const": true,
+            "title": "Verify Only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "token",
+          "verify_only"
+        ],
+        "title": "VerifyResetTokenRequest",
+        "type": "object"
+      },
+      "WebAuthnEnrollmentConfirmRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "challenge_token": {
+            "title": "Challenge Token",
+            "type": "string"
+          },
+          "credential": {
+            "additionalProperties": true,
+            "title": "Credential",
+            "type": "object"
+          }
+        },
+        "required": [
+          "challenge_token",
+          "credential"
+        ],
+        "title": "WebAuthnEnrollmentConfirmRequest",
+        "type": "object"
+      },
+      "WebAuthnEnrollmentRead": {
+        "properties": {
+          "public_key": {
+            "additionalProperties": true,
+            "title": "Public Key",
+            "type": "object"
+          }
+        },
+        "required": [
+          "public_key"
+        ],
+        "title": "WebAuthnEnrollmentRead",
+        "type": "object"
+      },
+      "WebAuthnEnrollmentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "challenge_token": {
+            "title": "Challenge Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_token"
+        ],
+        "title": "WebAuthnEnrollmentRequest",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -2252,6 +2788,90 @@
         ]
       }
     },
+    "/api/v1/auth/admin/mfa/webauthn/confirm": {
+      "post": {
+        "description": "Verify registration and issue the first Admin session.",
+        "operationId": "confirm_webauthn_api_v1_auth_admin_mfa_webauthn_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebAuthnEnrollmentConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Webauthn",
+        "tags": [
+          "admin-auth"
+        ]
+      }
+    },
+    "/api/v1/auth/admin/mfa/webauthn/enroll": {
+      "post": {
+        "description": "Start first-time hardware-key registration after the password step.",
+        "operationId": "enroll_webauthn_api_v1_auth_admin_mfa_webauthn_enroll_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebAuthnEnrollmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebAuthnEnrollmentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enroll Webauthn",
+        "tags": [
+          "admin-auth"
+        ]
+      }
+    },
     "/api/v1/auth/admin/refresh": {
       "post": {
         "description": "Rotate an Admin session and renew its hardened cookie.",
@@ -2343,7 +2963,7 @@
     },
     "/api/v1/auth/forgot-password": {
       "post": {
-        "description": "Request a password-reset email.\n\nAlways 204. Returning 404 for an unknown address would make this endpoint a\nmembership oracle for any email list.\n\nRate limited as strictly as /resend-verification, and for the same reason:\nit mails an address chosen by an unauthenticated caller.",
+        "description": "Request a password-reset email.\n\nAlways 202 Accepted. Returning 404 for an unknown address would make this endpoint a\nmembership oracle for any email list.\n\nA shared per-address allowance prevents inbox flooding; an outer IP limit\nalso guards abusive request volume. Earlier usable links remain valid.",
         "operationId": "forgot_password_api_v1_auth_forgot_password_post",
         "requestBody": {
           "content": {
@@ -2356,7 +2976,14 @@
           "required": true
         },
         "responses": {
-          "204": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForgotPasswordResponse"
+                }
+              }
+            },
             "description": "Successful Response"
           },
           "422": {
@@ -2574,20 +3201,43 @@
     },
     "/api/v1/auth/reset-password": {
       "post": {
-        "description": "Redeem a reset token and set a new password.\n\nEvery refresh token for the account is revoked, so any session an attacker\nholds dies with the reset. The client must log in again with the new\npassword.",
+        "description": "Redeem a reset token and set a new password.\n\nEvery existing access and refresh session is invalidated, lockout state\nis cleared, and the client must sign in again with the new password.",
         "operationId": "reset_password_api_v1_auth_reset_password_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ResetPasswordRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ResetPasswordRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/VerifyResetTokenRequest"
+                  }
+                ],
+                "title": "Data"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "204": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ResetPasswordResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ResetTokenVerificationResponse"
+                    }
+                  ],
+                  "title": "Response Reset Password Api V1 Auth Reset Password Post"
+                }
+              }
+            },
             "description": "Successful Response"
           },
           "422": {
@@ -2905,6 +3555,516 @@
         "summary": "Whoami",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/faculty-auth/audit": {
+      "delete": {
+        "description": "Refuse deletion of audit trail records (AC-002.8 / BR-AUTH-006).",
+        "operationId": "faculty_delete_audit_all",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Faculty Delete Audit All",
+        "tags": [
+          "faculty-auth"
+        ]
+      },
+      "get": {
+        "description": "Read the authentication audit ledger (AC-002.8).",
+        "operationId": "faculty_audit_ledger",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuthAuditLogRead"
+                  },
+                  "title": "Response Faculty Audit Ledger",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Faculty Audit Ledger",
+        "tags": [
+          "faculty-auth"
+        ]
+      }
+    },
+    "/api/v1/faculty-auth/audit/{log_id}": {
+      "delete": {
+        "description": "Refuse deletion of a single audit trail record (AC-002.8 / BR-AUTH-006).",
+        "operationId": "faculty_delete_audit_item",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "log_id",
+            "required": true,
+            "schema": {
+              "title": "Log Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Faculty Delete Audit Item",
+        "tags": [
+          "faculty-auth"
+        ]
+      }
+    },
+    "/api/v1/faculty-auth/faculty/sections": {
+      "get": {
+        "description": "List sections assigned to faculty member (AC-002.6).\n\nGuarded: Returns 403 AUTH_MFA_ENROLLMENT_REQUIRED if MFA is not enrolled.",
+        "operationId": "faculty_sections",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectionListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Faculty Sections",
+        "tags": [
+          "faculty-auth"
+        ]
+      }
+    },
+    "/api/v1/faculty-auth/faculty/sections/{section_id}/roster": {
+      "get": {
+        "description": "Retrieve section roster with ownership protection (alias).",
+        "operationId": "faculty_section_roster_alias",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "section_id",
+            "required": true,
+            "schema": {
+              "title": "Section Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectionRosterResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Faculty Section Roster Alias",
+        "tags": [
+          "faculty-auth"
+        ]
+      }
+    },
+    "/api/v1/faculty-auth/login": {
+      "post": {
+        "description": "Authenticate faculty member (AC-002.1).\n\nValidates employee ID and password.\nPassword alone must not yield a session for a privileged role:\nReturns 200 OK with mfa_required=True, a short-lived challenge token,\nand no access token.",
+        "operationId": "faculty_login",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/FacultyLoginResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TokenPair"
+                    }
+                  ],
+                  "title": "Response Faculty Login"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Faculty Login",
+        "tags": [
+          "faculty-auth"
+        ]
+      }
+    },
+    "/api/v1/faculty-auth/logout": {
+      "post": {
+        "description": "Revoke a refresh token.",
+        "operationId": "faculty_logout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Faculty Logout",
+        "tags": [
+          "faculty-auth"
+        ]
+      }
+    },
+    "/api/v1/faculty-auth/me": {
+      "get": {
+        "description": "Return the authenticated faculty principal.",
+        "operationId": "faculty_me",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Current Faculty Session",
+        "tags": [
+          "faculty-auth"
+        ]
+      }
+    },
+    "/api/v1/faculty-auth/mfa/enroll": {
+      "get": {
+        "description": "Generate TOTP seed and provisioning URI for Google Authenticator (AC-002.6).",
+        "operationId": "faculty_mfa_enroll_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacultyMfaEnrollResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Faculty Mfa Enroll",
+        "tags": [
+          "faculty-auth"
+        ]
+      },
+      "post": {
+        "description": "Generate TOTP seed and provisioning URI for Google Authenticator (POST alias).",
+        "operationId": "faculty_mfa_enroll_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacultyMfaEnrollResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Faculty Mfa Enroll Post",
+        "tags": [
+          "faculty-auth"
+        ]
+      }
+    },
+    "/api/v1/faculty-auth/mfa/enroll/confirm": {
+      "post": {
+        "description": "Confirm TOTP code, activate MFA enrollment, and issue recovery codes.",
+        "operationId": "faculty_mfa_confirm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FacultyMfaConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacultyMfaConfirmResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Faculty Mfa Confirm",
+        "tags": [
+          "faculty-auth"
+        ]
+      }
+    },
+    "/api/v1/faculty-auth/mfa/verify": {
+      "post": {
+        "description": "Verify MFA code and issue a faculty session (AC-002.2, AC-002.3, AC-002.4).",
+        "operationId": "faculty_mfa_verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FacultyMfaVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacultyMfaVerifyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Faculty Mfa Verify",
+        "tags": [
+          "faculty-auth"
+        ]
+      }
+    },
+    "/api/v1/faculty-auth/refresh": {
+      "post": {
+        "description": "Exchange a refresh token for a new pair.",
+        "operationId": "faculty_refresh",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh",
+        "tags": [
+          "faculty-auth"
+        ]
+      }
+    },
+    "/api/v1/faculty-auth/sections": {
+      "get": {
+        "description": "List sections assigned to faculty member (alias).",
+        "operationId": "faculty_sections_alias",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectionListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Faculty Sections Alias",
+        "tags": [
+          "faculty-auth"
+        ]
+      }
+    },
+    "/api/v1/faculty-auth/sections/{section_id}/roster": {
+      "get": {
+        "description": "Retrieve section roster with ownership protection (AC-002.7).\n\nGuarded: Answers 404 RESOURCE_NOT_FOUND (not 403) for non-owners.",
+        "operationId": "faculty_section_roster",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "section_id",
+            "required": true,
+            "schema": {
+              "title": "Section Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectionRosterResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Faculty Section Roster",
+        "tags": [
+          "faculty-auth"
         ]
       }
     },

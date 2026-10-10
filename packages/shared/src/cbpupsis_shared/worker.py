@@ -215,10 +215,14 @@ async def run() -> None:
     from cbpupsis_shared.domains.audit.subscribers import (  # noqa: PLC0415
         register_audit_subscribers,
     )
+    from cbpupsis_shared.domains.auth.subscribers import (  # noqa: PLC0415
+        register_auth_subscribers,
+    )
     from cbpupsis_shared.domains.notifications.subscribers import (  # noqa: PLC0415
         register_notification_subscribers,
     )
 
+    register_auth_subscribers()
     register_audit_subscribers()
     register_notification_subscribers()
 

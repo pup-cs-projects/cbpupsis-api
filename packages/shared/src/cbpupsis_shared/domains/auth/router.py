@@ -4,10 +4,9 @@ email-verification and password-reset flows.
 Thin by design — each endpoint parses the request, delegates to the service, and
 shapes the response. All flow logic lives in ``cbpupsis_shared.domains.auth.service``.
 
-Several endpoints here answer 204 unconditionally
-(``/forgot-password``, ``/resend-verification``). That is a security property,
-not laziness: a status that varied with whether the address exists would let
-anyone test an email list against the user base.
+Reset requests answer 202 identically for registered and unknown addresses;
+resend-verification answers 204 identically. Account existence never changes
+their successful response.
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_core.middleware import rate_limit
+from cbpupsis_core.middleware import client_ip, rate_limit
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.auth import service as auth_service
 from cbpupsis_shared.domains.auth.dependencies import CurrentUser, get_current_user
@@ -23,13 +22,17 @@ from cbpupsis_shared.domains.auth.schemas import (
     ChangePasswordRequest,
     CurrentUserRead,
     ForgotPasswordRequest,
+    ForgotPasswordResponse,
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
     ResendVerificationRequest,
     ResetPasswordRequest,
+    ResetPasswordResponse,
+    ResetTokenVerificationResponse,
     TokenPair,
     VerifyEmailRequest,
+    VerifyResetTokenRequest,
 )
 from cbpupsis_shared.domains.users.schemas import UserRead
 
@@ -132,35 +135,53 @@ async def resend_verification(
     await auth_service.resend_verification(db, data.email)
 
 
-@router.post("/forgot-password", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/forgot-password",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ForgotPasswordResponse,
+)
 @rate_limit("forgot_password")
 async def forgot_password(
     request: Request,
     data: ForgotPasswordRequest,
     db: AsyncSession = Depends(get_db),
-) -> None:
+) -> ForgotPasswordResponse:
     """Request a password-reset email.
 
-    Always 204. Returning 404 for an unknown address would make this endpoint a
+    Always 202 Accepted. Returning 404 for an unknown address would make this endpoint a
     membership oracle for any email list.
 
-    Rate limited as strictly as /resend-verification, and for the same reason:
-    it mails an address chosen by an unauthenticated caller.
+    A shared per-address allowance prevents inbox flooding; an outer IP limit
+    also guards abusive request volume. Earlier usable links remain valid.
     """
-    await auth_service.forgot_password(db, data.email)
+    ip_address = client_ip(request)
+    await auth_service.forgot_password(db, data.email, ip_address=ip_address)
+    return ForgotPasswordResponse()
 
 
-@router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/reset-password",
+    status_code=status.HTTP_200_OK,
+    response_model=ResetPasswordResponse | ResetTokenVerificationResponse,
+)
 async def reset_password(
-    data: ResetPasswordRequest, db: AsyncSession = Depends(get_db)
-) -> None:
+    request: Request,
+    data: ResetPasswordRequest | VerifyResetTokenRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResetPasswordResponse | ResetTokenVerificationResponse:
     """Redeem a reset token and set a new password.
 
-    Every refresh token for the account is revoked, so any session an attacker
-    holds dies with the reset. The client must log in again with the new
-    password.
+    Every existing access and refresh session is invalidated, lockout state
+    is cleared, and the client must sign in again with the new password.
     """
-    await auth_service.reset_password(db, data.token, data.new_password)
+    if isinstance(data, VerifyResetTokenRequest):
+        await auth_service.verify_reset_token(db, data.token)
+        return ResetTokenVerificationResponse()
+    ip_address = client_ip(request)
+    sessions_revoked = await auth_service.reset_password(
+        db, data.token, data.new_password, ip_address=ip_address
+    )
+    return ResetPasswordResponse(sessions_revoked=sessions_revoked)
 
 
 @router.post("/change-password", response_model=TokenPair)

@@ -25,9 +25,10 @@ from cbpupsis_core.config import settings
 from cbpupsis_core.events import event_bus
 from cbpupsis_core.exceptions import register_exception_handlers
 from cbpupsis_core.logging import configure_logging
-from cbpupsis_core.middleware import limiter, register_middleware
-from cbpupsis_database.session import engine
+from cbpupsis_core.middleware import client_ip, limiter, register_middleware
+from cbpupsis_database.session import AsyncSessionLocal, engine
 from cbpupsis_shared.domains.audit import client as audit_client
+from cbpupsis_shared.domains.auth import service as auth_service
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,7 @@ def create_app(
     # can find it at request time. Assigning it is not optional — without it
     # every limited endpoint raises at runtime rather than at startup.
     app.state.limiter = limiter
+    app.state.rate_limit_observer = _audit_rate_limit_refusal
 
     register_middleware(app)
 
@@ -245,3 +247,10 @@ async def ready(response: Response) -> dict[str, str]:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "unavailable", "env": settings.environment}
     return {"status": "ready", "env": settings.environment}
+
+
+async def _audit_rate_limit_refusal(request: Request) -> None:
+    """A reset rejected before its handler still resolves with one audit row."""
+    if request.url.path.endswith("/auth/forgot-password"):
+        async with AsyncSessionLocal() as db:
+            await auth_service.record_request_refusal(db, client_ip(request))

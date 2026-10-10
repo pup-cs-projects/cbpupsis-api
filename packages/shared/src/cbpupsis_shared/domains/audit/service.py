@@ -177,3 +177,31 @@ async def list_entries(
         target_id=target_id,
     )
     return Page(items=rows, total=total, limit=limit, offset=offset)
+
+
+def stage_record(
+    db: AsyncSession,
+    *,
+    action: str,
+    actor_id: uuid.UUID | None,
+    ip_address: str | None,
+    outcome: str,
+    sessions_revoked: int | None = None,
+) -> AuditEntry:
+    """Append a credential-free auth row in the caller's business transaction."""
+    payload = {
+        "actor": str(actor_id) if actor_id else "anonymous",
+        "ip_address": ip_address,
+        "outcome": outcome,
+    }
+    if sessions_revoked is not None:
+        payload["sessions_revoked"] = sessions_revoked
+    return repository.add_entry(
+        db,
+        action=action,
+        occurred_at=datetime.now(UTC),
+        actor_id=actor_id,
+        target_type="user" if actor_id else None,
+        target_id=str(actor_id) if actor_id else None,
+        payload=payload,
+    )
