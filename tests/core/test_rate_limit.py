@@ -41,6 +41,8 @@ def limited():
     of execution order: without it every test in this file would share the
     counters accumulated by the ones before it.
     """
+    previous_settings_enabled = settings.rate_limit_enabled
+    settings.rate_limit_enabled = True
     previous_enabled = limiter.enabled
     previous_storage = limiter._storage
     previous_limiter = limiter._limiter
@@ -54,6 +56,7 @@ def limited():
 
     yield limiter
 
+    settings.rate_limit_enabled = previous_settings_enabled
     limiter.enabled = previous_enabled
     limiter._storage = previous_storage
     limiter._limiter = previous_limiter
@@ -157,13 +160,15 @@ class TestLimitsAreEnforced:
     async def test_repeated_forgot_password_is_eventually_refused(
         self, client: AsyncClient, limited, sent_emails: list[dict[str, str]]
     ) -> None:
-        limit = _amount("rate_limit_forgot_password")
+        limit = min(
+            _amount("rate_limit_forgot_password"), settings.password_reset_request_limit
+        )
         payload = {"email": "someone@example.com"}
 
         for _ in range(limit):
             assert (
                 await client.post("/api/v1/auth/forgot-password", json=payload)
-            ).status_code == 204
+            ).status_code == 202
 
         refused = await client.post("/api/v1/auth/forgot-password", json=payload)
         assert refused.status_code == 429
@@ -239,7 +244,7 @@ class TestTheRefusalResponse:
 
         assert set(body) == {"detail", "request_id", "code"}
         assert isinstance(body["detail"], str)
-        assert body["code"] == "rate_limited"
+        assert body["code"] == "RATE_LIMIT_EXCEEDED"
         assert "error" not in body
         # The correlation id ties the refusal to the log line, as for any other
         # error, and matches the header.
@@ -301,7 +306,7 @@ class TestDisabledByDefault:
             await client.post(
                 "/api/v1/auth/forgot-password", json={"email": "normal@example.com"}
             )
-        ).status_code == 204
+        ).status_code == 202
 
 
 # --------------------------------------------------------------------------- #
@@ -325,7 +330,11 @@ def _amount(setting_name: str) -> int:
 async def _exhaust_forgot_password(client: AsyncClient):
     """Spend the forgot-password allowance and return the refused response."""
     payload = {"email": "someone@example.com"}
-    for _ in range(_amount("rate_limit_forgot_password")):
+    for _ in range(
+        min(
+            _amount("rate_limit_forgot_password"), settings.password_reset_request_limit
+        )
+    ):
         await client.post("/api/v1/auth/forgot-password", json=payload)
     refused = await client.post("/api/v1/auth/forgot-password", json=payload)
     assert refused.status_code == 429, refused.text

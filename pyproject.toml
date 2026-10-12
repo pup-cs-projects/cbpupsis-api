@@ -111,6 +111,7 @@ env = [
     # a test would pass or fail depending on how many requests ran before it.
     # The tests that cover rate limiting turn it back on around themselves.
     "RATE_LIMIT_ENABLED=false",
+    "PASSWORD_RESET_TTL_MINUTES=1440",
 ]
 
 [tool.pyrefly]

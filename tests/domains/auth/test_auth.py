@@ -26,7 +26,8 @@ class TestPasswordHashing:
     def test_hash_is_not_the_password(self) -> None:
         hashed = hash_password("correct-horse-battery-staple")
         assert hashed != "correct-horse-battery-staple"
-        assert hashed.startswith("$argon2")
+        assert hashed.startswith("$2b$")
+        assert int(hashed.split("$")[2]) >= 12
 
     def test_verify_accepts_correct_and_rejects_wrong(self) -> None:
         hashed = hash_password("correct-horse-battery-staple")

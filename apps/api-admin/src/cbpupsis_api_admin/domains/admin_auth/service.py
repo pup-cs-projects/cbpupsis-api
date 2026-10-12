@@ -70,7 +70,7 @@ async def login_admin(
     db: AsyncSession, *, email: str, password: str
 ) -> AdminLoginChallenge:
     """Verify an Admin password and return only a non-privileged challenge."""
-    user = await users_service.get_by_email(db, email.lower())
+    user = await users_service.get_by_email_for_update(db, email.lower())
     if user is None:
         raise InvalidCredentialsError
 
@@ -241,6 +241,7 @@ async def confirm_webauthn_enrollment(
         )
         if duplicate is None or duplicate.user_id == user_id:
             raise
+        await users_service.get_active_user_for_update(db, user_id)
         await repository.acquire_authentication_lock(db, user_id)
         await _record_failure(db, user_id, AuthFailureStep.mfa)
         raise InvalidMfaError from exc
@@ -517,6 +518,10 @@ def _admin_session_claims(
 
 
 async def _require_not_locked(db: AsyncSession, user_id: uuid.UUID) -> None:
+    # Share the account lock with credential resets before taking the MFA lock.
+    # A reset cannot clear challenges/counters midway through a sign-in.
+    if await users_service.get_active_user_for_update(db, user_id) is None:
+        raise InvalidCredentialsError
     await repository.acquire_authentication_lock(db, user_id)
     lockout = await repository.get_authentication_lockout(db, user_id)
     if lockout is None:

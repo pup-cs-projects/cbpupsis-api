@@ -17,7 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.auth import service
 from cbpupsis_shared.domains.auth.schemas import TokenPair
-from cbpupsis_shared.domains.auth.security import decode_token, verify_password
+from cbpupsis_shared.domains.auth.security import (
+    decode_token,
+    require_session_version,
+    verify_password,
+)
 
 
 async def revoke_all_sessions(db: AsyncSession, user_id: uuid.UUID) -> None:
@@ -63,3 +67,8 @@ async def issue_token_pair(db: AsyncSession, user_id: uuid.UUID) -> TokenPair:
 async def revoke_refresh_token(db: AsyncSession, refresh_token: str) -> None:
     """Revoke one refresh token without exposing the auth token ledger."""
     await service.logout(db, refresh_token)
+
+
+def validate_session_version(claims: dict[str, object], current_version: int) -> None:
+    """Apply account-wide access revocation to every role's session guard."""
+    require_session_version(claims, current_version)

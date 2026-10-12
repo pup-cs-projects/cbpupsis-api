@@ -253,3 +253,47 @@ class IdempotencyKey(UUIDMixin, Base):
         ),
         Index("ix_idempotency_keys_expires_at", "expires_at", unique=False),
     )
+
+
+class AuthFailureStep(enum.StrEnum):
+    """Both halves of Admin sign-in share one failure window."""
+
+    credentials = "credentials"
+    mfa = "mfa"
+
+
+class AuthenticationFailure(UUIDMixin, Base):
+    """One failed password or MFA attempt in the rolling lockout window."""
+
+    __tablename__ = "authentication_failures"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    step: Mapped[AuthFailureStep] = mapped_column(
+        Enum(
+            AuthFailureStep,
+            native_enum=False,
+            length=32,
+            create_constraint=True,
+            name="ck_authentication_failures_step",
+        )
+    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class AuthenticationLockout(Base):
+    """The current temporary Admin account lock, if any."""
+
+    __tablename__ = "authentication_lockouts"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    locked_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class PasswordResetThrottle(Base):
+    """Address allowance persisted across API processes and Lambda invocations."""
+
+    __tablename__ = "password_reset_throttles"
+
+    email_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    requests: Mapped[int] = mapped_column(Integer)

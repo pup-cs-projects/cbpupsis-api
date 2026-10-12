@@ -25,10 +25,10 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_database.models.users import User
+from cbpupsis_database.models.users import AdminProfile, User
 
 
 def _live() -> Select[tuple[User]]:
@@ -226,3 +226,48 @@ async def list_users(
         .offset(offset)
     )
     return list(result.scalars().all()), total or 0
+
+
+async def get_user_for_update(db: AsyncSession, user_id: uuid.UUID) -> User | None:
+    """Serialize password changes and session issuance on the account row.
+
+    SQL::
+
+        SELECT * FROM users WHERE id = :user_id AND deleted_at IS NULL FOR UPDATE
+    """
+    return await db.scalar(
+        _live()
+        .where(User.id == user_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
+async def get_user_by_email_for_update(db: AsyncSession, email: str) -> User | None:
+    """Authenticate against the credential protected by the account lock.
+
+    SQL::
+
+        SELECT * FROM users WHERE email = :email AND deleted_at IS NULL FOR UPDATE
+    """
+    return await db.scalar(
+        _live()
+        .where(User.email == email)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
+async def clear_pending_mfa_challenge(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """A password reset also invalidates an unfinished old-password challenge.
+
+    SQL::
+
+        UPDATE admin_profiles SET active_mfa_challenge_jti = NULL
+        WHERE user_id = :user_id
+    """
+    await db.execute(
+        update(AdminProfile)
+        .where(AdminProfile.user_id == user_id)
+        .values(active_mfa_challenge_jti=None)
+    )

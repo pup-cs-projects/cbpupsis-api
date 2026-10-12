@@ -25,6 +25,7 @@ from cbpupsis_shared.domains.auth.exceptions import (
     IncorrectCurrentPasswordError,
     InvalidAuthTokenError,
     RefreshTokenReusedError,
+    ResetTokenUsedError,
 )
 from cbpupsis_shared.domains.users import service as users_service
 
@@ -120,7 +121,7 @@ class TestRefreshFamilyRevocation:
 
 class TestResetTokenConsumption:
     async def test_reset_sets_the_new_password_and_ends_sessions(
-        self, db: AsyncSession, sent_emails: list[dict[str, str]]
+        self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox
     ) -> None:
         from tests.conftest import token_from_email
 
@@ -128,11 +129,12 @@ class TestResetTokenConsumption:
         pair = await auth_service.login(db, email=user.email, password=PASSWORD)
 
         await auth_service.forgot_password(db, user.email)
+        await drain_outbox()
         token = token_from_email(sent_emails[-1])
-        await auth_service.reset_password(db, token, "a-brand-new-password")
+        await auth_service.reset_password(db, token, "Brand-new-password-1!")
 
         # The new credential works.
-        await auth_service.login(db, email=user.email, password="a-brand-new-password")
+        await auth_service.login(db, email=user.email, password="Brand-new-password-1!")
 
         # The old one does not, and neither does the session that predates it —
         # the point of the reset when recovering from a compromise.
@@ -142,37 +144,39 @@ class TestResetTokenConsumption:
             await auth_service.refresh(db, pair.refresh_token)
 
     async def test_a_reset_token_cannot_be_used_twice(
-        self, db: AsyncSession, sent_emails: list[dict[str, str]]
+        self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox
     ) -> None:
         from tests.conftest import token_from_email
 
         user = await _verified_user(db)
         await auth_service.forgot_password(db, user.email)
+        await drain_outbox()
         token = token_from_email(sent_emails[-1])
-        await auth_service.reset_password(db, token, "a-brand-new-password")
+        await auth_service.reset_password(db, token, "Brand-new-password-1!")
 
-        with pytest.raises(UnauthorizedError):
-            await auth_service.reset_password(db, token, "another-password")
+        with pytest.raises(ResetTokenUsedError):
+            await auth_service.reset_password(db, token, "Another-password-2!")
 
     async def test_a_garbage_reset_token_is_refused(self, db: AsyncSession) -> None:
         with pytest.raises(UnauthorizedError):
             await auth_service.reset_password(db, "not-a-real-token", "whatever-pass")
 
     async def test_forgot_password_is_silent_for_an_unknown_address(
-        self, db: AsyncSession, sent_emails: list[dict[str, str]]
+        self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox
     ) -> None:
         """Enumeration safety: no error, and no mail to a stranger."""
         await auth_service.forgot_password(db, "nobody@example.com")
         assert sent_emails == []
 
     async def test_forgot_password_is_silent_for_an_inactive_account(
-        self, db: AsyncSession, sent_emails: list[dict[str, str]]
+        self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox
     ) -> None:
         user = await _verified_user(db)
         await users_service.deactivate(db, user.id)
         sent_emails.clear()
 
         await auth_service.forgot_password(db, user.email)
+        await drain_outbox()
         assert sent_emails == []
 
 
@@ -187,7 +191,7 @@ class TestChangePassword:
             )
 
     async def test_changing_ends_every_other_session(
-        self, db: AsyncSession, sent_emails: list[dict[str, str]]
+        self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox
     ) -> None:
         user = await _verified_user(db)
         old_session = await auth_service.login(db, email=user.email, password=PASSWORD)
@@ -196,7 +200,7 @@ class TestChangePassword:
             db,
             user.id,
             current_password=PASSWORD,
-            new_password="a-brand-new-password",
+            new_password="Brand-new-password-1!",
         )
 
         # The fresh pair first, deliberately: presenting the revoked one trips
@@ -224,7 +228,7 @@ class TestChangePassword:
             db,
             user.id,
             current_password=PASSWORD,
-            new_password="a-brand-new-password",
+            new_password="Brand-new-password-1!",
         )
         await drain_outbox()
 
@@ -248,7 +252,7 @@ class TestChangePassword:
             db,
             user.id,
             current_password=PASSWORD,
-            new_password="a-brand-new-password",
+            new_password="Brand-new-password-1!",
         )
         assert sent_emails == []  # the "crash" happens here
 
@@ -301,13 +305,13 @@ class TestLogoutIsIdempotent:
 
 class TestVerificationResend:
     async def test_silent_for_an_unknown_address(
-        self, db: AsyncSession, sent_emails: list[dict[str, str]]
+        self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox
     ) -> None:
         await auth_service.resend_verification(db, "nobody@example.com")
         assert sent_emails == []
 
     async def test_silent_for_an_already_verified_account(
-        self, db: AsyncSession, sent_emails: list[dict[str, str]]
+        self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox
     ) -> None:
         """Re-sending to a verified address is not meaningful, and saying so
         would confirm the address is registered."""
@@ -318,7 +322,7 @@ class TestVerificationResend:
         assert sent_emails == []
 
     async def test_sends_for_an_unverified_account(
-        self, db: AsyncSession, sent_emails: list[dict[str, str]]
+        self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox
     ) -> None:
         user = await auth_service.register(
             db, email="pending@example.com", password=PASSWORD
@@ -329,7 +333,7 @@ class TestVerificationResend:
         assert len(sent_emails) == 1
 
     async def test_verifying_an_unknown_user_is_refused(
-        self, db: AsyncSession, sent_emails: list[dict[str, str]]
+        self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox
     ) -> None:
         """A token whose user has since been deleted fails like any other bad
         token, so deletion cannot be detected by watching this response."""
@@ -379,7 +383,7 @@ class TestDefensiveBranches:
             await auth_service.login(db, email=user.email, password=PASSWORD)
 
     async def test_reset_is_refused_when_the_account_went_away(
-        self, db: AsyncSession, sent_emails: list[dict[str, str]]
+        self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox
     ) -> None:
         """The token was valid when mailed and the account was deleted before it
         was redeemed. Refused like any bad token, so the response cannot be used
@@ -389,9 +393,10 @@ class TestDefensiveBranches:
 
         user = await _verified_user(db)
         await auth_service.forgot_password(db, user.email)
+        await drain_outbox()
         token = token_from_email(sent_emails[-1])
 
         await users_service.soft_delete(db, user.id)
 
         with pytest.raises(UnauthorizedError):
-            await auth_service.reset_password(db, token, "a-brand-new-password")
+            await auth_service.reset_password(db, token, "Brand-new-password-1!")
