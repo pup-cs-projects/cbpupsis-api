@@ -103,3 +103,24 @@ class AdminProfileConfigureRequest(BaseModel):
 
 
 __all__ = ["RefreshRequest"]
+
+
+class SuperadminLoginChallenge(BaseModel):
+    mfa_required: Literal[True] = True
+    challenge_token: str
+    enrollment_required: bool
+    methods: list[Literal["totp"]]
+
+
+class SuperadminTokenPair(TokenPair):
+    role: Literal["superadmin"] = "superadmin"
+
+
+class SuperadminSessionRead(BaseModel):
+    id: uuid.UUID
+    email: EmailStr
+    role: Literal["superadmin"] = "superadmin"
+
+
+class SuperadminEnrollmentRead(BaseModel):
+    provisioning_uri: str

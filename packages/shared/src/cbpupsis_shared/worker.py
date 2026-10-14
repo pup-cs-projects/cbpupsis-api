@@ -41,6 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cbpupsis_core.config import settings
 from cbpupsis_core.events import Event
 from cbpupsis_core.logging import configure_logging
+from cbpupsis_database.runtime import check_database, validate_runtime_engine
 from cbpupsis_database.session import AsyncSessionLocal, engine
 from cbpupsis_shared.outbox import (
     OutboxMessage,
@@ -210,6 +211,15 @@ async def _wait_for_work(listener: WakeupListener, shutdown: asyncio.Event) -> N
 
 async def run() -> None:
     """The worker loop. Runs until SIGTERM, then finishes cleanly."""
+    await validate_runtime_engine(engine, settings.audit_runtime_role)
+    if settings.outbox_listener_database_url:
+        failures = await check_database(
+            settings.outbox_listener_database_url, settings.audit_runtime_role
+        )
+        if failures:
+            raise RuntimeError(
+                "Outbox listener must use a restricted runtime connection"
+            )
     # Imported here rather than at module scope: subscribers.py imports this
     # module to register handlers, so a top-level import would be circular.
     from cbpupsis_shared.domains.audit.subscribers import (  # noqa: PLC0415

@@ -181,7 +181,7 @@ class TestManagementEndpoints:
     async def test_management_allowed_with_permission(
         self,
         client: AsyncClient,
-        auth_headers: dict[str, str],
+        superadmin_headers: dict[str, str],
         registered_user: dict[str, str],
         grant,
     ) -> None:
@@ -189,7 +189,7 @@ class TestManagementEndpoints:
         response = await client.post(
             "/api/v1/iam/groups",
             json={"name": "Legitimate"},
-            headers=auth_headers,
+            headers=superadmin_headers,
         )
         assert response.status_code == 201
         assert response.json()["name"] == "Legitimate"
@@ -263,12 +263,12 @@ class TestIAMReadEndpoints:
     @pytest.fixture
     async def admin_headers(
         self,
-        auth_headers: dict[str, str],
+        superadmin_headers: dict[str, str],
         registered_user: dict[str, str],
         grant,
     ) -> dict[str, str]:
         await grant(uuid.UUID(registered_user["id"]), "ManageIAM")
-        return auth_headers
+        return superadmin_headers
 
     async def test_lists_permissions_in_the_page_envelope(
         self, client: AsyncClient, db: AsyncSession, admin_headers: dict[str, str]
@@ -420,7 +420,7 @@ class TestDetachingRevokesAccess:
         self,
         client: AsyncClient,
         db: AsyncSession,
-        auth_headers: dict[str, str],
+        superadmin_headers: dict[str, str],
         registered_user: dict[str, str],
         grant,
         make_user,
@@ -438,7 +438,7 @@ class TestDetachingRevokesAccess:
 
         response = await client.delete(
             f"/api/v1/iam/groups/{group.id}/policies/{policy.id}",
-            headers=auth_headers,
+            headers=superadmin_headers,
         )
         assert response.status_code == 204, response.text
         assert await iam_service.get_effective_permissions(db, subject) == set()
@@ -447,7 +447,7 @@ class TestDetachingRevokesAccess:
         self,
         client: AsyncClient,
         db: AsyncSession,
-        auth_headers: dict[str, str],
+        superadmin_headers: dict[str, str],
         registered_user: dict[str, str],
         grant,
         make_user,
@@ -464,7 +464,7 @@ class TestDetachingRevokesAccess:
         await iam_service.add_user_to_group(db, subject, group.id)
 
         response = await client.delete(
-            f"/api/v1/iam/groups/{group.id}/users/{subject}", headers=auth_headers
+            f"/api/v1/iam/groups/{group.id}/users/{subject}", headers=superadmin_headers
         )
         assert response.status_code == 204, response.text
         assert await iam_service.get_effective_permissions(db, subject) == set()

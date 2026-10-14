@@ -254,3 +254,49 @@ async def auth_headers(
     )
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+@pytest.fixture
+async def superadmin_tokens(client, db, registered_user):
+    """Exercise the real password/enrollment flow for management endpoint tests."""
+    from datetime import UTC, datetime
+    from urllib.parse import parse_qs, urlsplit
+
+    from sqlalchemy import select
+
+    from cbpupsis_api_admin.domains.admin_auth.security import totp_at
+    from cbpupsis_database.models.iam import Group
+    from cbpupsis_shared.domains.iam.constants import SUPERADMIN_GROUP
+
+    group = await db.scalar(select(Group).where(Group.name == SUPERADMIN_GROUP))
+    if group is None:
+        group = await iam_service.create_group(db, name=SUPERADMIN_GROUP)
+    await iam_service.add_user_to_group(db, uuid.UUID(registered_user["id"]), group.id)
+    response = await client.post(
+        "/api/v1/auth/superadmin/login",
+        json={
+            "email": registered_user["email"],
+            "password": registered_user["password"],
+        },
+    )
+    assert response.status_code == 200, response.text
+    challenge = response.json()["challenge_token"]
+    response = await client.post(
+        "/api/v1/auth/superadmin/mfa/totp/enroll", json={"challenge_token": challenge}
+    )
+    assert response.status_code == 200, response.text
+    secret = parse_qs(urlsplit(response.json()["provisioning_uri"]).query)["secret"][0]
+    response = await client.post(
+        "/api/v1/auth/superadmin/mfa/totp/confirm",
+        json={
+            "challenge_token": challenge,
+            "code": totp_at(secret, int(datetime.now(UTC).timestamp()) // 30),
+        },
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+@pytest.fixture
+def superadmin_headers(superadmin_tokens):
+    return {"Authorization": f"Bearer {superadmin_tokens['access_token']}"}

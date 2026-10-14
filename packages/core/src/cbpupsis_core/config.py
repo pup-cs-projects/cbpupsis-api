@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     #: asyncpg actually uses — *are* supported by the pooler, which is why the
     #: app's own traffic is fine on the pooled URL.)
     direct_database_url: str | None = None
+    #: Restricted API/worker login; never the migration owner.
+    audit_runtime_role: str | None = None
 
     # --- Connection pool ---
     #: Connections held open per worker process. The arithmetic that matters is
@@ -121,6 +123,8 @@ class Settings(BaseSettings):
     #: Neon, so a 1-second interval is ~68 minutes of database time per day
     #: doing nothing, and it prevents scale-to-zero entirely.
     outbox_poll_interval_seconds: float = 30.0
+    #: Optional unpooled URL using the restricted runtime role, never the owner.
+    outbox_listener_database_url: str | None = None
     #: Messages claimed per tick. Larger batches amortise the query; too large
     #: and one slow message delays every other in the batch.
     outbox_batch_size: int = 50

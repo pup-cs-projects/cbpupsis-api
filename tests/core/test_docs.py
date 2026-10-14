@@ -13,6 +13,7 @@ import importlib
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -50,7 +51,11 @@ def app_for(environment: str) -> Iterator[FastAPI]:
     os.environ["ENVIRONMENT"] = environment
     try:
         _reload_app_modules()
-        yield main.app
+        # Documentation exposure is independent of database provisioning.
+        with patch(
+            "cbpupsis_shared.application.validate_runtime_engine", new=AsyncMock()
+        ):
+            yield main.app
     finally:
         if previous is None:
             os.environ.pop("ENVIRONMENT", None)

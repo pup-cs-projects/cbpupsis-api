@@ -1,5 +1,14 @@
 # End-to-end API tests
 
+The collection's historical `admin` actor is a real Superadmin. Seed IAM and
+the fixed E2E accounts first; smoke login then proves password challenge,
+Google Authenticator-compatible TOTP enrollment, and confirmation. Public
+owner/other accounts still use ordinary login. Never reuse the E2E seed against
+real accounts: it resets only `e2e-admin@example.com` MFA/session state.
+
+New migrations require restricted runtime credentials and `AUDIT_RUNTIME_ROLE`.
+See the API guide's US-AUTH-004 deployment section before starting a stack.
+
 HTTP tests that drive a **running** API the way a client does — over the network,
 through the real middleware stack, with real tokens. Written as a
 [Bruno](https://usebruno.com) collection: plain-text `.bru` files that live in

@@ -1,5 +1,22 @@
 # Error codes
 
+## Superadmin additions (US-AUTH-004)
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 401 | `AUTH_SESSION_EXPIRED` | Superadmin session is missing/idle-expired; sign in again. |
+| 403 | `SUPERADMIN_ROLE_REQUIRED` | Live, verified, non-conflicting Superadmin MFA session required. |
+| 409 | `AUTH_ROLE_CONFLICT` | Admin and Superadmin membership cannot coexist. |
+| 422 | `OVERRIDE_JUSTIFICATION_REQUIRED` | Override reason missing, empty, or whitespace-only. |
+| 403 | `OVERRIDE_REQUIRED` | Suspending an Admin requires a justified override. |
+| 403 | `OVERRIDE_TARGET_INVALID` | The Admin suspension rule requires an Admin target. |
+| 403 | `DUAL_AUTH_SAME_ACTOR` | A restore requester cannot approve their own request. |
+| 422 | `INVALID_CLIENT_ADDRESS` | A real valid IPv4/IPv6 client address is required. |
+
+Unknown rule/backup returns 404; duplicate email and invalid/repeated restore
+transitions return 409 in the existing envelope. Existing Admin MFA lockout/replay
+codes are reused unchanged for Superadmin TOTP.
+
 <!--
 The registry of every error this API returns. It is a contract: the frontend
 renders these messages and branches on these statuses, so an undocumented error

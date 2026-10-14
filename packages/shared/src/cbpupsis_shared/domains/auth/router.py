@@ -204,4 +204,5 @@ async def change_password(
         user_id=user.id,
         current_password=data.current_password,
         new_password=data.new_password,
+        session_id=user.session_id,
     )

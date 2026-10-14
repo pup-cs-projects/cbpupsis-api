@@ -21,7 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.session import get_db
-from cbpupsis_shared.domains.auth.dependencies import CurrentUser, get_current_user
+from cbpupsis_shared.domains.auth import client as auth_client
+from cbpupsis_shared.domains.auth.dependencies import (
+    CurrentUser,
+    get_current_user,
+    require_superadmin_session,
+)
+from cbpupsis_shared.domains.auth.schemas import RegisterRequest
 from cbpupsis_shared.domains.iam.dependencies import require_permission
 from cbpupsis_shared.domains.users import service as users_service
 from cbpupsis_shared.domains.users.constants import MANAGE_USER, READ_ALL_USER
@@ -32,6 +38,22 @@ from cbpupsis_shared.domains.users.schemas import (
 )
 
 router = APIRouter()
+
+
+@router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    data: RegisterRequest,
+    user: CurrentUser = Depends(require_superadmin_session),
+    db: AsyncSession = Depends(get_db),
+) -> UserRead:
+    record = await auth_client.create_user(
+        db,
+        actor_id=user.id,
+        email=data.email,
+        password=data.password,
+        full_name=data.full_name,
+    )
+    return UserRead.model_validate(record)
 
 
 @router.get("/me", response_model=UserRead)

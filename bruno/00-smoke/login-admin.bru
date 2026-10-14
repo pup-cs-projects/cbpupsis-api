@@ -1,11 +1,11 @@
 meta {
-  name: Login admin
+  name: Login Superadmin with Google Authenticator TOTP
   type: http
   seq: 5
 }
 
 post {
-  url: {{student_api}}/auth/login
+  url: {{admin_api}}/auth/superadmin/login
   body: json
   auth: none
 }
@@ -26,15 +26,44 @@ assert {
 }
 
 tests {
-  test("returns a bearer token pair", function () {
-    expect(res.getBody().access_token).to.be.a("string").and.not.be.empty;
+  test("AC-004.1 password returns a challenge, not a session", function () {
+    expect(res.getBody().mfa_required).to.equal(true);
+    expect(res.getBody().access_token).to.equal(undefined);
   });
-
-  bru.setVar("admin_access_token", res.getBody().access_token);
+  const api = bru.getEnvVar("admin_api");
+  const challenge = res.getBody().challenge_token;
+  const enrolled = await bru.sendRequest({
+    method: "POST", url: `${api}/auth/superadmin/mfa/totp/enroll`,
+    data: { challenge_token: challenge },
+  });
+  const uri = enrolled.data.provisioning_uri;
+  const secret = decodeURIComponent(uri.match(/[?&]secret=([^&]+)/)[1]);
+  const CryptoJS = require("crypto-js");
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = "";
+  for (const ch of secret) bits += alphabet.indexOf(ch).toString(2).padStart(5, "0");
+  let hex = "";
+  for (let i = 0; i + 8 <= bits.length; i += 8) {
+    hex += parseInt(bits.slice(i, i + 8), 2).toString(16).padStart(2, "0");
+  }
+  const counter = Math.floor(Date.now() / 30000).toString(16).padStart(16, "0");
+  const digest = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(counter), CryptoJS.enc.Hex.parse(hex)).toString();
+  const offset = parseInt(digest.slice(-1), 16);
+  const value = parseInt(digest.slice(offset * 2, offset * 2 + 8), 16) & 0x7fffffff;
+  const verified = await bru.sendRequest({
+    method: "POST", url: `${api}/auth/superadmin/mfa/totp/confirm`,
+    data: { challenge_token: challenge, code: String(value % 1000000).padStart(6, "0") },
+  });
+  test("AC-004.2 TOTP completes the Superadmin session", function () {
+    expect(verified.status).to.equal(200);
+    expect(verified.data.role).to.equal("superadmin");
+  });
+  bru.setVar("admin_access_token", verified.data.access_token);
+  bru.setVar("admin_refresh_token", verified.data.refresh_token);
 }
 
 docs {
-  Establishes the `admin` principal, which holds `ManageIAM`. Seeded by script
-  because that permission cannot be self-granted through the API — the IAM
-  endpoints that would grant it are themselves gated behind it.
+  The collection's historical admin actor is now a real Superadmin. The fixed
+  E2E seed clears only this test account's factors, so this proves password,
+  enrollment, and Google Authenticator-compatible TOTP before any IAM operation.
 }

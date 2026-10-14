@@ -37,16 +37,18 @@ import asyncio
 import os
 import sys
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from cbpupsis_core.exceptions import ConflictError
+from cbpupsis_database.models.admin_auth import SuperadminChallenge
+from cbpupsis_database.models.auth import UserMfaCredential
 from cbpupsis_database.models.iam import Group, GroupPolicy, Policy
 from cbpupsis_database.models.users import User
 from cbpupsis_database.session import AsyncSessionLocal
 from cbpupsis_shared.domains.auth import service as auth_service
 from cbpupsis_shared.domains.auth.constants import PASSWORD_MIN_LENGTH
 from cbpupsis_shared.domains.iam import service as iam_service
-from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
 from cbpupsis_shared.domains.users import service as users_service
 
 #: The group an ordinary user belongs to. Registration itself grants no groups,
@@ -74,7 +76,7 @@ DEFAULT_PASSWORD = "E2ETestPassword123!"
 ACCOUNTS: list[tuple[str, list[str]]] = [
     ("e2e-owner@example.com", [MEMBER_GROUP]),
     ("e2e-other@example.com", [MEMBER_GROUP]),
-    ("e2e-admin@example.com", [MEMBER_GROUP, E2E_IAM_OPERATOR_GROUP]),
+    ("e2e-admin@example.com", [MEMBER_GROUP, SUPERADMIN_GROUP]),
 ]
 
 
@@ -187,9 +189,6 @@ async def seed_e2e(password: str, quiet: bool) -> int:
             # and the token to verify it never leaves the console email backend.
             await users_service.mark_email_verified(session, user_id)
 
-            for name in group_names:
-                await iam_service.add_user_to_group(session, user_id, group_ids[name])
-
             # Repair databases seeded before Admin MFA was separated from the
             # Bruno IAM fixture. Ordinary login intentionally rejects members
             # of the product Admin role.
@@ -197,6 +196,23 @@ async def seed_e2e(password: str, quiet: bool) -> int:
                 await iam_service.remove_user_from_group(
                     session, user_id, old_admin_group_id
                 )
+
+            for name in group_names:
+                await iam_service.add_user_to_group(session, user_id, group_ids[name])
+            if user_email == "e2e-admin@example.com":
+                # Only this fixed E2E account: prove enrollment on every run.
+                await auth_service.stage_revoke_all_for_user(session, user_id)
+                await session.execute(
+                    delete(UserMfaCredential).where(
+                        UserMfaCredential.user_id == user_id
+                    )
+                )
+                await session.execute(
+                    delete(SuperadminChallenge).where(
+                        SuperadminChallenge.user_id == user_id
+                    )
+                )
+                await session.commit()
 
             if not quiet:
                 granted = await iam_service.get_effective_permissions(session, user_id)

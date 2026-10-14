@@ -28,7 +28,7 @@ from cbpupsis_database.models.iam import (
     PolicyPermission,
 )
 from cbpupsis_database.session import AsyncSessionLocal
-from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
 
 # --------------------------------------------------------------------------- #
 # Declarative seed data. Edit these three structures to change the baseline.
@@ -59,6 +59,7 @@ from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
 
 #: All actions the application understands. (action, description)
 PERMISSIONS: list[tuple[str, str]] = [
+    ("CreateUser", "Create a user account as Superadmin"),
     # Ordinary verbs: always paired with an ownership check in the service.
     ("CreateItem", "Create an item"),
     ("ReadItem", "View your own items"),
@@ -81,7 +82,7 @@ POLICIES: dict[str, list[str]] = {
     "ItemAuthor": ["CreateItem", "ReadItem", "UpdateItem", "DeleteItem"],
     "ItemModerator": ["ReadAllItem", "ModerateItem"],
     "UserModerator": ["ReadAllUser"],
-    "UserAdmin": ["ReadAllUser", "ManageUser"],
+    "UserAdmin": ["CreateUser", "ReadAllUser", "ManageUser"],
     "IAMAdmin": ["ManageIAM"],
     "AuditReader": ["ReadAllAuditEntry"],
     "NotificationModerator": ["ReadAllNotification"],
@@ -109,6 +110,7 @@ GROUPS: dict[str, list[str]] = {
     # by those domains. User administration, IAM, and audit reading belong to
     # the separate Superadmin story and must not leak through this seed.
     ADMIN_GROUP: [],
+    SUPERADMIN_GROUP: list(POLICIES),
 }
 
 

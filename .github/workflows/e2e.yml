@@ -45,6 +45,9 @@ jobs:
         # copied.
         run: |
           mkdir -p env/admin env/student env/faculty
+          runtime_password=$(openssl rand -hex 32)
+          echo "::add-mask::$runtime_password"
+          echo "APP_RUNTIME_PASSWORD=$runtime_password" >> "$GITHUB_ENV"
           cat > env/admin/env.dev <<EOF
           APP_NAME="CBPUPSIS API (CI)"
           ENVIRONMENT=development
@@ -52,8 +55,9 @@ jobs:
           CORS_ORIGINS=["http://localhost:3000"]
           LOG_LEVEL=INFO
           LOG_JSON=false
-          DATABASE_URL=postgresql://postgres:postgres@db:5432/app
+          DATABASE_URL=postgresql://app_runtime:$runtime_password@db:5432/app
           DIRECT_DATABASE_URL=postgresql://postgres:postgres@db:5432/app
+          AUDIT_RUNTIME_ROLE=app_runtime
           JWT_SECRET=$(openssl rand -hex 32)
           ACCESS_TOKEN_TTL_MINUTES=15
           REFRESH_TOKEN_TTL_DAYS=30

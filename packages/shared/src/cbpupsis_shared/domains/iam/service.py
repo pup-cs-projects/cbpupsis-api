@@ -23,15 +23,18 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.events import Event
+from cbpupsis_core.exceptions import ConflictError
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.models.iam import Group, Permission, Policy
 from cbpupsis_shared.domains.iam import repository
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
 from cbpupsis_shared.domains.iam.exceptions import (
     GroupNotFoundError,
     PermissionNotFoundError,
     PolicyNotFoundError,
     UnknownPermissionsError,
 )
+from cbpupsis_shared.domains.users import client as users_client
 from cbpupsis_shared.outbox import publish_transactional
 
 
@@ -72,6 +75,10 @@ async def get_effective_permissions(db: AsyncSession, user_id: uuid.UUID) -> set
     membership or policy change. The database—not the auth token—must remain the
     source of truth so permission changes take effect immediately.
     """
+    if await is_user_in_group(db, user_id, SUPERADMIN_GROUP):
+        if await is_user_in_group(db, user_id, ADMIN_GROUP):
+            return set()
+        return await repository.all_permission_actions(db)
     from_groups = await repository.list_group_permission_actions_for_user(db, user_id)
     from_direct = await repository.list_direct_permission_actions_for_user(db, user_id)
 
@@ -209,12 +216,20 @@ async def add_user_to_group(
     Idempotent: re-adding an existing member is a no-op rather than an
     integrity error, so callers need not check membership first.
     """
-    # Deferred because the users service also imports IAM for permission checks.
-    from cbpupsis_shared.domains.users import client as users_client  # noqa: PLC0415
-
     await users_client.get_user(db, user_id)
+    group = await get_group(db, group_id)
+    if group.name in {ADMIN_GROUP, SUPERADMIN_GROUP}:
+        await users_client.lock_role_subject(db, user_id)
+        opposite = SUPERADMIN_GROUP if group.name == ADMIN_GROUP else ADMIN_GROUP
+        if await is_user_in_group(db, user_id, opposite):
+            raise ConflictError(
+                "Admin and Superadmin memberships are mutually exclusive",
+                code="AUTH_ROLE_CONFLICT",
+            )
     if await repository.exists_user_group(db, user_id, group_id):
         return
+    if group.name in {ADMIN_GROUP, SUPERADMIN_GROUP}:
+        await users_client.invalidate_role_sessions(db, user_id)
     repository.add_user_group(db, user_id, group_id)
     _audit(
         db,
@@ -232,6 +247,10 @@ async def remove_user_from_group(
     actor_id: uuid.UUID | None = None,
 ) -> None:
     """Remove a user from a group. Takes effect on their next request."""
+    group = await get_group(db, group_id)
+    if group.name in {ADMIN_GROUP, SUPERADMIN_GROUP}:
+        await users_client.lock_role_subject(db, user_id)
+        await users_client.invalidate_role_sessions(db, user_id)
     await repository.delete_user_group(db, user_id, group_id)
     _audit(
         db,
