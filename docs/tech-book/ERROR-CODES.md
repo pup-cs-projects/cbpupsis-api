@@ -32,7 +32,7 @@ Add the row in the same commit as the code that raises it.
 
 ## The envelope
 
-Every error response has the same shape, so clients parse one thing:
+Every error response includes these common tracing fields:
 
 ```json
 {
@@ -45,12 +45,29 @@ Every error response has the same shape, so clients parse one thing:
 that request. **Include it in bug reports** — it is what makes an opaque 500
 traceable.
 
+Known application errors also include `status: "error"` and `message`, an alias
+of the human-readable `detail`. Both IP-based and shared-address rate-limit
+refusals use these fields consistently:
+
+```json
+{
+  "status": "error",
+  "message": "Too many requests. Please try again in 60 seconds.",
+  "detail": "Too many requests. Please try again in 60 seconds.",
+  "request_id": "0188d021-c9c1-4fe6-bfa3-050b5fc268cf",
+  "code": "RATE_LIMIT_EXCEEDED"
+}
+```
+
+Rate-limit refusals carry a `Retry-After` header in seconds. Password-reset
+refusals use `RATE_LIMIT_EXCEEDED`; other endpoint limits use `rate_limited`.
+
 Validation errors (422) carry the field-level errors from Pydantic in `detail`
 instead of a string.
 
 ### The optional `code` field
 
-A few errors add a third key:
+A few errors add a `code` key:
 
 ```json
 {
