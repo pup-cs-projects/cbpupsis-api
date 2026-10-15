@@ -11,6 +11,11 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_api_student.domains.student_auth import service as student_service
+from cbpupsis_api_student.domains.student_auth.constants import (
+    DEFAULT_CLIENT_IP,
+    REFRESH_TOKEN_COOKIE_MAX_AGE,
+    REFRESH_TOKEN_COOKIE_NAME,
+)
 from cbpupsis_api_student.domains.student_auth.dependencies import (
     get_current_student_id,
 )
@@ -29,7 +34,7 @@ def _extract_client_ip(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "127.0.0.1"
+    return request.client.host if request.client else DEFAULT_CLIENT_IP
 
 
 @router.post(
@@ -74,12 +79,12 @@ async def student_login(
 
     # Set refresh token cookie matching AC-001.1
     response.set_cookie(
-        key="refresh_token",
+        key=REFRESH_TOKEN_COOKIE_NAME,
         value=raw_refresh_token,
         httponly=True,
         secure=True,
         samesite="lax",
-        max_age=30 * 24 * 3600,
+        max_age=REFRESH_TOKEN_COOKIE_MAX_AGE,
         path="/",
     )
 
@@ -102,13 +107,13 @@ async def student_logout(
     A student access token identifies the server-side idle session. Refresh
     token revocation is delegated to shared auth through the service boundary.
     """
-    refresh_token = request.cookies.get("refresh_token")
+    refresh_token = request.cookies.get(REFRESH_TOKEN_COOKIE_NAME)
     try:
         body = await request.json()
     except json.JSONDecodeError:
         body = None
     if isinstance(body, dict):
-        refresh_token = body.get("refresh_token", refresh_token)
+        refresh_token = body.get(REFRESH_TOKEN_COOKIE_NAME, refresh_token)
 
     token = (
         authorization.removeprefix("Bearer ").strip()
@@ -117,7 +122,7 @@ async def student_logout(
     )
     await student_service.logout_student(db, token, refresh_token)
 
-    response.delete_cookie("refresh_token", path="/")
+    response.delete_cookie(REFRESH_TOKEN_COOKIE_NAME, path="/")
 
 
 # --------------------------------------------------------------------------- #

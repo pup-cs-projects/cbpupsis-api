@@ -2,7 +2,20 @@
 
 from __future__ import annotations
 
+from cbpupsis_api_student.domains.student_auth.constants import (
+    LOCKOUT_DURATION_SECONDS,
+)
 from cbpupsis_core.exceptions import AppError
+
+
+class StudentIdFormatInvalidError(AppError):
+    """Raised when student number format is invalid (HTTP 422)."""
+
+    status_code = 422
+    code = "AUTH_ID_FORMAT_INVALID"
+
+    def __init__(self, detail: str = "Invalid Student ID format.") -> None:
+        super().__init__(detail=detail, code=self.code)
 
 
 class StudentAuthFailedError(AppError):
@@ -32,7 +45,7 @@ class StudentAccountLockedError(AppError):
 
     def __init__(
         self,
-        retry_after_seconds: int = 900,
+        retry_after_seconds: int = LOCKOUT_DURATION_SECONDS,
         detail: str = (
             "Account locked due to 5 consecutive failed attempts. "
             "Try again in 15 minutes."

@@ -8,6 +8,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from cbpupsis_api_student.domains.student_auth.constants import (
+    ACCESS_TOKEN_EXPIRE_SECONDS,
+    LOCKOUT_DURATION_SECONDS,
+)
+
 
 class StudentLoginCredentials(BaseModel):
     """Internal credentials assembled by the student-auth repository."""
@@ -45,7 +50,7 @@ class StudentLoginResponseData(BaseModel):
     """Data object inside the login response envelope."""
 
     access_token: str
-    expires_in: int = 900
+    expires_in: int = ACCESS_TOKEN_EXPIRE_SECONDS
     token_type: str = "bearer"
     role: str = "student"
     refresh_token: str | None = None
@@ -70,7 +75,7 @@ class StudentLoginResponse(BaseModel):
 
 
 class LockoutData(BaseModel):
-    retry_after_seconds: int = 900
+    retry_after_seconds: int = LOCKOUT_DURATION_SECONDS
 
 
 class ErrorEnvelope(BaseModel):

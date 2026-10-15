@@ -15,12 +15,23 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import NoReturn
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_api_student.domains.student_auth import repository as student_repo
+from cbpupsis_api_student.domains.student_auth.constants import (
+    ACCESS_TOKEN_EXPIRE_SECONDS,
+    ACCOUNT_LOCKED_EMAIL_BODY,
+    ACCOUNT_LOCKED_EMAIL_SUBJECT,
+    DEFAULT_CLIENT_IP,
+    IDLE_SESSION_TIMEOUT_MINUTES,
+    LOCKOUT_DURATION_SECONDS,
+    LOCKOUT_THRESHOLD,
+    LOCKOUT_WINDOW_MINUTES,
+    UTC_PLUS_8,
+)
 from cbpupsis_api_student.domains.student_auth.exceptions import (
     StudentAccountLockedError,
     StudentAuthFailedError,
@@ -37,12 +48,6 @@ from cbpupsis_core.emails import send_email
 from cbpupsis_shared.domains.auth import client as auth_client
 
 logger = logging.getLogger(__name__)
-
-UTC_PLUS_8 = timezone(timedelta(hours=8))
-LOCKOUT_THRESHOLD = 5
-LOCKOUT_WINDOW_MINUTES = 15
-LOCKOUT_DURATION_SECONDS = 900
-IDLE_SESSION_TIMEOUT_MINUTES = 15
 
 
 def _get_utc8_now() -> datetime:
@@ -180,7 +185,7 @@ async def login_student(
         db,
         user_id=credentials.user_id,
         session_token_hash=token_hash,
-        ip_address=client_ip or "127.0.0.1",
+        ip_address=client_ip or DEFAULT_CLIENT_IP,
         device_info=user_agent or "",
         now=now,
     )
@@ -188,7 +193,7 @@ async def login_student(
 
     response_data = StudentLoginResponseData(
         access_token=token_pair.access_token,
-        expires_in=900,
+        expires_in=ACCESS_TOKEN_EXPIRE_SECONDS,
         token_type="bearer",
         role="student",
         refresh_token=token_pair.refresh_token,
@@ -237,12 +242,8 @@ async def _handle_login_failure(
         if recipient:
             await send_email(
                 to=recipient,
-                subject="Security Alert: Account Locked",
-                body=(
-                    "Your CBPUPSIS student account has been locked for 15 minutes "
-                    "due to "
-                    "5 consecutive failed login attempts."
-                ),
+                subject=ACCOUNT_LOCKED_EMAIL_SUBJECT,
+                body=ACCOUNT_LOCKED_EMAIL_BODY,
             )
         raise StudentAccountLockedError(retry_after_seconds=LOCKOUT_DURATION_SECONDS)
 

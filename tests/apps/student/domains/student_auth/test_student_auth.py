@@ -152,6 +152,50 @@ class TestStudentIdFormatValidation:
             # Crucial assertion: verify_password must NOT be called
             assert mock_verify.call_count == 0
 
+    @pytest.mark.parametrize(
+        "valid_id",
+        [
+            "2025-00001-MN-0",
+            "2025-12345-TG-1",
+            "2021-00123-MN-0",
+            "2021-00999-QC-1",
+            "1999-54321-BC-9",
+        ],
+    )
+    def test_valid_student_id_formats(self, valid_id: str) -> None:
+        """Valid YYYY-XXXXX-CC-S format passes validation."""
+        from cbpupsis_api_student.domains.student_auth.validation import (
+            validate_student_id,
+        )
+
+        validate_student_id(valid_id)
+
+    @pytest.mark.parametrize(
+        "invalid_id",
+        [
+            "2021-123-MN",  # 3-digit sequence
+            "2025-00001-mn-0",  # lowercase campus
+            "2025-00001-M1-0",  # digit in campus code
+            "25-00001-MN-0",  # 2-digit year
+            "2025-000001-MN-0",  # 6-digit sequence
+            "2025-00001-MN-",  # missing status
+            "2025-00001-MN-00",  # 2-digit status
+            "202500001MN0",  # missing hyphens
+            "",  # empty string
+        ],
+    )
+    def test_invalid_student_id_formats(self, invalid_id: str) -> None:
+        """Invalid formats raise StudentIdFormatInvalidError."""
+        from cbpupsis_api_student.domains.student_auth.exceptions import (
+            StudentIdFormatInvalidError,
+        )
+        from cbpupsis_api_student.domains.student_auth.validation import (
+            validate_student_id,
+        )
+
+        with pytest.raises(StudentIdFormatInvalidError):
+            validate_student_id(invalid_id)
+
 
 class TestCredentialIndistinguishability:
     async def test_ac_001_3_wrong_birthdate_byte_identical_to_wrong_password(
