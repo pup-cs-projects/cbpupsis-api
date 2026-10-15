@@ -126,6 +126,9 @@ def configure_logging() -> None:
                 # turn that on by accident.
                 "aiosqlite": {"level": "INFO", "propagate": True},
                 "asyncpg": {"level": "INFO", "propagate": True},
+                # SDK wire diagnostics include the secret-bearing SES body.
+                "boto3": {"level": "WARNING", "propagate": True},
+                "botocore": {"level": "WARNING", "propagate": True},
             },
         }
     )

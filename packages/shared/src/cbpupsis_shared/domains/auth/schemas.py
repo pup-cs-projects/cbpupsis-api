@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+)
 
 from cbpupsis_shared.domains.auth.constants import (
+    FORGOT_PASSWORD_SUCCESS_MESSAGE,
     ONE_TIME_TOKEN_MAX_LENGTH,
     PASSWORD_MAX_LENGTH,
     PASSWORD_MIN_LENGTH,
+    RESET_PASSWORD_MIN_LENGTH,
 )
 from cbpupsis_shared.domains.users.constants import FULL_NAME_MAX_LENGTH
 
@@ -87,7 +95,13 @@ class ForgotPasswordRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    email: EmailStr
+    email: Any = Field(json_schema_extra={"type": "string", "format": "email"})
+
+
+class ForgotPasswordResponse(BaseModel):
+    """Uniform response for a password-reset request."""
+
+    message: str = FORGOT_PASSWORD_SUCCESS_MESSAGE
 
 
 class ResetPasswordRequest(BaseModel):
@@ -96,8 +110,16 @@ class ResetPasswordRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     token: str = Field(max_length=ONE_TIME_TOKEN_MAX_LENGTH)
-    new_password: str = Field(
-        min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH
+    new_password: str
+
+
+class ResetPasswordResponse(BaseModel):
+    """Response payload for a successful password reset."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    sessions_revoked: int = Field(
+        alias="sessionsRevoked", serialization_alias="sessionsRevoked"
     )
 
 
@@ -114,4 +136,23 @@ class ChangePasswordRequest(BaseModel):
     current_password: str = Field(max_length=PASSWORD_MAX_LENGTH)
     new_password: str = Field(
         min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH
+    )
+
+
+class VerifyResetTokenRequest(BaseModel):
+    """Non-consuming check on the reset endpoint before displaying the form."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(max_length=ONE_TIME_TOKEN_MAX_LENGTH)
+    verify_only: Literal[True]
+
+
+class ResetTokenVerificationResponse(BaseModel):
+    """Policy information for a valid reset link; does not consume the token."""
+
+    valid: bool = True
+    minimumLength: int = RESET_PASSWORD_MIN_LENGTH
+    requiredRules: list[str] = Field(
+        default_factory=lambda: ["uppercase", "lowercase", "digit", "symbol"]
     )

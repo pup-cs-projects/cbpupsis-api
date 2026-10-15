@@ -166,11 +166,10 @@ async def already_delivered(
 ) -> bool:
     """Return whether this message was already delivered on this channel.
 
-    The read half of the email dedupe. It is advisory only — the UNIQUE
-    constraint on ``delivery_receipts`` is what actually prevents the duplicate,
-    because two workers can both read "no receipt" before either writes one.
-    This exists so the common case skips the work without provoking an
-    IntegrityError.
+    The read half of delivery deduplication. A receipt skips completed work.
+    Secret-bearing email handlers also lock the message before this check to
+    serialize concurrent send attempts; a unique receipt alone cannot prevent
+    two transports from sending before either transaction commits.
 
     SQL::
 
@@ -194,11 +193,9 @@ def add_receipt(
 ) -> DeliveryReceipt:
     """Stage proof that this message was delivered on this channel.
 
-    Written **before** the outbound call, so the failure window is "receipt
-    committed, send never happened" — which loses a message rather than
-    duplicating one. The message stays ``pending``, so the next attempt retries
-    it. Failing toward a retry is correct; failing toward a duplicate
-    password-reset email is not.
+    The caller commits only after successful delivery. A failed attempt rolls
+    back its receipt and can be retried. A crash after transport acknowledgement
+    but before commit can repeat delivery; retries use the same reset token.
 
     Emits no SQL here. On the caller's commit::
 
@@ -360,3 +357,15 @@ async def prune_receipts(
         delete(DeliveryReceipt).where(DeliveryReceipt.id.in_(doomed))
     )
     return result.rowcount or 0
+
+
+async def lock_message(db: AsyncSession, message_id: uuid.UUID) -> OutboxMessage | None:
+    """Serialize a credential email's receipt check and transport attempt.
+
+    SQL::
+
+        SELECT * FROM outbox_messages WHERE id = :message_id FOR UPDATE
+    """
+    return await db.scalar(
+        select(OutboxMessage).where(OutboxMessage.id == message_id).with_for_update()
+    )

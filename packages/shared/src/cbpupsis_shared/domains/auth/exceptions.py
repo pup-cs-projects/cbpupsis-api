@@ -23,6 +23,8 @@ from cbpupsis_core.exceptions import (
 from cbpupsis_shared.domains.auth.constants import (
     INVALID_CREDENTIALS_MESSAGE,
     INVALID_TOKEN_MESSAGE,
+    RESET_TOKEN_EXPIRED_MESSAGE,
+    RESET_TOKEN_USED_MESSAGE,
 )
 
 
@@ -124,3 +126,68 @@ class UnverifiedEmailError(AuthError, EmailNotVerifiedError):
 
     def __init__(self, detail: str) -> None:
         super().__init__(detail)
+
+
+class ResetTokenExpiredError(AuthError):
+    """The password reset link is older than the configured TTL (HTTP 410)."""
+
+    status_code = 410
+    code = "AUTH_RESET_TOKEN_EXPIRED"
+
+    def __init__(self) -> None:
+        super().__init__(RESET_TOKEN_EXPIRED_MESSAGE)
+
+
+class ResetTokenUsedError(AuthError):
+    """The password reset link has already been consumed (HTTP 410)."""
+
+    status_code = 410
+    code = "AUTH_RESET_TOKEN_USED"
+
+    def __init__(self) -> None:
+        super().__init__(RESET_TOKEN_USED_MESSAGE)
+
+
+class PasswordTooWeakError(AuthError):
+    """The new password does not satisfy complexity requirements (HTTP 422)."""
+
+    status_code = 422
+    code = "AUTH_PASSWORD_TOO_WEAK"
+
+    def __init__(self, unmet_rules: list[str]) -> None:
+        rules_str = ", ".join(unmet_rules)
+        super().__init__(
+            f"Password does not meet complexity requirements: {rules_str}",
+            response_fields={"unmet_rules": unmet_rules},
+        )
+
+
+class SessionExpiredError(AuthError, UnauthorizedError):
+    """The account's session generation changed (HTTP 401)."""
+
+    code = "AUTH_SESSION_EXPIRED"
+
+    def __init__(self) -> None:
+        super().__init__("Your session has ended. Sign in again.")
+
+
+class InvalidEmailAddressError(AuthError):
+    """Malformed email, independent of account existence (HTTP 400)."""
+
+    code = "INVALID_EMAIL_ADDRESS"
+
+    def __init__(self) -> None:
+        super().__init__("Enter a valid email address.")
+
+
+class ResetRateLimitError(AuthError):
+    """A bounded address allowance is exhausted without locking the account."""
+
+    status_code = 429
+    code = "RATE_LIMIT_EXCEEDED"
+
+    def __init__(self, retry_after: int) -> None:
+        super().__init__(
+            "Too many requests. Try again later or use a link already sent to you.",
+            headers={"Retry-After": str(retry_after)},
+        )

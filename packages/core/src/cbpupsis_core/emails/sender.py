@@ -44,21 +44,11 @@ class EmailSender(Protocol):
 
 
 class ConsoleEmailSender:
-    """Log the message instead of sending it. The development/test default.
-
-    The body is logged in full, which is safe *here* and only here: the console
-    backend is unreachable once ``ses_from_email`` is configured, so a one-time
-    token never reaches a real log sink through this path.
-    """
+    """Development delivery stub; never log bodies containing credentials."""
 
     async def send(self, *, to: str, subject: str, body: str) -> None:
-        """Write the message to the application log."""
-        logger.info(
-            "Email (console backend, not sent) to=%s subject=%s\n%s",
-            to,
-            subject,
-            body,
-        )
+        """Record transport metadata without the password-reset link."""
+        logger.info("Email (console backend, not sent) to=%s subject=%s", to, subject)
 
 
 class SESEmailSender:
@@ -137,7 +127,13 @@ async def send_email(*, to: str, subject: str, body: str) -> bool:
     sender = get_email_sender()
     try:
         await sender.send(to=to, subject=subject, body=body)
-    except Exception:
-        logger.exception("Failed to send email to=%s subject=%s", to, subject)
+    except Exception as exc:
+        # A provider exception can echo the secret-bearing message.
+        logger.error(
+            "Failed to send email to=%s subject=%s error_type=%s",
+            to,
+            subject,
+            type(exc).__name__,
+        )
         return False
     return True

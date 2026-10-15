@@ -81,7 +81,7 @@ class TestConsoleSender:
                 to="someone@example.com", subject="Hi", body="Body text"
             )
         assert "someone@example.com" in caplog.text
-        assert "Body text" in caplog.text
+        assert "Body text" not in caplog.text
 
 
 class TestSendEmailNeverRaises:
@@ -237,8 +237,12 @@ class TestEmailFailureDoesNotBreakTheRequest:
         )
         assert login.status_code == 200
 
-    async def test_forgot_password_still_204s_when_delivery_fails(
-        self, client: AsyncClient, registered_user: dict[str, str], monkeypatch
+    async def test_forgot_password_accepts_when_delivery_fails(
+        self,
+        client: AsyncClient,
+        registered_user: dict[str, str],
+        monkeypatch,
+        drain_outbox,
     ) -> None:
         class ExplodingSender:
             async def send(self, *, to: str, subject: str, body: str) -> None:
@@ -251,7 +255,8 @@ class TestEmailFailureDoesNotBreakTheRequest:
         response = await client.post(
             "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
         )
-        assert response.status_code == 204
+        assert response.status_code == 202
+        await drain_outbox()
 
 
 class TestTemplates:

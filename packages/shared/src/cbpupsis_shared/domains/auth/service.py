@@ -9,8 +9,9 @@ apps): every refresh invalidates the token presented and issues a new one, so a
 stolen token has a short useful life, and a second use of an already-rotated
 token is strong evidence of theft — the whole family is revoked in response.
 
-The mailed-token flows (verification, password reset) share three rules, all of
-them enforced in :func:`_consume_one_time_token`:
+Mailed tokens are cryptographically random, expiring, and single use.
+Verification uses :func:`_consume_one_time_token`; reset consumes its token in
+the same transaction as the password change. Verification shares these errors:
 
 - **Single use.** Redemption stamps ``consumed_at`` in the same transaction that
   acts on it, so a token replayed from a browser history or a mail forward fails.
@@ -36,10 +37,13 @@ never constructed here. ``auth.dependencies`` takes the same approach.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import math
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from pydantic import EmailStr, TypeAdapter
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,25 +61,36 @@ from cbpupsis_core.exceptions import (
     UnauthorizedError,
 )
 from cbpupsis_database.models.auth import TokenPurpose
+from cbpupsis_shared.domains.audit import service as audit_service
 from cbpupsis_shared.domains.auth import repository
 from cbpupsis_shared.domains.auth.exceptions import (
+    AuthError,
     EmailAlreadyRegisteredError,
     InactiveUserError,
     IncorrectCurrentPasswordError,
     InvalidAuthTokenError,
     InvalidCredentialsError,
+    InvalidEmailAddressError,
     InvalidTokenError,
+    PasswordTooWeakError,
     RefreshTokenReusedError,
+    ResetRateLimitError,
+    ResetTokenExpiredError,
+    ResetTokenUsedError,
     UnverifiedEmailError,
 )
 from cbpupsis_shared.domains.auth.schemas import TokenPair
 from cbpupsis_shared.domains.auth.security import (
+    check_password_complexity,
     create_access_token,
     create_refresh_token,
     decode_token,
+    encrypt_reset_token,
     generate_one_time_token,
     hash_one_time_token,
     hash_password,
+    require_session_version,
+    reset_address_hash,
     verify_password,
 )
 from cbpupsis_shared.domains.iam import service as iam_service
@@ -147,8 +162,10 @@ async def login(db: AsyncSession, email: str, password: str) -> TokenPair:
     verification" screen rather than back to the login form, which is why this
     is a 403 with a stable code and not a fourth flavour of the 401.
     """
-    user = await users_service.get_by_email(db, email.lower())
-    if user is None or not verify_password(password, user.password_hash):
+    user = await users_service.get_by_email_for_update(db, email.lower())
+    if user is None or not await asyncio.to_thread(
+        verify_password, password, user.password_hash
+    ):
         raise InvalidCredentialsError
     if not user.is_active or user.deleted_at is not None:
         raise InvalidCredentialsError
@@ -198,6 +215,9 @@ async def refresh(
         raise InvalidAuthTokenError
     user_id = uuid.UUID(token_claims["sub"])
 
+    user = await users_service.get_active_user_for_update(db, user_id)
+    if user is not None:
+        require_session_version(token_claims, user.session_version)
     record = await repository.get_refresh_token(db, token_claims["jti"])
     if record is None:
         raise InvalidAuthTokenError
@@ -225,7 +245,12 @@ async def refresh(
     claims = (
         session_claims if session_claims is not None else _session_claims(token_claims)
     )
-    return await _issue_pair(db, user_id, claims=claims)
+    return await _issue_pair(
+        db,
+        user_id,
+        claims=claims,
+        expected_session_version=token_claims.get("session_version", 0),
+    )
 
 
 async def logout(db: AsyncSession, refresh_token: str) -> None:
@@ -242,19 +267,27 @@ async def logout(db: AsyncSession, refresh_token: str) -> None:
     await db.commit()
 
 
-async def revoke_all_for_user(db: AsyncSession, user_id: uuid.UUID) -> None:
+async def revoke_all_for_user(db: AsyncSession, user_id: uuid.UUID) -> int:
     """Revoke every live refresh token for a user.
 
     Used on suspected token theft, and the right call after a password change
-    or account deactivation.
+    or account deactivation. Returns the count of revoked tokens.
     """
-    await repository.revoke_all_refresh_tokens_for_user(db, user_id, datetime.now(UTC))
+    await users_service.stage_invalidate_sessions(db, user_id)
+    count = await repository.revoke_all_refresh_tokens_for_user(
+        db, user_id, datetime.now(UTC)
+    )
     await db.commit()
+    return count
 
 
-async def stage_revoke_all_for_user(db: AsyncSession, user_id: uuid.UUID) -> None:
+async def stage_revoke_all_for_user(db: AsyncSession, user_id: uuid.UUID) -> int:
     """Stage refresh-token revocation in a caller-owned transaction."""
-    await repository.revoke_all_refresh_tokens_for_user(db, user_id, datetime.now(UTC))
+    await users_service.stage_invalidate_sessions(db, user_id)
+    count = await repository.revoke_all_refresh_tokens_for_user(
+        db, user_id, datetime.now(UTC)
+    )
+    return count
 
 
 async def issue_session(
@@ -269,8 +302,12 @@ async def issue_session(
 
 def _session_claims(claims: dict[str, object]) -> dict[str, object]:
     """Keep role/scope claims while dropping JWT control claims on rotation."""
-    control = {"sub", "type", "iat", "exp", "jti"}
+    control = {"sub", "type", "iat", "exp", "jti", "session_version"}
     return {name: value for name, value in claims.items() if name not in control}
+
+
+def _utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 async def _issue_pair(
@@ -278,8 +315,17 @@ async def _issue_pair(
     user_id: uuid.UUID,
     *,
     claims: dict[str, object] | None = None,
+    expected_session_version: int | None = None,
 ) -> TokenPair:
-    """Mint an access/refresh pair and record the refresh token's id."""
+    """Mint a pair under the same account lock used by resets."""
+    user = await users_service.get_active_user_for_update(db, user_id)
+    if user is None:
+        raise InactiveUserError
+    if expected_session_version is not None:
+        require_session_version(
+            {"session_version": expected_session_version}, user.session_version
+        )
+    claims = {**(claims or {}), "session_version": user.session_version}
     access_token = create_access_token(user_id, claims=claims)
     refresh_token, jti, expires_at = create_refresh_token(user_id, claims=claims)
 
@@ -299,9 +345,9 @@ async def _issue_one_time_token(
 ) -> str:
     """Create a one-time token, returning the raw secret to be mailed.
 
-    Any outstanding token for the same user and purpose is invalidated first, so
-    requesting a new reset link kills the previous one. Without that, every
-    "resend" would leave another live credential in another inbox.
+    Verification resends invalidate outstanding verification tokens first.
+    Password recovery uses its own queued path and keeps earlier links usable
+    until a successful reset spends every outstanding reset token.
 
     Only the digest is stored; the returned raw value is never persisted or
     logged.
@@ -408,61 +454,159 @@ async def resend_verification(db: AsyncSession, email: str) -> None:
 # --------------------------------------------------------------------------- #
 
 
-async def forgot_password(db: AsyncSession, email: str) -> None:
-    """Mail a password-reset link, if the address belongs to a live account.
-
-    Always returns ``None``, whatever happens. The caller (a 204 endpoint) can
-    therefore not distinguish a registered address from an unregistered one —
-    the whole point, since a "no such user" here would let anyone test an email
-    list against the user base.
-
-    Note this is enumeration-safe by *response*, not by timing: a real send is
-    slower than an early return. That is acceptable because the SES call is
-    already best-effort and off-thread, but if timing becomes a concern, the fix
-    is to queue the send rather than to fake work here.
-    """
-    user = await users_service.get_by_email(db, email.lower())
-    if user is None or not user.is_active:
-        logger.info("Password reset requested for a non-eligible address")
-        return
-
-    raw_token = await _issue_one_time_token(
-        db,
-        user.id,
-        TokenPurpose.password_reset,
-        timedelta(minutes=settings.password_reset_ttl_minutes),
+async def forgot_password(
+    db: AsyncSession, email: str, *, ip_address: str | None = None
+) -> None:
+    """Atomically issue a digest, encrypted delivery job, and one audit row."""
+    try:
+        email = str(TypeAdapter(EmailStr).validate_python(email)).lower()
+    except ValueError:
+        audit_service.stage_record(
+            db,
+            action="auth.password_reset_requested",
+            actor_id=None,
+            ip_address=ip_address,
+            outcome="INVALID_EMAIL_ADDRESS",
+        )
+        await db.commit()
+        raise InvalidEmailAddressError from None
+    now = datetime.now(UTC)
+    email_hash = reset_address_hash(email)
+    window = timedelta(seconds=settings.password_reset_request_window_seconds)
+    allowed = not settings.rate_limit_enabled or await repository.claim_reset_request(
+        db, email_hash, now, now - window, settings.password_reset_request_limit
     )
-    subject, body = emails.password_reset_email(raw_token)
-    await send_email(to=user.email, subject=subject, body=body)
+    user = await users_service.get_by_email_for_update(db, email.lower())
+    actor_id = user.id if user is not None else None
+    if not allowed:
+        started = await repository.reset_request_retry_after(db, email_hash)
+        retry_after = max(1, math.ceil((_utc(started) + window - now).total_seconds()))
+        audit_service.stage_record(
+            db,
+            action="auth.password_reset_requested",
+            actor_id=actor_id,
+            ip_address=ip_address,
+            outcome="rate_limited",
+        )
+        await db.commit()
+        raise ResetRateLimitError(retry_after)
+
+    if user is not None and user.is_active:
+        raw_token, token_hash = generate_one_time_token()
+        # Keep previous links usable: anonymous requests must not cancel recovery.
+        repository.add_one_time_token(
+            db,
+            user_id=user.id,
+            token_hash=token_hash,
+            purpose=TokenPurpose.password_reset,
+            expires_at=now + timedelta(minutes=settings.password_reset_ttl_minutes),
+        )
+        publish_transactional(
+            db,
+            Event(
+                name="auth.password_reset_email",
+                payload={
+                    "user_id": str(user.id),
+                    "token_hash": token_hash,
+                    "encrypted_token": encrypt_reset_token(
+                        raw_token, user_id=user.id, token_hash=token_hash
+                    ),
+                },
+            ),
+        )
+    audit_service.stage_record(
+        db,
+        action="auth.password_reset_requested",
+        actor_id=actor_id,
+        ip_address=ip_address,
+        outcome="accepted",
+    )
+    await db.commit()
 
 
-async def reset_password(db: AsyncSession, raw_token: str, new_password: str) -> None:
-    """Redeem a reset token and set a new password.
-
-    Every refresh token for the user is revoked. Someone resetting a password
-    has either forgotten it or is recovering from a compromise; in the second
-    case an attacker holds a live session, and leaving it alive would make the
-    reset pointless.
-    """
-    user_id = await _consume_one_time_token(db, raw_token, TokenPurpose.password_reset)
-    user = await users_service.get_active_user(db, user_id)
-    if user is None:
+async def verify_reset_token(db: AsyncSession, raw_token: str):
+    """Check a link without spending it; safe for form loading and mail previews."""
+    record = await repository.get_one_time_token(
+        db, hash_one_time_token(raw_token), TokenPurpose.password_reset
+    )
+    if record is None:
         raise InvalidTokenError
+    if record.consumed_at is not None:
+        raise ResetTokenUsedError
+    if _utc(record.expires_at) <= datetime.now(UTC):
+        raise ResetTokenExpiredError
+    if await users_service.get_active_user(db, record.user_id) is None:
+        raise InvalidTokenError
+    return record
 
-    await users_service.set_password_hash(db, user_id, hash_password(new_password))
-    await revoke_all_for_user(db, user_id)
 
-    # Tells the real owner that their credential changed — the signal that
-    # surfaces an account takeover to the victim.
-    #
-    # Staged on the outbox rather than sent inline: this is a notice, not part
-    # of the flow, so the user should not wait on SES for it — and, more
-    # importantly, a notice about a credential change must not be lost if the
-    # process dies right after the password is written. The one-time-token
-    # emails above stay inline deliberately: they ARE the flow, and a reset link
-    # arriving a poll interval late is a UX regression the durability does not
-    # pay for.
-    _notify_password_changed(db, user_id)
+async def reset_password(
+    db: AsyncSession,
+    raw_token: str,
+    new_password: str,
+    *,
+    ip_address: str | None = None,
+) -> int:
+    """Consume the token and close every session in one account-locked transaction."""
+    actor_id = None
+    try:
+        record = await repository.get_one_time_token(
+            db, hash_one_time_token(raw_token), TokenPurpose.password_reset
+        )
+        if record is not None:
+            actor_id = record.user_id
+        await verify_reset_token(db, raw_token)
+        unmet = check_password_complexity(new_password)
+        if unmet:
+            raise PasswordTooWeakError(unmet)
+        digest = await asyncio.to_thread(hash_password, new_password)
+        user = await users_service.get_active_user_for_update(db, actor_id)
+        if user is None:
+            raise InvalidTokenError
+        now = datetime.now(UTC)
+        user_id = await repository.consume_one_time_token(
+            db, hash_one_time_token(raw_token), TokenPurpose.password_reset, now
+        )
+        if user_id is None:
+            await verify_reset_token(db, raw_token)
+            raise ResetTokenUsedError
+        await users_service.stage_password_reset(db, user_id, digest)
+        sessions_revoked = await stage_revoke_all_for_user(db, user_id)
+        await repository.clear_authentication_lockout(db, user_id)
+        await _invalidate_outstanding(db, user_id, TokenPurpose.password_reset)
+        _notify_password_changed(db, user_id)
+        audit_service.stage_record(
+            db,
+            action="auth.password_reset_completed",
+            actor_id=user_id,
+            ip_address=ip_address,
+            outcome="success",
+            sessions_revoked=sessions_revoked,
+        )
+        await db.commit()
+        return sessions_revoked
+    except AuthError as exc:
+        await db.rollback()
+        audit_service.stage_record(
+            db,
+            action="auth.password_reset_completed",
+            actor_id=actor_id,
+            ip_address=ip_address,
+            outcome=exc.code or "invalid_token",
+        )
+        await db.commit()
+        raise
+    except Exception:
+        await db.rollback()
+        audit_service.stage_record(
+            db,
+            action="auth.password_reset_completed",
+            actor_id=actor_id,
+            ip_address=ip_address,
+            outcome="failed",
+        )
+        await db.commit()
+        raise
 
 
 def _notify_password_changed(db: AsyncSession, user_id: uuid.UUID) -> None:
@@ -497,16 +641,34 @@ async def change_password(
     that a user changing their password because they fear compromise really does
     end every other session.
     """
-    user = await users_service.get_by_id(db, user_id)
-    if not verify_password(current_password, user.password_hash):
+    user = await users_service.get_active_user_for_update(db, user_id)
+    if user is None:
+        raise InactiveUserError
+    if not await asyncio.to_thread(
+        verify_password, current_password, user.password_hash
+    ):
         # Distinct from the token errors above: the caller is already
         # authenticated, so telling them their password was wrong reveals
         # nothing they do not know.
         raise IncorrectCurrentPasswordError
 
-    await users_service.set_password_hash(db, user_id, hash_password(new_password))
-    await revoke_all_for_user(db, user_id)
+    digest = await asyncio.to_thread(hash_password, new_password)
+    await users_service.stage_password_reset(db, user_id, digest)
+    await stage_revoke_all_for_user(db, user_id)
+    await _invalidate_outstanding(db, user_id, TokenPurpose.password_reset)
 
     _notify_password_changed(db, user_id)
 
     return await _issue_pair(db, user_id)
+
+
+async def record_request_refusal(db: AsyncSession, ip_address: str) -> None:
+    """Append the outcome when an outer IP guard rejects recovery before lookup."""
+    audit_service.stage_record(
+        db,
+        action="auth.password_reset_requested",
+        actor_id=None,
+        ip_address=ip_address,
+        outcome="RATE_LIMIT_EXCEEDED",
+    )
+    await db.commit()

@@ -94,10 +94,16 @@ this maintainable: it is how you find the code when the copy needs changing.
 | 401 | Not authenticated | No `Authorization` header. | `auth/dependencies.py` |
 | 401 | Incorrect email or password | Login failed. Identical for unknown account, wrong password, and inactive/deleted user. | `auth/service.py` |
 | 403 | Verify your email address to continue… (`code: email_not_verified`) | Login or refresh with a correct password, but the address is unverified. **Only reachable after the password check passes**, so it cannot be used to enumerate accounts — see below. | `auth/service.py` |
+| 400 | Enter a valid email address (`code: INVALID_EMAIL_ADDRESS`) | A reset request contains malformed email. | `auth/service.py` |
+| 401 | Your session has ended. Sign in again. (`code: AUTH_SESSION_EXPIRED`) | Account-wide revocation changed the session generation. | `auth/security.py` |
 | 401 | User is no longer active | The account was deactivated after the token was issued. | `auth/dependencies.py` |
 | 401 | Refresh token already used | A rotated token was replayed. Revokes the user's whole token family. | `auth/service.py` |
 | 409 | Email already registered | Registration hit the unique constraint on `users.email`. | `auth/service.py` |
-| 429 | Too many requests. Please try again in N seconds. (`code: rate_limited`) | A rate limit was exceeded on `/login`, `/register`, `/forgot-password`, or `/resend-verification`. Carries a `Retry-After` header, in seconds. | `core/exceptions.py` |
+| 410 | The password reset link has expired; request a new one (`code: AUTH_RESET_TOKEN_EXPIRED`) | A reset token older than its TTL was submitted. | `auth/service.py` |
+| 410 | The password reset link has already been used; request a new one (`code: AUTH_RESET_TOKEN_USED`) | An already-redeemed reset token was submitted. | `auth/service.py` |
+| 422 | Password does not meet complexity requirements: … (`code: AUTH_PASSWORD_TOO_WEAK`) | A new password failed complexity requirements (missing uppercase, lowercase, digit, or symbol). Carries `unmet_rules`, including minimum length and bcrypt byte limits. | `auth/service.py` |
+| 429 | Too many requests. Please try again in N seconds. (`code: rate_limited`) | A rate limit was exceeded on `/login`, `/register`, or `/resend-verification`. Carries a `Retry-After` header, in seconds. | `core/exceptions.py` |
+| 429 | Too many requests (`code: RATE_LIMIT_EXCEEDED`) | A reset request exceeded the IP or shared address allowance. Carries `Retry-After`. | `auth/service.py`, `core/exceptions.py` |
 
 **Why the 403 is safe.** It sits *after* the password check, so it only ever
 tells a caller who already holds valid credentials that their own address is
