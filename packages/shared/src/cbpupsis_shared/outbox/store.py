@@ -58,6 +58,9 @@ def publish_transactional(db: AsyncSession, event: Event) -> OutboxMessage:
         VALUES (:event_name, :payload, :status, :available_at, :attempts,
                 :last_error, :dispatched_at, :created_at, :id::UUID)
     """
+    audit_event = db.info.get("audit_event_handler")
+    if audit_event is not None:
+        audit_event(db, event)
     message = OutboxMessage(
         event_name=event.name,
         payload=dict(event.payload),

@@ -19,13 +19,16 @@ from fastapi.responses import HTMLResponse
 from scalar_fastapi import get_scalar_api_reference
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.config import settings
 from cbpupsis_core.events import event_bus
 from cbpupsis_core.exceptions import register_exception_handlers
 from cbpupsis_core.logging import configure_logging
 from cbpupsis_core.middleware import client_ip, limiter, register_middleware
+from cbpupsis_database.runtime import validate_runtime_engine
 from cbpupsis_database.session import AsyncSessionLocal, engine
+from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.auth import service as auth_service
 
 logger = logging.getLogger(__name__)
@@ -67,6 +70,7 @@ async def lifespan(app: FastAPI):
     which matters on Neon where abandoned connections count against the pool
     limit.
     """
+    await validate_runtime_engine(engine, settings.audit_runtime_role)
     yield
     await event_bus.drain()
     await engine.dispose()
@@ -110,6 +114,42 @@ def create_app(
     app.state.rate_limit_observer = _audit_rate_limit_refusal
 
     register_middleware(app)
+
+    @app.middleware("http")
+    async def audit_privileged_read(request: Request, call_next):
+        try:
+            response = await call_next(request)
+            context = getattr(request.state, "superadmin_audit", None)
+            request_db = getattr(request.state, "audit_db", None)
+            if context is not None and not context["staged"]:
+                async with AsyncSession(bind=request_db.bind) as audit_db:
+                    audit_client.stage(
+                        audit_db,
+                        action="superadmin.request",
+                        actor_id=context["actor"],
+                        target_type="endpoint",
+                        target_id=context["path"],
+                        payload={
+                            "method": context["method"],
+                            "status": response.status_code,
+                            "outcome": "success"
+                            if response.status_code < 400
+                            else "refused",
+                        },
+                    )
+                    await audit_db.commit()
+        except Exception:
+            request_db = getattr(request.state, "audit_db", None)
+            if request_db is not None:
+                await request_db.rollback()
+            raise
+        finally:
+            request_db = getattr(request.state, "audit_db", None)
+            if request_db is not None:
+                request_db.info.pop("superadmin_audit", None)
+                request_db.info.pop("audit_event_handler", None)
+        return response
+
     # Registered after the limiter is attached, since it installs the 429 handler.
     register_exception_handlers(app)
 

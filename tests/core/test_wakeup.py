@@ -24,12 +24,12 @@ from cbpupsis_shared.outbox.wakeup import listener_dsn
 
 
 class TestListenerDsn:
-    def test_prefers_the_direct_url(self, monkeypatch) -> None:
+    def test_prefers_the_runtime_listener_url(self, monkeypatch) -> None:
         """The pooled URL is PgBouncer in transaction mode and will not carry
         LISTEN. Getting this wrong is silent: notifications work but arrive a
         full poll interval late."""
         monkeypatch.setattr(
-            settings, "direct_database_url", "postgresql://u:p@direct/db"
+            settings, "outbox_listener_database_url", "postgresql://u:p@direct/db"
         )
         monkeypatch.setattr(settings, "database_url", "postgresql://u:p@pooled/db")
 
@@ -37,7 +37,10 @@ class TestListenerDsn:
 
     def test_falls_back_to_the_pooled_url(self, monkeypatch) -> None:
         """A local stack has one endpoint, so both names point at it."""
-        monkeypatch.setattr(settings, "direct_database_url", None)
+        monkeypatch.setattr(settings, "outbox_listener_database_url", None)
+        monkeypatch.setattr(
+            settings, "direct_database_url", "postgresql://owner:p@owner/db"
+        )
         monkeypatch.setattr(settings, "database_url", "postgresql://u:p@only/db")
 
         assert "only" in listener_dsn()
@@ -47,7 +50,7 @@ class TestListenerDsn:
         it. Dropping it does not disable TLS — asyncpg negotiates by default."""
         monkeypatch.setattr(
             settings,
-            "direct_database_url",
+            "outbox_listener_database_url",
             "postgresql://u:p@h/db?sslmode=require&channel_binding=require",
         )
 

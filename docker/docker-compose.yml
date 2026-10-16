@@ -107,17 +107,20 @@ services:
     # behaviour, add reserved words, and alter what autogenerate emits.
     image: postgres:16-alpine
     # Inline, not env_file: these are the local container's own credentials, not
-    # application config. They must match the DATABASE_URL in env/<app>/env.<stage>,
+    # application config. Owner credentials match DIRECT_DATABASE_URL; app URLs
+    # use app_runtime and APP_RUNTIME_PASSWORD (local default below).
     # and they are deliberately not secret, because this database exists only on your
     # machine and is destroyed by `make down wipe=1`.
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: app
+      APP_RUNTIME_PASSWORD: ${APP_RUNTIME_PASSWORD:-app_runtime_local_only}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./initdb/10-runtime-role.sql:/docker-entrypoint-initdb.d/10-runtime-role.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
       interval: 3s

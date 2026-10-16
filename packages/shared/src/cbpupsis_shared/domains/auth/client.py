@@ -72,3 +72,20 @@ async def revoke_refresh_token(db: AsyncSession, refresh_token: str) -> None:
 def validate_session_version(claims: dict[str, object], current_version: int) -> None:
     """Apply account-wide access revocation to every role's session guard."""
     require_session_version(claims, current_version)
+
+
+async def require_superadmin_actor(db: AsyncSession, user_id: uuid.UUID) -> None:
+    await service.require_superadmin_actor(db, user_id)
+
+
+async def create_user(
+    db: AsyncSession,
+    *,
+    actor_id: uuid.UUID,
+    email: str,
+    password: str,
+    full_name: str | None = None,
+):
+    return await service.register(
+        db, email=email, password=password, full_name=full_name, actor_id=actor_id
+    )

@@ -1,5 +1,82 @@
 # FastAPI Modular-Monolith Template
 
+## Superadmin authentication and overrides (US-AUTH-004)
+
+All paths below have prefix `/api/v1`. Superadmin is distinct from Admin. Admin
+owns Home, Calendar, Courses, and Enrollment with existing position scope;
+Superadmin has system-wide reach, including users, IAM, and audit reading.
+Management permissions alone never substitute for completed Superadmin MFA.
+
+1. `POST /auth/superadmin/login` accepts email/password and returns
+   `mfa_required`, `challenge_token`, `enrollment_required`, and `methods`.
+   Password success never returns an access or refresh token.
+2. First enrollment: `POST /auth/superadmin/mfa/totp/enroll` with the challenge
+   returns only `provisioning_uri`. Render its QR locally for Google Authenticator.
+   This setup URI contains the seed: never log it.
+3. Confirm enrollment at `/auth/superadmin/mfa/totp/confirm`, or verify subsequent
+   sign-ins at `/auth/superadmin/mfa/verify`, with challenge and `code`.
+   Success returns access/refresh tokens, `token_type: bearer`, `role: superadmin`.
+   TOTP counters and challenges are single-use; seeds use AES-256-GCM.
+4. Send the bearer access token to `GET /superadmin/me` and protected APIs.
+   Use `/auth/superadmin/refresh` and `/auth/superadmin/logout` with `refresh_token`.
+   At 15 continuous idle minutes the server deletes the session and revokes its
+   refresh capability (`401 AUTH_SESSION_EXPIRED`). Activity cannot revive it.
+
+Public `/auth/register` remains available without privileged role assignment.
+Superadmin-only `POST /users` accepts email, password, optional full_name and returns
+`201 UserRead`, or `409` for duplicate email. Verification remains required. Assign
+roles separately through IAM. Conflicting Admin/Superadmin membership returns
+`409 AUTH_ROLE_CONFLICT`; role changes revoke sessions.
+
+`POST /superadmin/overrides/users.deactivate_admin` accepts `target_id` and
+`justification`. Ordinary suspension cannot target an Admin. Missing/blank reasons
+return `422 OVERRIDE_JUSTIFICATION_REQUIRED`; success returns `200` with rule,
+target, result and commits the change with exactly one audit row.
+Unknown rules return 404; arbitrary endpoint/service dispatch is not supported.
+
+`POST /superadmin/backups/{backup_id}/restore-requests` returns `202 pending`.
+`POST /superadmin/backups/{backup_id}/restore-requests/approve` requires another
+active, verified Superadmin (`403 DUAL_AUTH_SAME_ACTOR` for self-approval).
+Repeated/invalid transitions return `409`. Approval is authorization only, not
+physical database restoration. The requester must still be eligible.
+
+Every completed Superadmin action, including reads, is audited. Mutation records
+carry prior/new state and commit atomically; the outbox does not duplicate them.
+Ledger APIs remain read-only. SQLAdmin is not mounted, even in development,
+because its direct writes bypass service security. Existing Admin and Faculty MFA
+contracts remain unchanged. New academic handlers use
+`require_admin_or_superadmin_session`: Admin retains scope filtering, Superadmin
+needs no Admin profile. These handlers are not introduced by this story.
+
+### Deployment and bootstrap
+
+Provision restricted login `AUDIT_RUNTIME_ROLE` separately from the migration owner.
+`DATABASE_URL` uses that login; only migrations use owner `DIRECT_DATABASE_URL`.
+New head `c004scratch` directly follows `b005reset`. Discarded feature revisions
+are not upgrade targets: do not stamp/reuse their disposable schemas. Shared
+databases need a separately approved inventory, backup, and migration operation.
+
+After owner-run migration, run `python -m scripts.check_runtime_database` with
+each API/worker's actual runtime configuration. API/worker startup also verifies
+configured identity, inherited/PUBLIC grants, partitions, enabled mutation triggers,
+and revision. Every environment requires the role. Ledgers permit SELECT/INSERT,
+not UPDATE/DELETE/TRUNCATE; Alembic metadata permits SELECT only. Future migrations
+grant ordinary new tables explicitly and restrict new audit partitions.
+Database owners/superusers are outside this application-role guarantee.
+
+The worker never uses migration-owner credentials for LISTEN. Configure unpooled
+runtime `OUTBOX_LISTENER_DATABASE_URL` on transaction-pooled hosting; without it
+polling remains the delivery safety net. Run `scripts.seed_iam`, create and verify
+the two named Superadmin accounts, then run
+`python -m scripts.bootstrap_superadmin <email>` for each. Complete TOTP at sign-in;
+no bootstrap sets a password or skips MFA.
+
+Fresh local Compose volumes initialize `app_runtime` with development-only
+password `app_runtime_local_only` (override `APP_RUNTIME_PASSWORD`). Existing
+volumes never rerun initialization or repair themselves automatically. CI uses a
+random masked runtime password. Regenerate the client contract with
+`python -m scripts.export_openapi`; the result is `docs/openapi.json`.
+
 A production-ready FastAPI starter, organized by business domain, with
 boundaries clean enough that any domain can be extracted into its own service
 later. CBPUPSIS runs it as a uv workspace: three apps (student, faculty, admin),

@@ -174,7 +174,9 @@ def create_refresh_token(
     )
 
 
-def decode_token(token: str, expected_type: TokenType) -> dict[str, Any]:
+def decode_token(
+    token: str, expected_type: TokenType, *, allow_expired: bool = False
+) -> dict[str, Any]:
     """Decode and validate a token, returning its claims.
 
     Every failure — bad signature, expiry, or a token of the wrong type — raises
@@ -186,6 +188,7 @@ def decode_token(token: str, expected_type: TokenType) -> dict[str, Any]:
             token,
             settings.jwt_secret.get_secret_value(),
             algorithms=[settings.jwt_algorithm],
+            options={"verify_exp": not allow_expired},
         )
     except jwt.InvalidTokenError as exc:
         raise InvalidAuthTokenError from exc

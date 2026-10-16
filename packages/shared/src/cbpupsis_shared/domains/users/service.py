@@ -18,10 +18,13 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.events import Event
+from cbpupsis_core.exceptions import ForbiddenError
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.models.users import User
+from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.auth import client as auth_client
 from cbpupsis_shared.domains.iam import service as iam_service
+from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
 from cbpupsis_shared.domains.users import repository
 from cbpupsis_shared.domains.users.constants import (
     EDITABLE_PROFILE_FIELDS,
@@ -102,7 +105,18 @@ async def update_profile(db: AsyncSession, user_id: uuid.UUID, **fields: Any) ->
         raise ValueError(f"Not editable profile fields: {sorted(unknown)}")
 
     user = await get_by_id(db, user_id)
+    prior = {field: getattr(user, field) for field in fields}
     repository.update_user(db, user, **fields)
+    if db.info.get("superadmin_audit") is not None:
+        audit_client.stage(
+            db,
+            action="user.profile_updated",
+            actor_id=user_id,
+            target_type="user",
+            target_id=user_id,
+            prior_state=prior,
+            new_state=fields,
+        )
     await db.commit()
     await db.refresh(user)
     return user
@@ -128,6 +142,16 @@ async def complete_onboarding(db: AsyncSession, user_id: uuid.UUID) -> User:
 
     if user.onboarding_completed_at is None:
         repository.update_user(db, user, onboarding_completed_at=datetime.now(UTC))
+        if db.info.get("superadmin_audit"):
+            audit_client.stage(
+                db,
+                action="user.onboarding_completed",
+                actor_id=user_id,
+                target_type="user",
+                target_id=user_id,
+                prior_state={"completed": False},
+                new_state={"completed": True},
+            )
         await db.commit()
         await db.refresh(user)
     return user
@@ -188,8 +212,21 @@ async def deactivate_own_account(db: AsyncSession, user_id: uuid.UUID) -> User:
     belt and braces. It also means reactivating does not silently restore
     sessions that were open weeks earlier.
     """
-    user = await deactivate(db, user_id)
-    await auth_client.revoke_all_sessions(db, user_id)
+    user = await get_by_id(db, user_id)
+    prior = {"is_active": user.is_active}
+    repository.update_user(db, user, is_active=False)
+    await auth_client.stage_revoke_all_sessions(db, user_id)
+    if db.info.get("superadmin_audit") is not None:
+        audit_client.stage(
+            db,
+            action="user.self_deactivated",
+            actor_id=user_id,
+            target_type="user",
+            target_id=user_id,
+            prior_state=prior,
+            new_state={"is_active": False},
+        )
+    await db.commit()
     return user
 
 
@@ -210,8 +247,19 @@ async def delete_own_account(
     if not auth_client.check_password(password, user.password_hash):
         raise IncorrectPasswordError
 
-    await soft_delete(db, user_id)
-    await auth_client.revoke_all_sessions(db, user_id)
+    await soft_delete(db, user_id, commit=False)
+    await auth_client.stage_revoke_all_sessions(db, user_id)
+    if db.info.get("superadmin_audit") is not None:
+        audit_client.stage(
+            db,
+            action="user.self_deleted",
+            actor_id=user_id,
+            target_type="user",
+            target_id=user_id,
+            prior_state={"deleted": False},
+            new_state={"deleted": True},
+        )
+    await db.commit()
 
 
 async def reactivate(db: AsyncSession, user_id: uuid.UUID) -> User:
@@ -230,7 +278,9 @@ async def reactivate(db: AsyncSession, user_id: uuid.UUID) -> User:
     return user
 
 
-async def soft_delete(db: AsyncSession, user_id: uuid.UUID) -> User:
+async def soft_delete(
+    db: AsyncSession, user_id: uuid.UUID, *, commit: bool = True
+) -> User:
     """Soft-delete an account and scrub its personal data.
 
     **What survives and why.** The row itself stays: items, audit entries, and
@@ -274,8 +324,9 @@ async def soft_delete(db: AsyncSession, user_id: uuid.UUID) -> User:
         deleted_at=now,
     )
 
-    await db.commit()
-    await db.refresh(user)
+    if commit:
+        await db.commit()
+        await db.refresh(user)
     return user
 
 
@@ -294,6 +345,7 @@ async def get_profile_for(
     background job or another domain can walk straight past.
     """
     if user_id != viewer_id:
+        await auth_client.require_superadmin_actor(db, viewer_id)
         granted = await iam_service.get_effective_permissions(db, viewer_id)
         if READ_ALL_USER not in granted:
             raise ProfileAccessDeniedError(READ_ALL_USER)
@@ -317,6 +369,7 @@ async def list_users_for(
     same reason as everywhere else — a rule enforced at the edge is one a
     background job or another domain walks straight past.
     """
+    await auth_client.require_superadmin_actor(db, viewer_id)
     granted = await iam_service.get_effective_permissions(db, viewer_id)
     if READ_ALL_USER not in granted:
         raise ProfileAccessDeniedError(READ_ALL_USER)
@@ -344,13 +397,20 @@ async def deactivate_as_admin(
     themselves out is an accident with no undo through the API, since
     reactivating needs the permission they just lost access to.
     """
+    await auth_client.require_superadmin_actor(db, actor_id)
+    user = await repository.get_user_for_update(db, user_id)
+    if user is None:
+        raise UserNotFoundError(user_id)
+    if await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP):
+        raise ForbiddenError(
+            "Admin suspension requires a justified override", code="OVERRIDE_REQUIRED"
+        )
     granted = await iam_service.get_effective_permissions(db, actor_id)
     if MANAGE_USER not in granted:
         raise ProfileAccessDeniedError(MANAGE_USER)
     if actor_id == user_id:
         raise CannotAdministerSelfError
 
-    user = await get_by_id(db, user_id)
     prior_state = {"is_active": user.is_active}
     repository.update_user(db, user, is_active=False)
     await auth_client.stage_revoke_all_sessions(db, user_id)
@@ -379,6 +439,7 @@ async def reactivate_as_admin(
     Refuses an anonymised row for the same reason :func:`reactivate` does: a
     deleted account has lost the identity that would make it usable again.
     """
+    await auth_client.require_superadmin_actor(db, actor_id)
     granted = await iam_service.get_effective_permissions(db, actor_id)
     if MANAGE_USER not in granted:
         raise ProfileAccessDeniedError(MANAGE_USER)
@@ -416,6 +477,14 @@ async def get_active_user_for_update(db: AsyncSession, user_id: uuid.UUID):
     return user if user is not None and user.is_active else None
 
 
+async def get_role_subject_for_update(db: AsyncSession, user_id: uuid.UUID):
+    """Serialize privileged membership changes on the account row."""
+    user = await repository.get_user_for_update(db, user_id)
+    if user is None or user.deleted_at is not None:
+        raise UserNotFoundError(user_id)
+    return user
+
+
 async def stage_password_reset(
     db: AsyncSession, user_id: uuid.UUID, password_hash: str
 ):
@@ -433,3 +502,22 @@ async def stage_invalidate_sessions(db: AsyncSession, user_id: uuid.UUID) -> Non
     user = await repository.get_user_for_update(db, user_id)
     if user is not None:
         repository.update_user(db, user, session_version=user.session_version + 1)
+
+
+async def stage_admin_deactivation_override(
+    db: AsyncSession, *, actor_id: uuid.UUID, user_id: uuid.UUID
+):
+    await auth_client.require_superadmin_actor(db, actor_id)
+    if actor_id == user_id:
+        raise CannotAdministerSelfError
+    user = await repository.get_user_for_update(db, user_id)
+    if user is None:
+        raise UserNotFoundError(user_id)
+    if not await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP):
+        raise ForbiddenError(
+            "Override target must be an Admin", code="OVERRIDE_TARGET_INVALID"
+        )
+    prior = {"is_active": user.is_active}
+    repository.update_user(db, user, is_active=False)
+    await auth_client.stage_revoke_all_sessions(db, user_id)
+    return prior, {"is_active": False}

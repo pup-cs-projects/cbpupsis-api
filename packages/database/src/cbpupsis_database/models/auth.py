@@ -63,6 +63,7 @@ class RefreshToken(UUIDMixin, TimestampMixin, Base):
     revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
+    session_id: Mapped[uuid.UUID | None] = mapped_column(default=None, index=True)
 
 
 class TokenPurpose(enum.StrEnum):

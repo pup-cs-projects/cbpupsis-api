@@ -131,8 +131,14 @@ async def test_whitespace_is_not_a_symbol_and_bcrypt_inputs_are_not_truncated(
 
 
 async def test_link_can_be_checked_without_consumption_and_defaults_to_24_hours(
-    client, db, registered_user, sent_emails, drain_outbox
+    client, db, registered_user, sent_emails, drain_outbox, monkeypatch
 ):
+    # Test the declared default, independently of a contributor's env.dev override.
+    monkeypatch.setattr(
+        settings,
+        "password_reset_ttl_minutes",
+        Settings.model_fields["password_reset_ttl_minutes"].default,
+    )
     token = await request_link(client, registered_user, sent_emails, drain_outbox)
     record = await db.scalar(
         select(OneTimeToken).where(OneTimeToken.purpose == TokenPurpose.password_reset)

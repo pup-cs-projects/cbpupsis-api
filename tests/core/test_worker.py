@@ -285,6 +285,13 @@ class TestShutdown:
         """
         monkeypatch.setattr(settings, "outbox_poll_interval_seconds", 30.0)
 
+        async def _verified_database(*args):
+            return None
+
+        # This test measures shutdown, not database provisioning. Real runtime
+        # identity and grant checks are covered by PostgreSQL integration tests.
+        monkeypatch.setattr(worker, "validate_runtime_engine", _verified_database)
+
         # Stub the listener: it opens a real connection, and this test is about
         # how fast shutdown is noticed — not how fast Postgres answers. Left
         # real, a slow connect under full-suite load makes the timing assertion
@@ -317,8 +324,14 @@ class TestShutdown:
         monkeypatch.setattr(worker, "_tick", _no_work)
 
         task = asyncio.create_task(worker.run())
-        while not captured:
-            await asyncio.sleep(0.01)
+
+        async def _wait_for_startup():
+            while not captured:
+                if task.done():
+                    await task
+                await asyncio.sleep(0.01)
+
+        await asyncio.wait_for(_wait_for_startup(), timeout=2.0)
 
         captured[0].set()  # what the SIGTERM handler does
         await asyncio.wait_for(task, timeout=2.0)  # NOT the 30s interval

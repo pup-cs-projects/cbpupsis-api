@@ -32,3 +32,23 @@ async def user_exists(db: AsyncSession, user_id: uuid.UUID) -> bool:
     """Return whether a live user exists — the cross-domain integrity check
     that replaces a database-level foreign key."""
     return await service.get_active_user(db, user_id) is not None
+
+
+async def stage_admin_deactivation_override(
+    db: AsyncSession, *, actor_id: uuid.UUID, user_id: uuid.UUID
+):
+    return await service.stage_admin_deactivation_override(
+        db, actor_id=actor_id, user_id=user_id
+    )
+
+
+async def invalidate_role_sessions(db: AsyncSession, user_id: uuid.UUID) -> None:
+    from cbpupsis_shared.domains.auth import client as auth_client  # noqa: PLC0415
+
+    await auth_client.stage_revoke_all_sessions(db, user_id)
+
+
+async def lock_role_subject(db: AsyncSession, user_id: uuid.UUID) -> UserRead:
+    return UserRead.model_validate(
+        await service.get_role_subject_for_update(db, user_id)
+    )

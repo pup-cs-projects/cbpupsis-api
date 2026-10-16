@@ -1,5 +1,22 @@
 # Error codes
 
+## Superadmin additions (US-AUTH-004)
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 401 | `AUTH_SESSION_EXPIRED` | Superadmin session is missing/idle-expired; sign in again. |
+| 403 | `SUPERADMIN_ROLE_REQUIRED` | Live, verified, non-conflicting Superadmin MFA session required. |
+| 409 | `AUTH_ROLE_CONFLICT` | Admin and Superadmin membership cannot coexist. |
+| 422 | `OVERRIDE_JUSTIFICATION_REQUIRED` | Override reason missing, empty, or whitespace-only. |
+| 403 | `OVERRIDE_REQUIRED` | Suspending an Admin requires a justified override. |
+| 403 | `OVERRIDE_TARGET_INVALID` | The Admin suspension rule requires an Admin target. |
+| 403 | `DUAL_AUTH_SAME_ACTOR` | A restore requester cannot approve their own request. |
+| 422 | `INVALID_CLIENT_ADDRESS` | A real valid IPv4/IPv6 client address is required. |
+
+Unknown rule/backup returns 404; duplicate email and invalid/repeated restore
+transitions return 409 in the existing envelope. Existing Admin MFA lockout/replay
+codes are reused unchanged for Superadmin TOTP.
+
 <!--
 The registry of every error this API returns. It is a contract: the frontend
 renders these messages and branches on these statuses, so an undocumented error
@@ -15,7 +32,7 @@ Add the row in the same commit as the code that raises it.
 
 ## The envelope
 
-Every error response has the same shape, so clients parse one thing:
+Every error response includes these common tracing fields:
 
 ```json
 {
@@ -28,12 +45,29 @@ Every error response has the same shape, so clients parse one thing:
 that request. **Include it in bug reports** — it is what makes an opaque 500
 traceable.
 
+Known application errors also include `status: "error"` and `message`, an alias
+of the human-readable `detail`. Both IP-based and shared-address rate-limit
+refusals use these fields consistently:
+
+```json
+{
+  "status": "error",
+  "message": "Too many requests. Please try again in 60 seconds.",
+  "detail": "Too many requests. Please try again in 60 seconds.",
+  "request_id": "0188d021-c9c1-4fe6-bfa3-050b5fc268cf",
+  "code": "RATE_LIMIT_EXCEEDED"
+}
+```
+
+Rate-limit refusals carry a `Retry-After` header in seconds. Password-reset
+refusals use `RATE_LIMIT_EXCEEDED`; other endpoint limits use `rate_limited`.
+
 Validation errors (422) carry the field-level errors from Pydantic in `detail`
 instead of a string.
 
 ### The optional `code` field
 
-A few errors add a third key:
+A few errors add a `code` key:
 
 ```json
 {

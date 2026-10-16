@@ -21,6 +21,7 @@ import os
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -129,7 +130,10 @@ def app_for(environment: str) -> Iterator[FastAPI]:
     os.environ["ENVIRONMENT"] = environment
     try:
         _reload_app_modules()
-        yield main.app
+        with patch(
+            "cbpupsis_shared.application.validate_runtime_engine", new=AsyncMock()
+        ):
+            yield main.app
     finally:
         if previous is None:
             os.environ.pop("ENVIRONMENT", None)
@@ -323,12 +327,11 @@ class TestAdminPanelIsDevelopmentOnly:
         with app_for(environment) as built, TestClient(built) as client:
             assert client.get(route).status_code == 404
 
-    def test_admin_is_mounted_in_development(self) -> None:
-        """The gate must not be so tight that local development loses the
-        panel entirely."""
+    def test_admin_is_not_mounted_in_development(self) -> None:
+        """Direct database forms must not bypass service-layer security."""
         with app_for("development") as built:
             paths = [getattr(route, "path", "") for route in built.routes]
-            assert any(path.startswith("/admin") for path in paths)
+            assert not any(path.startswith("/admin") for path in paths)
 
 
 class TestAdminDoesNotExposeCredentials:

@@ -177,12 +177,13 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "limit": str(exc.limit.limit),
             },
         )
+        detail = f"Too many requests. Please try again in {retry_after} seconds."
         return JSONResponse(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             content={
-                "detail": (
-                    f"Too many requests. Please try again in {retry_after} seconds."
-                ),
+                "status": "error",
+                "message": detail,
+                "detail": detail,
                 "request_id": _request_id(request),
                 "code": (
                     "RATE_LIMIT_EXCEEDED"

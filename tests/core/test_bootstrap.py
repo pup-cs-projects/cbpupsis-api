@@ -89,11 +89,10 @@ class TestBootstrapAdmin:
         assert await bootstrap_admin("twice@example.com") == 0
         assert await bootstrap_admin("twice@example.com") == 0
 
-    async def test_the_bootstrapped_admin_can_then_use_the_iam_api(
+    async def test_admin_bootstrap_cannot_unlock_superadmin_iam(
         self, db: AsyncSession, client: AsyncClient, monkeypatch
     ) -> None:
-        """The end-to-end point: after bootstrap, the circularity is broken and
-        every further grant happens through the API."""
+        """Admin promotion revokes old sessions, even with an accidental IAM grant."""
         await _seed_admin_group(db)
         registered = await client.post(
             "/api/v1/auth/register",
@@ -119,11 +118,11 @@ class TestBootstrapAdmin:
         )
         assert await bootstrap_admin("root@example.com") == 0
 
-        # Same token, now authorized.
+        # Promotion invalidated the old token; it cannot bypass MFA or roles.
         after = await client.post(
             "/api/v1/iam/groups", json={"name": "Editors"}, headers=headers
         )
-        assert after.status_code == 201
+        assert after.status_code == 401
 
 
 class _Session:

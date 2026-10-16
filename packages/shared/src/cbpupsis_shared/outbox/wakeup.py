@@ -17,7 +17,8 @@ by running its ordinary claim query. The payload never leaves the table.
 
 **LISTEN needs a session-mode connection.** Neon's pooled URL is PgBouncer in
 transaction mode and silently will not carry it, so the listener uses
-``direct_database_url``. Symptom if missed: notifications work but are always a
+``outbox_listener_database_url`` with runtime credentials. Symptom if missed:
+notifications work but are always a
 full poll interval late, which reads like a tuning problem rather than a wrong
 connection string.
 
@@ -55,11 +56,10 @@ _LIBPQ_ONLY = frozenset(
 def listener_dsn() -> str:
     """Return a plain libpq DSN for the listener connection.
 
-    Uses the **direct** URL: the pooled one is PgBouncer in transaction mode and
-    does not carry ``LISTEN``. Falls back to the pooled URL only so a local
-    stack with one endpoint still works — there, both are the same server.
+    Uses an optional unpooled runtime URL, never migration-owner credentials.
+    Without one polling remains the delivery safety net on transaction pools.
     """
-    url = settings.direct_database_url or settings.database_url
+    url = settings.outbox_listener_database_url or settings.database_url
     parts = urlsplit(url)
     kept = [(k, v) for k, v in parse_qsl(parts.query) if k not in _LIBPQ_ONLY]
     return urlunsplit(("postgresql", parts.netloc, parts.path, urlencode(kept), ""))
