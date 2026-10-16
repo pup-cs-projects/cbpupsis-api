@@ -12,15 +12,19 @@ from cbpupsis_shared.domains.audit.router import router as audit_router
 from cbpupsis_shared.domains.auth.router import router as auth_router
 from cbpupsis_shared.domains.iam.router import router as iam_router
 from cbpupsis_shared.domains.notifications.router import router as notifications_router
+from cbpupsis_shared.domains.users.router import management_router
 from cbpupsis_shared.domains.users.router import router as users_router
 
 # Tagged "account": what it documents is email verification, password reset, and
 # password change for every role. Sign-in is each role's own /auth/<role> router.
 AUTH = RouterMount(auth_router, "/auth", "account")
 USERS = RouterMount(users_router, "/users", "users")
+#: Same prefix, other people's accounts; the admin app alone serves it.
+USER_MANAGEMENT = RouterMount(management_router, "/users", "users")
 NOTIFICATIONS = RouterMount(notifications_router, "/notifications", "notifications")
 IAM = RouterMount(iam_router, "/iam", "iam")
 AUDIT = RouterMount(audit_router, "/audit", "audit")
 
-#: Served by every app: signing in, your own profile, your own notifications.
+#: Served by every app: your account recovery and password change, your own
+#: profile, your own notifications. Never anything another role administers.
 COMMON_MOUNTS: tuple[RouterMount, ...] = (AUTH, USERS, NOTIFICATIONS)

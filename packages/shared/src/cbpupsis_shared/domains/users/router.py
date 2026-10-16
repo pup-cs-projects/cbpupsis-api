@@ -11,9 +11,12 @@ Note the two kinds of protection in use here, which are not interchangeable:
   demands the ``ReadAllUser`` permission *or* self-ownership; a permission check
   alone would let any authenticated user read every profile.
 
-Account creation and temporary-password reissue take a Superadmin session. The
-CSV import is served by the admin app (``cbpupsis_api_admin.domains.user_import``),
-the only image that parses multipart uploads.
+Two routers, mounted by role. ``router`` holds ``/me`` and is served by every
+app. ``management_router`` holds everything aimed at another account (create,
+list, read by id, deactivate, reactivate, reissue a temporary password) and is
+served by the admin app alone, beside the CSV import
+(``cbpupsis_api_admin.domains.user_import``): only a Superadmin may call it, so
+the student and faculty apps do not expose it at all.
 """
 
 from __future__ import annotations
@@ -41,10 +44,18 @@ from cbpupsis_shared.domains.users.schemas import (
     UserUpdate,
 )
 
+#: Your own account. Every app serves it: any role reads and edits only itself.
 router = APIRouter()
+#: Other people's accounts: create, list, read, deactivate, reactivate, reissue.
+#: Only the admin app serves it, beside ``/users/import``, because only a
+#: Superadmin may call any of it. ``tests/core/test_architecture.py`` fails if
+#: the student or faculty app mounts a Superadmin-only route.
+management_router = APIRouter()
 
 
-@router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@management_router.post(
+    "", response_model=UserRead, status_code=status.HTTP_201_CREATED
+)
 async def create_user(
     data: AccountCreate,
     user: CurrentUser = Depends(require_superadmin_session),
@@ -61,7 +72,7 @@ async def create_user(
     return UserRead.model_validate(record)
 
 
-@router.post(
+@management_router.post(
     "/{user_id}/reissue-temporary-password",
     status_code=status.HTTP_204_NO_CONTENT,
 )
@@ -150,7 +161,7 @@ async def delete_me(
     await users_service.delete_own_account(db, user.id, data.password)
 
 
-@router.get("", response_model=Page[UserRead])
+@management_router.get("", response_model=Page[UserRead])
 async def list_users(
     is_active: bool | None = Query(
         default=None, description="Filter by account status. Omit for both."
@@ -184,7 +195,7 @@ async def list_users(
     )
 
 
-@router.post("/{user_id}/deactivate", response_model=UserRead)
+@management_router.post("/{user_id}/deactivate", response_model=UserRead)
 async def deactivate_user(
     user_id: uuid.UUID,
     user: CurrentUser = Depends(require_permission(MANAGE_USER)),
@@ -204,7 +215,7 @@ async def deactivate_user(
     return UserRead.model_validate(record)
 
 
-@router.post("/{user_id}/reactivate", response_model=UserRead)
+@management_router.post("/{user_id}/reactivate", response_model=UserRead)
 async def reactivate_user(
     user_id: uuid.UUID,
     user: CurrentUser = Depends(require_permission(MANAGE_USER)),
@@ -221,7 +232,7 @@ async def reactivate_user(
     return UserRead.model_validate(record)
 
 
-@router.get("/{user_id}", response_model=UserRead)
+@management_router.get("/{user_id}", response_model=UserRead)
 async def read_user(
     user_id: uuid.UUID,
     user: CurrentUser = Depends(get_current_user),
