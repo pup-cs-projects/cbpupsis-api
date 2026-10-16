@@ -645,7 +645,9 @@ Docker CMD runs uvicorn with `--proxy-headers --forwarded-allow-ips "*"`.
 
 Refusals return **429** in the standard error envelope with a `Retry-After`
 header, rather than slowapi's default body, which is a different shape and leaks
-the configured limit.
+the configured limit. CORS lists `Retry-After` (and `X-Request-ID`) in
+`Access-Control-Expose-Headers`, so a browser client on another origin can read
+it.
 
 **Limiting a new endpoint is two steps** — a settings field and a decorator:
 
