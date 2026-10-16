@@ -11,19 +11,7 @@
 # the host's localhost ports, not compose service names.
 #
 # CLIENT_DIR is the client checkout, relative to this file. The Makefile exports it.
-
-x-client: &client
-  image: node:22-alpine
-  # Reinstall only when package-lock.json changes; a full `npm ci` on every start would
-  # cost a minute per client.
-  command:
-    - sh
-    - -c
-    - >-
-      lock="$$(md5sum package-lock.json)";
-      [ "$$lock" = "$$(cat node_modules/.lock-md5 2>/dev/null)" ] ||
-      { npm ci --no-audit --no-fund && echo "$$lock" > node_modules/.lock-md5; };
-      exec npx vite --host 0.0.0.0 --port "$$PORT" --strictPort
+# The checkout is an npm workspace: each portal is apps/<portal>.
 
 x-client-env: &client-env
   # npm ci runs the `prepare` script, and husky would rewrite the HOST repo's
@@ -33,60 +21,81 @@ x-client-env: &client-env
   # switches to polling when this is set.
   VITE_WATCH_POLLING: "1"
 
+x-client-volumes: &client-volumes
+  - ${CLIENT_DIR:-../../cbpupsis-client}:/client
+  # The client is one npm workspace with one node_modules at its root. The host's copy
+  # holds binaries for the host OS (esbuild, rollup), which do not run here, so a named
+  # volume shadows it.
+  - client-modules:/client/node_modules
+
+# Each portal is a workspace in apps/<portal>; it starts once the install has finished.
+x-client: &client
+  image: node:22-alpine
+  working_dir: /client
+  depends_on:
+    client-install:
+      condition: service_completed_successfully
+  command:
+    - sh
+    - -c
+    - exec npm run dev --workspace "apps/$$APP" -- --host 0.0.0.0 --port "$$PORT" --strictPort
+  volumes: *client-volumes
+
 services:
+  # Installs the whole client workspace once, and again only when package-lock.json
+  # changes; a full `npm ci` on every start would cost a minute.
+  client-install:
+    image: node:22-alpine
+    working_dir: /client
+    environment: *client-env
+    command:
+      - sh
+      - -c
+      - >-
+        lock="$$(md5sum package-lock.json)";
+        [ "$$lock" = "$$(cat node_modules/.lock-md5 2>/dev/null)" ] ||
+        { npm ci --no-audit --no-fund && echo "$$lock" > node_modules/.lock-md5; }
+    volumes: *client-volumes
+
   client-student:
     <<: *client
-    working_dir: /client/student
     environment:
       <<: *client-env
+      APP: student
       PORT: "3000"
       VITE_API_BASE_URL: http://localhost:8001/api/v1
     ports:
       - "3000:3000"
-    volumes:
-      - ${CLIENT_DIR:-../../cbpupsis-client}:/client
-      # The host's node_modules holds binaries for the host OS (esbuild, rollup), which
-      # do not run here. A named volume shadows it.
-      - client-student-modules:/client/student/node_modules
 
   client-faculty:
     <<: *client
-    working_dir: /client/faculty
     environment:
       <<: *client-env
+      APP: faculty
       PORT: "3001"
       VITE_API_BASE_URL: http://localhost:8002/api/v1
     ports:
       - "3001:3001"
-    volumes:
-      - ${CLIENT_DIR:-../../cbpupsis-client}:/client
-      - client-faculty-modules:/client/faculty/node_modules
 
   client-admin:
     <<: *client
-    working_dir: /client/admin
     environment:
       <<: *client-env
+      APP: admin
       PORT: "3002"
       VITE_API_BASE_URL: http://localhost:8003/api/v1
     ports:
       - "3002:3002"
-    volumes:
-      - ${CLIENT_DIR:-../../cbpupsis-client}:/client
-      - client-admin-modules:/client/admin/node_modules
 
   client-superadmin:
     <<: *client
-    working_dir: /client/superadmin
     environment:
       <<: *client-env
+      APP: superadmin
       PORT: "3003"
       VITE_API_BASE_URL: http://localhost:8003/api/v1
     ports:
       - "3003:3003"
-    volumes:
-      - ${CLIENT_DIR:-../../cbpupsis-client}:/client
-      - client-superadmin-modules:/client/superadmin/node_modules
 
   # `environment` wins over each app's env_file, so these apply without editing the
   # gitignored env files. They replace CORS_ORIGINS rather than extend it.
@@ -115,7 +124,4 @@ services:
       FRONTEND_BASE_URL_SUPERADMIN: http://localhost:3003
 
 volumes:
-  client-student-modules:
-  client-faculty-modules:
-  client-admin-modules:
-  client-superadmin-modules:
+  client-modules:
