@@ -8,6 +8,7 @@
 #   api-student  http://localhost:8001   auth, users, notifications, items
 #   api-faculty  http://localhost:8002   auth, users, notifications
 #   api-admin    http://localhost:8003   auth, users, notifications, iam, audit
+#   mailpit      http://localhost:8025   every email the stack sends (development)
 #
 # The source is bind-mounted, so an edit on the host reloads the apps. The
 # database is a named volume, so it survives `down` but not `down -v`.
@@ -99,6 +100,15 @@ services:
     # log, not whether it is up. A worker wedged on a poison message keeps
     # running and looks perfectly healthy.
     command: python -m cbpupsis_shared.worker
+
+  mailpit:
+    # Catches every email the stack sends and shows it whole at
+    # http://localhost:8025. Nothing reaches a real inbox. Used only when the
+    # env file sets DEV_SMTP_HOST=mailpit, which settings allow in development
+    # alone; staging, sharing this file, leaves it unset and ignores this.
+    image: axllent/mailpit:v1.21.8
+    ports:
+      - "8025:8025"
 
   db:
     # PostgreSQL 16, the version SRS 5.3 requires and the one Aurora PostgreSQL

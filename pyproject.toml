@@ -112,6 +112,9 @@ env = [
     # The tests that cover rate limiting turn it back on around themselves.
     "RATE_LIMIT_ENABLED=false",
     "PASSWORD_RESET_TTL_MINUTES=1440",
+    # A developer's env file may point mail at the compose Mailpit; the suite
+    # must use the console backend whatever that file says.
+    "DEV_SMTP_HOST=",
 ]
 
 [tool.pyrefly]

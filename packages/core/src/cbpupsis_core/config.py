@@ -216,6 +216,12 @@ class Settings(BaseSettings):
     ses_from_email: str | None = None
     #: Optional SES configuration set, for bounce/complaint event publishing.
     ses_configuration_set: str | None = None
+    #: SMTP host of a local mail catcher (Mailpit in the compose stack). Set, it
+    #: replaces both the console sender and SES, so every message, temporary
+    #: passwords and links included, lands whole in the catcher's inbox instead
+    #: of a real one. Development only: settings refuse it anywhere else.
+    dev_smtp_host: str | None = None
+    dev_smtp_port: int = 1025
     #: Base URL of the frontend that hosts the verification and reset pages.
     #: The emailed link points here, not at the API, because a human clicks it.
     #: Now the fallback: each role's portal has its own key below.
@@ -268,6 +274,14 @@ class Settings(BaseSettings):
         """
         return self.environment == "development"
 
+    @field_validator("dev_smtp_host", mode="before")
+    @classmethod
+    def blank_mail_catcher_is_off(cls, value: object) -> object:
+        """``DEV_SMTP_HOST=`` means no catcher, so a file or test can switch it off."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @field_validator("jwt_secret")
     @classmethod
     def reject_weak_secret(cls, value: SecretStr) -> SecretStr:
@@ -284,6 +298,20 @@ class Settings(BaseSettings):
                 'print(secrets.token_urlsafe(48))"'
             )
         return value
+
+    @model_validator(mode="after")
+    def keep_the_mail_catcher_in_development(self) -> Settings:
+        """Refuse a mail catcher outside development.
+
+        It takes precedence over SES, so in staging or production it would
+        silently swallow every real email, password resets included.
+        """
+        if self.dev_smtp_host is not None and self.environment != "development":
+            raise ValueError(
+                "dev_smtp_host is for development only; unset it in "
+                f"{self.environment} and configure ses_from_email instead."
+            )
+        return self
 
     @model_validator(mode="after")
     def require_shared_rate_limit_storage(self) -> Settings:

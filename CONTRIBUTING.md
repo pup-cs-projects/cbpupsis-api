@@ -106,6 +106,11 @@ migrations once before any app starts. Each app has its own API reference:
 | Faculty | <http://localhost:8002/scalar> | auth, users, notifications |
 | Admin | <http://localhost:8003/scalar> | auth, users, notifications, iam, audit, and the `/admin` panel |
 
+Every email the stack sends (verification and reset links, temporary passwords) lands in
+**Mailpit** at <http://localhost:8025>, not in a real inbox, as long as your env files keep
+`DEV_SMTP_HOST=mailpit` from `env.example`. Without it, emails are only logged by recipient
+and subject.
+
 Stop with `make down` (or `docker compose -f docker/docker-compose.yml down`).
 
 There is no public signup, so the first account comes from the console. To become an
