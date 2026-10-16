@@ -90,10 +90,9 @@ async def _check_and_enforce_lockout(
 async def login_faculty(
     db: AsyncSession,
     *,
-    identifier: str | None = None,
+    identifier: str,
     password: str,
     birthday: str | None = None,
-    email: str | None = None,
     ip_address: str | None = None,
     user_agent: str | None = None,
 ) -> FacultyLoginChallengeData:
@@ -101,18 +100,13 @@ async def login_faculty(
 
     Implements AC-002.1 and AC-002.6.
     """
-    attempted_id = identifier or email or ""
-    if identifier and not validate_faculty_identifier(identifier):
+    attempted_id = identifier
+    if not validate_faculty_identifier(identifier):
         raise InvalidIdentifierFormatError
 
     await _check_and_enforce_lockout(db, attempted_id)
 
-    faculty_record = None
-    if identifier:
-        faculty_record = await repository.get_faculty_by_employee_id(db, identifier)
-
-    if faculty_record is None and email:
-        pass
+    faculty_record = await repository.get_faculty_by_employee_id(db, identifier)
 
     if faculty_record is None:
         await repository.record_audit_log(
@@ -125,6 +119,7 @@ async def login_faculty(
             failure_reason="AUTH_FAILED",
             mfa_used=False,
         )
+        await db.commit()
         since = datetime.now(UTC) - timedelta(minutes=LOCKOUT_WINDOW_MINUTES)
         recent = await repository.get_recent_failed_attempts(db, attempted_id, since)
         if len(recent) >= MAX_FAILED_ATTEMPTS:
@@ -150,6 +145,7 @@ async def login_faculty(
             failure_reason="AUTH_FAILED",
             mfa_used=False,
         )
+        await db.commit()
         since = datetime.now(UTC) - timedelta(minutes=LOCKOUT_WINDOW_MINUTES)
         recent = await repository.get_recent_failed_attempts(
             db, attempted_id, since, user_id=user.id
@@ -182,6 +178,7 @@ async def login_faculty(
         failure_reason=None,
         mfa_used=False,
     )
+    await db.commit()
 
     employee_id = faculty_profile.employee_id or attempted_id
     challenge_token = create_faculty_challenge_token(
@@ -368,6 +365,7 @@ async def verify_faculty_mfa(
                 role="FACULTY",
             ),
         )
+        await db.commit()
         return session_data, refresh_token
 
     except (
@@ -403,6 +401,7 @@ async def enroll_faculty_mfa(
         totp_secret=encrypted_secret,
         is_enrolled=False,
     )
+    await db.commit()
 
     account_name = faculty_profile.employee_id or user.email
     uri = totp_provisioning_uri(
@@ -442,6 +441,7 @@ async def confirm_faculty_mfa_enrollment(
     codes = generate_recovery_codes(8)
     hashed = [hash_recovery_code(c) for c in codes]
     await repository.create_mfa_recovery_codes(db, user_id=user_id, hashed_codes=hashed)
+    await db.commit()
 
     return codes
 

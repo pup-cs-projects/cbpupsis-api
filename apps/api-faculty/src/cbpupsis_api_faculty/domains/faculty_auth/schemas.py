@@ -10,19 +10,31 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class FacultyLoginRequest(BaseModel):
-    """Payload submitted to POST /api/v1/auth/login."""
+    """Payload submitted to POST /api/v1/auth/login (AC-002.1)."""
 
-    identifier: str | None = Field(
-        default=None,
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "identifier": "",
+                "password": "",
+                "birthday": "",
+            },
+            "examples": [
+                {
+                    "identifier": "",
+                    "password": "",
+                    "birthday": "",
+                }
+            ],
+        }
+    )
+
+    identifier: str = Field(
+        ...,
         description="Faculty employee ID in format YYYY-NNNNN-XX-N",
-        examples=["2021-00456-MN-0"],
     )
-    password: str = Field(description="Account password")
+    password: str = Field(..., description="Account password")
     birthday: str | None = Field(default=None, description="Optional YYYY-MM-DD")
-    email: str | None = Field(
-        default=None,
-        description="Fallback email for backward compatibility with shared suite",
-    )
 
 
 class FacultyLoginChallengeData(BaseModel):

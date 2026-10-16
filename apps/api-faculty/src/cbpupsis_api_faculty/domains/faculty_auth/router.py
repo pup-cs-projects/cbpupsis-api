@@ -36,7 +36,6 @@ from cbpupsis_shared.domains.auth.dependencies import CurrentUser, get_current_u
 from cbpupsis_shared.domains.auth.exceptions import NotAuthenticatedError
 from cbpupsis_shared.domains.auth.schemas import (
     CurrentUserRead,
-    LoginRequest,
     RefreshRequest,
     TokenPair,
 )
@@ -74,7 +73,7 @@ async def _resolve_user_id(
 
 @router.post(
     "/login",
-    response_model=FacultyLoginResponse | TokenPair,
+    response_model=FacultyLoginResponse,
     status_code=status.HTTP_200_OK,
     operation_id="faculty_login",
     summary="Faculty Login",
@@ -83,6 +82,7 @@ async def _resolve_user_id(
 async def faculty_login(
     request: Request,
     response: Response,
+    data: FacultyLoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Authenticate faculty member (AC-002.1).
@@ -92,26 +92,8 @@ async def faculty_login(
     Returns 200 OK with mfa_required=True, a short-lived challenge token,
     and no access token.
     """
-    try:
-        body = await request.json()
-    except Exception:
-        raise InvalidIdentifierFormatError() from None
-
-    if not isinstance(body, dict):
+    if not data.identifier:
         raise InvalidIdentifierFormatError()
-
-    # Legacy email login fallback for shared template tests
-    if "email" in body and "identifier" not in body:
-        login_req = LoginRequest.model_validate(body)
-        return await auth_service.login(
-            db, email=login_req.email, password=login_req.password
-        )
-
-    # Validate identifier presence before further parsing
-    if "identifier" not in body:
-        raise InvalidIdentifierFormatError()
-
-    data = FacultyLoginRequest.model_validate(body)
     client_ip = _extract_client_ip(request)
     user_agent = request.headers.get("user-agent")
 
@@ -120,7 +102,6 @@ async def faculty_login(
         identifier=data.identifier,
         password=data.password,
         birthday=data.birthday,
-        email=data.email,
         ip_address=client_ip,
         user_agent=user_agent,
     )
