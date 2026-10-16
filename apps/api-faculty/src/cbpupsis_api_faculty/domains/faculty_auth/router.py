@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import uuid
 from typing import Any
 
@@ -44,11 +45,20 @@ router = APIRouter()
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def _extract_client_ip(request: Request) -> str:
+def _extract_client_ip(request: Request) -> str | None:
+    """Extract and validate client IP address for the audit ledger."""
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "127.0.0.1"
+    raw_ip = (
+        forwarded.split(",")[0].strip()
+        if forwarded
+        else (request.client.host if request.client else None)
+    )
+    if not raw_ip:
+        return None
+    try:
+        return str(ipaddress.ip_address(raw_ip))
+    except ValueError:
+        return None
 
 
 async def _resolve_user_id(

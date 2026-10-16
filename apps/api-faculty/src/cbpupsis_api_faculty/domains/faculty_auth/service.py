@@ -92,7 +92,7 @@ async def login_faculty(
     *,
     identifier: str,
     password: str,
-    birthday: str | None = None,
+    birthday: str,
     ip_address: str | None = None,
     user_agent: str | None = None,
 ) -> FacultyLoginChallengeData:
@@ -104,93 +104,111 @@ async def login_faculty(
     if not validate_faculty_identifier(identifier):
         raise InvalidIdentifierFormatError
 
-    await _check_and_enforce_lockout(db, attempted_id)
+    try:
+        await _check_and_enforce_lockout(db, attempted_id)
 
-    faculty_record = await repository.get_faculty_by_employee_id(db, identifier)
+        faculty_record = await repository.get_faculty_by_employee_id(db, identifier)
 
-    if faculty_record is None:
-        await repository.record_audit_log(
-            db,
-            attempted_id=attempted_id,
-            user_id=None,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            success=False,
-            failure_reason="AUTH_FAILED",
-            mfa_used=False,
-        )
-        await db.commit()
-        since = datetime.now(UTC) - timedelta(minutes=LOCKOUT_WINDOW_MINUTES)
-        recent = await repository.get_recent_failed_attempts(db, attempted_id, since)
-        if len(recent) >= MAX_FAILED_ATTEMPTS:
-            raise FacultyAccountLockedError(
-                retry_after_seconds=LOCKOUT_DURATION_SECONDS,
-                code="AUTH_ACCOUNT_LOCKED",
+        if faculty_record is None:
+            await repository.record_audit_log(
+                db,
+                attempted_id=attempted_id,
+                user_id=None,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                success=False,
+                failure_reason="AUTH_FAILED",
+                mfa_used=False,
             )
-        remaining = max(0, MAX_FAILED_ATTEMPTS - len(recent))
-        raise FacultyAuthFailedError(remaining_attempts=remaining)
+            await db.commit()
+            since = datetime.now(UTC) - timedelta(minutes=LOCKOUT_WINDOW_MINUTES)
+            recent = await repository.get_recent_failed_attempts(
+                db, attempted_id, since
+            )
+            if len(recent) >= MAX_FAILED_ATTEMPTS:
+                raise FacultyAccountLockedError(
+                    retry_after_seconds=LOCKOUT_DURATION_SECONDS,
+                    code="AUTH_ACCOUNT_LOCKED",
+                )
+            remaining = max(0, MAX_FAILED_ATTEMPTS - len(recent))
+            raise FacultyAuthFailedError(remaining_attempts=remaining)
 
-    user, faculty_profile, _user_profile = faculty_record
+        user, faculty_profile, user_profile = faculty_record
 
-    if not user.is_active or not auth_client.check_password(
-        password, user.password_hash
-    ):
+        birthdate_match = True
+        if user_profile and user_profile.birthdate:
+            birthdate_match = str(user_profile.birthdate) == birthday.strip()
+
+        if (
+            not user.is_active
+            or not auth_client.check_password(password, user.password_hash)
+            or not birthdate_match
+        ):
+            await repository.record_audit_log(
+                db,
+                attempted_id=attempted_id,
+                user_id=user.id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                success=False,
+                failure_reason="AUTH_FAILED",
+                mfa_used=False,
+            )
+            await db.commit()
+            since = datetime.now(UTC) - timedelta(minutes=LOCKOUT_WINDOW_MINUTES)
+            recent = await repository.get_recent_failed_attempts(
+                db, attempted_id, since, user_id=user.id
+            )
+            if len(recent) >= MAX_FAILED_ATTEMPTS:
+                try:
+                    await send_email(
+                        to=user.email,
+                        subject="Security Notice: PUP Faculty Account Locked",
+                        body=(
+                            "Your faculty account has been locked due to 5 consecutive "
+                            "failed login attempts."
+                        ),
+                    )
+                except Exception as exc:
+                    logger.warning("Could not dispatch lockout email: %s", exc)
+            remaining = max(0, MAX_FAILED_ATTEMPTS - len(recent))
+            raise FacultyAuthFailedError(remaining_attempts=remaining)
+
+        creds = await repository.get_user_mfa_credentials(db, user.id)
+        is_mfa_enrolled = any(c.is_enrolled for c in creds if c.mfa_type == "totp")
+
         await repository.record_audit_log(
             db,
             attempted_id=attempted_id,
             user_id=user.id,
             ip_address=ip_address,
             user_agent=user_agent,
-            success=False,
-            failure_reason="AUTH_FAILED",
+            success=True,
+            failure_reason=None,
             mfa_used=False,
         )
         await db.commit()
-        since = datetime.now(UTC) - timedelta(minutes=LOCKOUT_WINDOW_MINUTES)
-        recent = await repository.get_recent_failed_attempts(
-            db, attempted_id, since, user_id=user.id
+
+        employee_id = faculty_profile.employee_id or attempted_id
+        challenge_token = create_faculty_challenge_token(
+            user_id=user.id, identifier=employee_id
         )
-        if len(recent) >= MAX_FAILED_ATTEMPTS:
-            try:
-                await send_email(
-                    to=user.email,
-                    subject="Security Notice: PUP Faculty Account Locked",
-                    body=(
-                        "Your faculty account has been locked due to 5 consecutive "
-                        "failed login attempts."
-                    ),
-                )
-            except Exception as exc:
-                logger.warning("Could not dispatch lockout email: %s", exc)
-        remaining = max(0, MAX_FAILED_ATTEMPTS - len(recent))
-        raise FacultyAuthFailedError(remaining_attempts=remaining)
 
-    creds = await repository.get_user_mfa_credentials(db, user.id)
-    is_mfa_enrolled = any(c.is_enrolled for c in creds if c.mfa_type == "totp")
-
-    await repository.record_audit_log(
-        db,
-        attempted_id=attempted_id,
-        user_id=user.id,
-        ip_address=ip_address,
-        user_agent=user_agent,
-        success=True,
-        failure_reason=None,
-        mfa_used=False,
-    )
-    await db.commit()
-
-    employee_id = faculty_profile.employee_id or attempted_id
-    challenge_token = create_faculty_challenge_token(
-        user_id=user.id, identifier=employee_id
-    )
-
-    return FacultyLoginChallengeData(
-        challenge_token=challenge_token,
-        mfa_required=True,
-        expires_in=300,
-        mfa_enrolled=is_mfa_enrolled,
-    )
+        return FacultyLoginChallengeData(
+            challenge_token=challenge_token,
+            mfa_required=True,
+            expires_in=300,
+            mfa_enrolled=is_mfa_enrolled,
+        )
+    except (
+        FacultyAccountLockedError,
+        FacultyAuthFailedError,
+        InvalidIdentifierFormatError,
+    ):
+        raise
+    except SQLAlchemyError as exc:
+        logger.error("Database failure during faculty login: %s", exc)
+        raise DatabaseServiceUnavailableError from exc
 
 
 async def verify_faculty_mfa(

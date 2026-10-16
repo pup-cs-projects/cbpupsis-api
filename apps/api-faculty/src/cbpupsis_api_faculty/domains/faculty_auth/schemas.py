@@ -34,7 +34,7 @@ class FacultyLoginRequest(BaseModel):
         description="Faculty employee ID in format YYYY-NNNNN-XX-N",
     )
     password: str = Field(..., description="Account password")
-    birthday: str | None = Field(default=None, description="Optional YYYY-MM-DD")
+    birthday: str = Field(..., description="Faculty birthday in format YYYY-MM-DD")
 
 
 class FacultyLoginChallengeData(BaseModel):
