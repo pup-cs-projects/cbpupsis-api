@@ -1,4 +1,5 @@
-"""Outbound email — an ``EmailSender`` protocol with an SES and a console backend.
+"""Outbound email: an ``EmailSender`` protocol with SES, console, and mail-catcher
+backends.
 
 Three decisions worth stating, because each prevents a specific production bug:
 
@@ -13,6 +14,10 @@ Three decisions worth stating, because each prevents a specific production bug:
 - **No sender identity configured means the console backend.** Development and
   tests therefore need no AWS credentials and cannot email a real person by
   accident — the failure mode of a shared staging database pointed at real SES.
+- **A development mail catcher wins over both.** With ``DEV_SMTP_HOST`` set
+  (development only, enforced by settings), every message goes to Mailpit,
+  where a developer reads it whole. The console backend never prints bodies,
+  so this is the one place a local temporary password or link can be read.
 
 The message bodies live in :mod:`cbpupsis_core.emails.templates` so this module stays
 about transport.
@@ -22,12 +27,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import smtplib
+from email.message import EmailMessage
 from functools import lru_cache
 from typing import Protocol, runtime_checkable
 
 from cbpupsis_core.config import settings
 
 logger = logging.getLogger(__name__)
+
+#: The sender address on caught development mail. Never a deliverable domain.
+DEV_FROM_EMAIL = "no-reply@cbpupsis.localhost"
 
 
 @runtime_checkable
@@ -49,6 +59,31 @@ class ConsoleEmailSender:
     async def send(self, *, to: str, subject: str, body: str) -> None:
         """Record transport metadata without the password-reset link."""
         logger.info("Email (console backend, not sent) to=%s subject=%s", to, subject)
+
+
+class MailCatcherSender:
+    """Deliver to a local SMTP mail catcher (Mailpit) for reading in a browser.
+
+    Plain SMTP without TLS or credentials: the catcher runs beside the app on
+    the compose network, and settings refuse this backend outside development.
+    """
+
+    def __init__(self, *, host: str, port: int) -> None:
+        self._host = host
+        self._port = port
+
+    def send_blocking(self, to: str, subject: str, body: str) -> None:
+        """Blocking SMTP exchange, run on a worker thread by :meth:`send`."""
+        message = EmailMessage()
+        message["From"] = DEV_FROM_EMAIL
+        message["To"] = to
+        message["Subject"] = subject
+        message.set_content(body)
+        with smtplib.SMTP(self._host, self._port, timeout=10) as client:
+            client.send_message(message)
+
+    async def send(self, *, to: str, subject: str, body: str) -> None:
+        await asyncio.to_thread(self.send_blocking, to, subject, body)
 
 
 class SESEmailSender:
@@ -97,8 +132,18 @@ class SESEmailSender:
 def get_email_sender() -> EmailSender:
     """Return the configured sender, built once per process.
 
-    Falls back to the console backend whenever no verified SES identity is set.
+    A development mail catcher, when configured, wins over everything; then SES;
+    then the console backend whenever no verified SES identity is set.
     """
+    if settings.dev_smtp_host is not None:
+        logger.info(
+            "Using the development mail catcher at %s:%s",
+            settings.dev_smtp_host,
+            settings.dev_smtp_port,
+        )
+        return MailCatcherSender(
+            host=settings.dev_smtp_host, port=settings.dev_smtp_port
+        )
     if not settings.email_enabled:
         logger.info("No ses_from_email configured; using the console email backend")
         return ConsoleEmailSender()

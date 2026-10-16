@@ -49,6 +49,7 @@ development only:
 | Student | <http://localhost:8001> | <http://localhost:8001/scalar> | auth, users, notifications, items |
 | Faculty | <http://localhost:8002> | <http://localhost:8002/scalar> | auth, users, notifications |
 | Admin | <http://localhost:8003> | <http://localhost:8003/scalar> | auth, users, notifications, iam, audit, and the `/admin` panel |
+| Mailpit | <http://localhost:8025> | | every email the stack sends, development only |
 
 Sign-in, your own profile, and your own notifications work on every app, with the same
 paths. No `make` on Windows? `CONTRIBUTING.md` lists the plain commands.

@@ -14,11 +14,14 @@ import uuid
 
 import pytest
 from httpx import AsyncClient
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cbpupsis_core.config import Settings
 from cbpupsis_core.emails import (
     ConsoleEmailSender,
     EmailSender,
+    MailCatcherSender,
     SESEmailSender,
     get_email_sender,
     send_email,
@@ -72,6 +75,61 @@ class TestSenderSelection:
 
     def test_both_backends_satisfy_the_protocol(self) -> None:
         assert isinstance(ConsoleEmailSender(), EmailSender)
+        assert isinstance(MailCatcherSender(host="mailpit", port=1025), EmailSender)
+
+    def test_the_mail_catcher_wins_over_ses(self, monkeypatch) -> None:
+        """Development with a catcher must never reach a real inbox."""
+        monkeypatch.setattr(
+            "cbpupsis_core.emails.sender.settings.ses_from_email",
+            "no-reply@example.com",
+        )
+        monkeypatch.setattr(
+            "cbpupsis_core.emails.sender.settings.dev_smtp_host", "mailpit"
+        )
+        assert isinstance(get_email_sender(), MailCatcherSender)
+
+
+class TestMailCatcher:
+    """Development only: full messages go to Mailpit, never to the logs."""
+
+    async def test_delivers_the_whole_message_over_smtp(self, monkeypatch) -> None:
+        sent: dict[str, object] = {}
+
+        class FakeSMTP:
+            def __init__(self, host: str, port: int, timeout: float) -> None:
+                sent["address"] = (host, port)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc_info) -> None:
+                return None
+
+            def send_message(self, message) -> None:
+                sent["message"] = message
+
+        monkeypatch.setattr("cbpupsis_core.emails.sender.smtplib.SMTP", FakeSMTP)
+        await MailCatcherSender(host="mailpit", port=1025).send(
+            to="user@example.com", subject="Your account is ready", body="Pw: x7#Q"
+        )
+        message = sent["message"]
+        assert sent["address"] == ("mailpit", 1025)
+        assert message["To"] == "user@example.com"
+        assert message["Subject"] == "Your account is ready"
+        assert "Pw: x7#Q" in message.get_content()
+
+    @pytest.mark.parametrize("environment", ["staging", "production"])
+    def test_settings_refuse_it_outside_development(self, environment: str) -> None:
+        with pytest.raises(ValidationError, match="development only"):
+            Settings(
+                environment=environment,
+                dev_smtp_host="mailpit",
+                rate_limit_storage_uri="redis://redis:6379",
+            )
+
+    def test_a_blank_value_switches_it_off(self) -> None:
+        assert Settings(dev_smtp_host="").dev_smtp_host is None
+        assert Settings(dev_smtp_host="mailpit").dev_smtp_host == "mailpit"
 
 
 class TestConsoleSender:

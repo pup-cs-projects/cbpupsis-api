@@ -312,7 +312,7 @@ packages/                    # the shared kernel; every app depends on it
     exceptions.py            #     AppError hierarchy + handlers
     logging.py               #     JSON logs, request-id correlation
     pagination.py            #     Page[T] envelope
-    emails/                  #     EmailSender protocol, SES and console backends, bodies
+    emails/                  #     EmailSender protocol, SES, console, and mail-catcher backends, bodies
     middleware/              #     correlation-id, request logging, CORS; @rate_limit
 
   database/src/cbpupsis_database/
@@ -715,11 +715,20 @@ and uniquely indexed, so several deletions would otherwise collide, and
 
 ### Email delivery
 
-`cbpupsis_core/emails/sender.py` picks a backend from configuration: **`SESEmailSender`** when
-`SES_FROM_EMAIL` is set, **`ConsoleEmailSender`** otherwise — so development and
-tests need no AWS credentials and cannot mail a real person by accident. boto3 is
-synchronous, so every SES call goes through `asyncio.to_thread`; calling it
-directly would block the event loop for the whole round-trip.
+`cbpupsis_core/emails/sender.py` picks a backend from configuration, in this order:
+
+| Setting | Backend | Where the message goes |
+|---|---|---|
+| `DEV_SMTP_HOST` (development only) | `MailCatcherSender` | The compose stack's Mailpit; read it whole at <http://localhost:8025> |
+| `SES_FROM_EMAIL` | `SESEmailSender` | Real inboxes, through AWS SES |
+| neither | `ConsoleEmailSender` | Nowhere: logs the recipient and subject only, never the body |
+
+Development and tests therefore need no AWS credentials and cannot mail a real
+person by accident. The console backend never prints a body, because bodies carry
+reset links and temporary passwords; Mailpit is how you read them locally. Settings
+refuse `DEV_SMTP_HOST` unless `ENVIRONMENT=development`, because it wins over SES and
+would swallow real mail anywhere else. SMTP and boto3 are synchronous, so every send
+goes through `asyncio.to_thread`; calling them directly would block the event loop.
 
 **Sending never fails a request.** A user who registered but whose email bounced
 must still exist, so `send_email` logs the failure and returns `False`.
