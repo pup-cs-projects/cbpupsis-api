@@ -14,6 +14,14 @@ from typing import Literal
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+#: Where each role's portal runs locally, matching the dev stack's ports.
+DEV_FRONTEND_URLS: dict[str, str] = {
+    "student": "http://localhost:3000",
+    "faculty": "http://localhost:3001",
+    "admin": "http://localhost:3002",
+    "superadmin": "http://localhost:3003",
+}
+
 
 class Settings(BaseSettings):
     """Typed application settings, validated at startup."""
@@ -210,7 +218,15 @@ class Settings(BaseSettings):
     ses_configuration_set: str | None = None
     #: Base URL of the frontend that hosts the verification and reset pages.
     #: The emailed link points here, not at the API, because a human clicks it.
+    #: Now the fallback: each role's portal has its own key below.
     frontend_base_url: str = "http://localhost:3000"
+    #: One portal per role. Unset, a role falls back to ``frontend_base_url``
+    #: when that is configured, else to its local dev port (see
+    #: :meth:`frontend_url_for`).
+    frontend_base_url_student: str | None = None
+    frontend_base_url_faculty: str | None = None
+    frontend_base_url_admin: str | None = None
+    frontend_base_url_superadmin: str | None = None
 
     @property
     def email_enabled(self) -> bool:
@@ -220,6 +236,27 @@ class Settings(BaseSettings):
         means no real mail — cannot be applied inconsistently.
         """
         return self.ses_from_email is not None
+
+    def frontend_url_for(self, role: str | None) -> str:
+        """Return the base URL of the portal an emailed link for ``role`` opens.
+
+        A role's own key wins. Without it, an explicitly set
+        ``FRONTEND_BASE_URL`` wins over the dev port, so an env file written
+        before the per-role keys existed keeps sending every link where it did.
+        ``None`` or an unknown role (an account in no role group) gets the
+        fallback.
+        """
+        configured = {
+            "student": self.frontend_base_url_student,
+            "faculty": self.frontend_base_url_faculty,
+            "admin": self.frontend_base_url_admin,
+            "superadmin": self.frontend_base_url_superadmin,
+        }.get(role or "")
+        if configured:
+            return configured
+        if "frontend_base_url" in self.model_fields_set:
+            return self.frontend_base_url
+        return DEV_FRONTEND_URLS.get(role or "", self.frontend_base_url)
 
     @property
     def docs_enabled(self) -> bool:

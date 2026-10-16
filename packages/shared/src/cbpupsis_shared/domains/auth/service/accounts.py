@@ -28,6 +28,12 @@ from cbpupsis_core.events import Event
 from cbpupsis_database.models.auth import TokenPurpose
 from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.auth import repository
+from cbpupsis_shared.domains.auth.constants import (
+    ROLE_ADMIN,
+    ROLE_FACULTY,
+    ROLE_STUDENT,
+    ROLE_SUPERADMIN,
+)
 from cbpupsis_shared.domains.auth.exceptions import InvalidCredentialsError
 from cbpupsis_shared.domains.auth.schemas import TokenPair
 from cbpupsis_shared.domains.auth.security import (
@@ -54,13 +60,40 @@ from cbpupsis_shared.domains.auth.service.verification import (
     stage_verification_email,
 )
 from cbpupsis_shared.domains.iam import service as iam_service
-from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
+from cbpupsis_shared.domains.iam.constants import (
+    ADMIN_GROUP,
+    FACULTY_GROUP,
+    STUDENT_GROUP,
+    SUPERADMIN_GROUP,
+)
 from cbpupsis_shared.domains.users import service as users_service
 from cbpupsis_shared.domains.users.exceptions import UserAlreadyExistsError
 from cbpupsis_shared.domains.users.schemas import AccountCreate
 from cbpupsis_shared.outbox import publish_transactional
 
 TEMPORARY_PASSWORD_EVENT = "auth.temporary_password_email"
+
+#: The IAM group behind each role's portal, most privileged first: an account in
+#: several groups is sent to the first that matches.
+PORTAL_ROLE_GROUPS: tuple[tuple[str, str], ...] = (
+    (ROLE_SUPERADMIN, SUPERADMIN_GROUP),
+    (ROLE_ADMIN, ADMIN_GROUP),
+    (ROLE_FACULTY, FACULTY_GROUP),
+    (ROLE_STUDENT, STUDENT_GROUP),
+)
+
+
+async def portal_role(db: AsyncSession, user_id: uuid.UUID) -> str | None:
+    """Return the role whose portal an account's mailed links open, or ``None``.
+
+    Read from live IAM membership, like every role check, so a link mailed after
+    a role change opens the new portal. ``None`` for an account in no role group
+    (an operator-script account); its links use the fallback frontend.
+    """
+    for role, group in PORTAL_ROLE_GROUPS:
+        if await iam_service.is_user_in_group(db, user_id, group):
+            return role
+    return None
 
 
 async def create_account(

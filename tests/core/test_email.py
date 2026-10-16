@@ -260,20 +260,20 @@ class TestTemplates:
         """A human clicks these; the API has no page to render."""
         from cbpupsis_core import emails as email_templates
 
-        subject, body = email_templates.verification_email("abc123")
+        subject, body = email_templates.verification_email("abc123", role="student")
         assert subject
         assert "/verify-email?token=abc123" in body
 
     def test_reset_link_points_at_the_frontend(self) -> None:
         from cbpupsis_core import emails as email_templates
 
-        _subject, body = email_templates.password_reset_email("xyz789")
+        _subject, body = email_templates.password_reset_email("xyz789", role="student")
         assert "/reset-password?token=xyz789" in body
 
     def test_tokens_are_url_escaped(self) -> None:
         from cbpupsis_core import emails as email_templates
 
-        _subject, body = email_templates.verification_email("a+b/c=d")
+        _subject, body = email_templates.verification_email("a+b/c=d", role="student")
         assert "a+b/c=d" not in body
         assert "a%2Bb%2Fc%3Dd" in body
 

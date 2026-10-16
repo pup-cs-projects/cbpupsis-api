@@ -21,6 +21,7 @@ from cbpupsis_core.events import Event
 from cbpupsis_database.models.auth import TokenPurpose
 from cbpupsis_database.session import AsyncSessionLocal
 from cbpupsis_shared.domains.auth import repository
+from cbpupsis_shared.domains.auth import service as auth_service
 from cbpupsis_shared.domains.auth.security import (
     RESET_EMAIL,
     TEMPORARY_PASSWORD_EMAIL,
@@ -62,8 +63,8 @@ async def deliver_reset_email_on(
         purpose=TokenPurpose.password_reset,
         label=RESET_EMAIL,
         receipt="reset_email",
-        render=lambda token, expires_at, user: emails.password_reset_email(
-            token, expires_at=expires_at
+        render=lambda token, expires_at, user, role: emails.password_reset_email(
+            token, role=role, expires_at=expires_at
         ),
         error=ResetEmailDeliveryError("Password reset email delivery failed"),
     )
@@ -86,10 +87,10 @@ async def deliver_verification_email_on(
         purpose=TokenPurpose.email_verification,
         label=VERIFICATION_EMAIL,
         receipt="verification_email",
-        render=lambda token, expires_at, user: (
+        render=lambda token, expires_at, user, role: (
             None
             if user.email_verified_at is not None
-            else emails.verification_email(token)
+            else emails.verification_email(token, role=role)
         ),
         error=VerificationEmailDeliveryError("Verification email delivery failed"),
     )
@@ -103,14 +104,16 @@ async def deliver_mailed_link(
     purpose: TokenPurpose,
     label: str,
     receipt: str,
-    render: Callable[[str, datetime, object], tuple[str, str] | None],
+    render: Callable[[str, datetime, object, str | None], tuple[str, str] | None],
     error: RuntimeError,
 ) -> None:
     """Mail a live token's link once; a dead token or account is a terminal skip.
 
     ``render`` returns ``None`` to skip a link that no longer helps (an address
-    verified since). Failures raise ``error`` without the original exception,
-    because its text lands in ``last_error`` and must never carry the token.
+    verified since). It is given the account's portal role, so the link opens
+    the portal that account signs in to. Failures raise ``error`` without the
+    original exception, because its text lands in ``last_error`` and must never
+    carry the token.
     """
     await lock_message(db, message_id)
     if await already_delivered(db, message_id, receipt):
@@ -130,6 +133,7 @@ async def deliver_mailed_link(
         and expires_at > datetime.now(UTC)
         and user is not None
     ):
+        role = await auth_service.portal_role(db, user_id)
         try:
             raw_token = decrypt_mailed_token(
                 event.payload["encrypted_token"],
@@ -139,7 +143,7 @@ async def deliver_mailed_link(
             )
             if hash_one_time_token(raw_token) != token_hash:
                 raise error
-            message = render(raw_token, expires_at, user)
+            message = render(raw_token, expires_at, user, role)
             delivered = (
                 True
                 if message is None
@@ -190,6 +194,7 @@ async def deliver_temporary_password_email_on(
         and user.password_change_required
         and expires_at > datetime.now(UTC)
     ):
+        role = await auth_service.portal_role(db, user_id)
         try:
             raw_password = decrypt_mailed_token(
                 event.payload["encrypted_password"],
@@ -203,7 +208,9 @@ async def deliver_temporary_password_email_on(
             delivered = not current or await send_email(
                 to=user.email,
                 subject=emails.WELCOME_SUBJECT,
-                body=emails.welcome_email(raw_password, expires_at=expires_at)[1],
+                body=emails.welcome_email(
+                    raw_password, role=role, expires_at=expires_at
+                )[1],
             )
         except Exception:
             raise error from None

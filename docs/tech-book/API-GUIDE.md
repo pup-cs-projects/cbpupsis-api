@@ -513,6 +513,33 @@ request allowance is exhausted. A successful reset spends all outstanding reset
 links and increments the account's session version; earlier access and refresh
 tokens then return 401 `AUTH_SESSION_EXPIRED`, including Admin sessions.
 
+`POST /change-password` needs a bearer access token from the caller's own role
+sign-in (the `access_token` of the pair it returned; there is no special
+limited token) and accepts `{"current_password":"...","new_password":"..."}`
+(`new_password` 12 to 128 characters). Success returns 200 with a new token
+pair carrying the same role, MFA, and Admin scope claims. Every other session
+and refresh token of the account is revoked, outstanding reset links are spent,
+and a password-changed notice is mailed, so the client must replace both
+tokens with the returned ones. A wrong current password returns 401 with
+`Current password is incorrect` (no `code`); reusing the temporary password
+returns 422 `AUTH_PASSWORD_TOO_WEAK`; an expired temporary password returns
+401 `AUTH_TEMPORARY_PASSWORD_EXPIRED`; an ended session returns 401
+`AUTH_SESSION_EXPIRED`.
+
+A sign-in with a temporary password still succeeds and returns the role's
+normal session. The first protected call with that access token answers 403
+`PASSWORD_CHANGE_REQUIRED`; the client then sends the same access token to
+`POST /change-password`, which is the one route that accepts it.
+
+**Links open the portal of the account's role.** The reset link, the
+verification link, and the temporary-password email point at
+`FRONTEND_BASE_URL_STUDENT`, `_FACULTY`, `_ADMIN`, or `_SUPERADMIN`, chosen by
+the account's live IAM group (Superadmins, then Admins, then Faculty, then
+Students, when an account is in several). A role left unset uses
+`FRONTEND_BASE_URL` when that is set, otherwise its dev port (3000, 3001, 3002,
+3003). An account in none of those groups uses `FRONTEND_BASE_URL`. Each portal
+serves `/reset-password?token=` and `/verify-email?token=`.
+
 Run the existing outbox worker (`python -m cbpupsis_shared.worker`) alongside the
 API. Reset delivery retries with the configured exponential backoff and uses a
 receipt to skip completed jobs. Every retry mails the original token, so it

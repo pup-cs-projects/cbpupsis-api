@@ -33,6 +33,7 @@ from cbpupsis_shared.domains.auth.service.accounts import (
     create_accounts,
     create_console_account,
     login,
+    portal_role,
     register,
     reissue_temporary_password,
 )
@@ -111,6 +112,7 @@ __all__ = [
     "login",
     "logout",
     "open_challenge",
+    "portal_role",
     "record_attempt",
     "record_request_refusal",
     "record_sign_in_failure",
