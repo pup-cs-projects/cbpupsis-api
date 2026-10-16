@@ -126,8 +126,6 @@ def register_exception_handlers(app: FastAPI) -> None:
         no key appears with a null value for them to misread as meaningful.
         """
         content: dict[str, object] = {
-            "status": "error",
-            "message": exc.detail,
             "detail": exc.detail,
             "request_id": _request_id(request),
         }

@@ -85,9 +85,16 @@ def hash_password(raw_password: str) -> str:
     ).decode()
 
 
+def hash_password_bcrypt(raw_password: str, rounds: int = 12) -> str:
+    """Return a bcrypt hash of ``raw_password`` at cost ``rounds`` (default 12)."""
+    salt = bcrypt.gensalt(rounds=rounds)
+    return bcrypt.hashpw(raw_password.encode("utf-8")[:72], salt).decode("utf-8")
+
+
 def verify_password(raw_password: str, password_hash: str) -> bool:
     """Return whether ``raw_password`` matches ``password_hash``.
 
+    Supports both bcrypt and argon2 hashes.
     A stored value that is not a recognisable hash returns ``False`` rather than
     raising. Deleted accounts deliberately hold an unusable marker instead of a
     real digest (see ``users.service.soft_delete``), and passlib raises
