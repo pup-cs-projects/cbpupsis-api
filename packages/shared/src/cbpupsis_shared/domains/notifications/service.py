@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.models.notifications import Notification
+from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.notifications import repository
 from cbpupsis_shared.domains.notifications.channels import (
     CHANNELS,
@@ -88,7 +89,20 @@ async def mark_read(
     timestamp, because the meaningful fact is when they first saw it.
     """
     notification = await get_for_user(db, notification_id, user_id)
+    prior = {
+        "read_at": notification.read_at.isoformat() if notification.read_at else None
+    }
     repository.mark_read(notification, datetime.now(UTC))
+    if db.info.get("superadmin_audit"):
+        audit_client.stage(
+            db,
+            action="notification.read",
+            actor_id=user_id,
+            target_type="notification",
+            target_id=notification_id,
+            prior_state=prior,
+            new_state={"read_at": notification.read_at.isoformat()},
+        )
     await db.commit()
     await db.refresh(notification)
     return notification
@@ -97,6 +111,16 @@ async def mark_read(
 async def mark_all_read(db: AsyncSession, user_id: uuid.UUID) -> int:
     """Mark every unread notification for a user as read. Returns the count."""
     updated = await repository.mark_all_read(db, user_id, datetime.now(UTC))
+    if db.info.get("superadmin_audit"):
+        audit_client.stage(
+            db,
+            action="notification.read_all",
+            actor_id=user_id,
+            target_type="user",
+            target_id=user_id,
+            prior_state={"unread": updated},
+            new_state={"unread": 0},
+        )
     await db.commit()
     return updated
 
@@ -181,12 +205,23 @@ async def set_preference(
         raise MandatoryNotificationError(notification_type)
 
     existing = await repository.get_preference(db, user_id, notification_type, channel)
+    prior_enabled = existing.enabled if existing else True
     if existing is None:
         repository.add_preference(
             db, user_id, notification_type, channel, enabled=enabled
         )
     else:
         repository.update_preference(existing, enabled=enabled)
+    if db.info.get("superadmin_audit"):
+        audit_client.stage(
+            db,
+            action="notification.preference_updated",
+            actor_id=user_id,
+            target_type="notification_preference",
+            target_id=f"{user_id}:{notification_type}:{channel}",
+            prior_state={"enabled": prior_enabled},
+            new_state={"enabled": enabled},
+        )
     await db.commit()
 
 

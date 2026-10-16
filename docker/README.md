@@ -1,5 +1,14 @@
 # Docker
 
+US-AUTH-004 requires separate runtime and migration identities. For a fresh local
+Compose database, use `app_runtime` / `app_runtime_local_only` in `DATABASE_URL`,
+`AUDIT_RUNTIME_ROLE=app_runtime`, and owner `postgres` / `postgres` only for
+migration `DIRECT_DATABASE_URL`. Override local `APP_RUNTIME_PASSWORD` consistently
+when needed. Existing volumes do not rerun init SQL and are never auto-repaired.
+All apps and the worker fail startup if actual identity, grants, ledger triggers,
+or migration head are unsafe. See the API guide's deployment section before
+upgrading an existing database. Keep owner credentials out of deployed APIs/workers.
+
 Nine images (three apps, three stages each), one compose stack.
 
 | File | For | Notes |

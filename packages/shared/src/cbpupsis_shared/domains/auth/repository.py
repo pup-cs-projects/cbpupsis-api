@@ -28,7 +28,7 @@ token" — with one identical message for every failure mode — is the service'
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import case, delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -71,7 +71,11 @@ async def get_refresh_token(db: AsyncSession, jti: str) -> RefreshToken | None:
 
 
 def add_refresh_token(
-    db: AsyncSession, user_id: uuid.UUID, jti: str, expires_at: datetime
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    jti: str,
+    expires_at: datetime,
+    session_id: uuid.UUID | None = None,
 ) -> RefreshToken:
     """Stage a newly issued refresh token on the session and return it.
 
@@ -85,9 +89,55 @@ def add_refresh_token(
         VALUES (:user_id::UUID, :jti, :expires_at, :revoked_at, :id::UUID)
         RETURNING refresh_tokens.created_at, refresh_tokens.updated_at
     """
-    record = RefreshToken(user_id=user_id, jti=jti, expires_at=expires_at)
+    record = RefreshToken(
+        user_id=user_id, jti=jti, expires_at=expires_at, session_id=session_id
+    )
     db.add(record)
     return record
+
+
+async def get_active_session(
+    db: AsyncSession, user_id: uuid.UUID, session_id: uuid.UUID
+):
+    """Lock one session.
+
+    SQL::
+
+        SELECT * FROM user_active_sessions
+        WHERE id=:id AND user_id=:user FOR UPDATE
+    """
+    return await db.scalar(
+        select(UserActiveSession)
+        .where(UserActiveSession.id == session_id, UserActiveSession.user_id == user_id)
+        .with_for_update()
+    )
+
+
+def add_active_session(db: AsyncSession, **fields) -> None:
+    """Stage a session. SQL:: INSERT INTO user_active_sessions (...) VALUES (...)"""
+    db.add(UserActiveSession(**fields))
+
+
+async def delete_active_sessions(
+    db: AsyncSession, user_id: uuid.UUID, session_id: uuid.UUID | None = None
+) -> None:
+    """Remove sessions and revoke their refresh capability.
+
+    SQL::
+
+        DELETE FROM user_active_sessions WHERE user_id=:user [AND id=:sid];
+        UPDATE refresh_tokens SET revoked_at=:now
+        WHERE user_id=:user AND revoked_at IS NULL [AND session_id=:sid]
+    """
+    statement = delete(UserActiveSession).where(UserActiveSession.user_id == user_id)
+    tokens = update(RefreshToken).where(
+        RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None)
+    )
+    if session_id is not None:
+        statement = statement.where(UserActiveSession.id == session_id)
+        tokens = tokens.where(RefreshToken.session_id == session_id)
+    await db.execute(statement)
+    await db.execute(tokens.values(revoked_at=datetime.now(UTC)))
 
 
 def mark_refresh_token_revoked(

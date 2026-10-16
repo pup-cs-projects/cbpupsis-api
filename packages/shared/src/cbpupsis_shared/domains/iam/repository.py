@@ -38,6 +38,12 @@ from cbpupsis_database.models.iam import (
     UserPolicy,
 )
 
+
+async def all_permission_actions(db: AsyncSession) -> set[str]:
+    """Read the capability vocabulary. SQL:: SELECT action FROM permissions"""
+    return set(await db.scalars(select(Permission.action)))
+
+
 # --------------------------------------------------------------------------- #
 # Permission resolution
 # --------------------------------------------------------------------------- #

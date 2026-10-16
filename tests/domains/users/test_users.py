@@ -135,7 +135,7 @@ class TestUserEndpoints:
         self,
         client: AsyncClient,
         db: AsyncSession,
-        auth_headers: dict[str, str],
+        superadmin_headers: dict[str, str],
         registered_user: dict[str, str],
         grant,
     ) -> None:
@@ -143,7 +143,9 @@ class TestUserEndpoints:
         other = await auth_service.register(
             db, email="other2@example.com", password="a-long-enough-password"
         )
-        response = await client.get(f"/api/v1/users/{other.id}", headers=auth_headers)
+        response = await client.get(
+            f"/api/v1/users/{other.id}", headers=superadmin_headers
+        )
         assert response.status_code == 200
 
     async def test_reading_yourself_by_id_needs_no_permission(
@@ -171,23 +173,23 @@ class TestUserAdministration:
     @pytest.fixture
     async def reader_headers(
         self,
-        auth_headers: dict[str, str],
+        superadmin_headers: dict[str, str],
         registered_user: dict[str, str],
         grant,
     ) -> dict[str, str]:
         await grant(uuid.UUID(registered_user["id"]), "ReadAllUser")
-        return auth_headers
+        return superadmin_headers
 
     @pytest.fixture
     async def admin_headers(
         self,
-        auth_headers: dict[str, str],
+        superadmin_headers: dict[str, str],
         registered_user: dict[str, str],
         grant,
     ) -> dict[str, str]:
         await grant(uuid.UUID(registered_user["id"]), "ReadAllUser")
         await grant(uuid.UUID(registered_user["id"]), "ManageUser")
-        return auth_headers
+        return superadmin_headers
 
     async def test_list_is_refused_without_read_all_user(
         self, client: AsyncClient, auth_headers: dict[str, str]

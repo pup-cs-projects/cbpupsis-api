@@ -20,7 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.auth.dependencies import CurrentUser, get_current_user
+from cbpupsis_shared.domains.auth.exceptions import SuperadminRoleRequiredError
 from cbpupsis_shared.domains.iam import service as iam_service
+from cbpupsis_shared.domains.iam.constants import SUPERADMIN_ACTIONS
 from cbpupsis_shared.domains.iam.exceptions import (
     InsufficientPermissionsError,
     PermissionDeniedError,
@@ -54,6 +56,8 @@ def require_permission(
         user: CurrentUser = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
     ) -> CurrentUser:
+        if SUPERADMIN_ACTIONS.intersection(required) and user.role != "superadmin":
+            raise SuperadminRoleRequiredError
         granted = await iam_service.get_effective_permissions(db, user.id)
         if not set(required).issubset(granted):
             missing = sorted(set(required) - granted)
@@ -77,6 +81,8 @@ def require_any_permission(
         db: AsyncSession = Depends(get_db),
     ) -> CurrentUser:
         granted = await iam_service.get_effective_permissions(db, user.id)
+        if user.role != "superadmin":
+            granted -= SUPERADMIN_ACTIONS
         if not set(accepted) & granted:
             raise InsufficientPermissionsError(accepted)
         return user

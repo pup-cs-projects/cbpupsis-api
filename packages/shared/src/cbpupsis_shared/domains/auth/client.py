@@ -16,6 +16,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.auth import service
+from cbpupsis_shared.domains.auth.schemas import TokenPair
 from cbpupsis_shared.domains.auth.security import (
     decode_token,
     require_session_version,
@@ -58,6 +59,33 @@ def decode_refresh_session(token: str) -> dict[str, object]:
     return decode_token(token, expected_type="refresh")
 
 
+async def issue_token_pair(db: AsyncSession, user_id: uuid.UUID) -> TokenPair:
+    """Issue shared credentials after another domain authenticates the caller."""
+    return await service.issue_token_pair(db, user_id)
+
+
+async def revoke_refresh_token(db: AsyncSession, refresh_token: str) -> None:
+    """Revoke one refresh token without exposing the auth token ledger."""
+    await service.logout(db, refresh_token)
+
+
 def validate_session_version(claims: dict[str, object], current_version: int) -> None:
     """Apply account-wide access revocation to every role's session guard."""
     require_session_version(claims, current_version)
+
+
+async def require_superadmin_actor(db: AsyncSession, user_id: uuid.UUID) -> None:
+    await service.require_superadmin_actor(db, user_id)
+
+
+async def create_user(
+    db: AsyncSession,
+    *,
+    actor_id: uuid.UUID,
+    email: str,
+    password: str,
+    full_name: str | None = None,
+):
+    return await service.register(
+        db, email=email, password=password, full_name=full_name, actor_id=actor_id
+    )

@@ -62,6 +62,21 @@ def limited():
     limiter._limiter = previous_limiter
 
 
+@pytest.fixture(params=["ip", "address"])
+def refusal_source(request, monkeypatch):
+    """Choose which independent forgot-password allowance is exhausted first."""
+    monkeypatch.setattr(
+        settings,
+        "rate_limit_forgot_password",
+        "1/hour" if request.param == "ip" else "3/hour",
+    )
+    monkeypatch.setattr(
+        settings, "password_reset_request_limit", 3 if request.param == "ip" else 1
+    )
+    monkeypatch.setattr(settings, "password_reset_request_window_seconds", 3600)
+    return request.param
+
+
 class TestKeyFunction:
     """Who the limit is counted against."""
 
@@ -188,6 +203,13 @@ class TestLimitsAreEnforced:
 
         refused = await client.post("/api/v1/auth/login", json=payload)
         assert refused.status_code == 429
+        body = refused.json()
+        assert set(body) == {"status", "message", "detail", "request_id", "code"}
+        assert body["status"] == "error"
+        assert body["message"] == body["detail"]
+        assert body["code"] == "rate_limited"
+        assert body["request_id"] == refused.headers["X-Request-ID"]
+        assert int(refused.headers["Retry-After"]) > 0
 
     async def test_repeated_registration_is_eventually_refused(
         self, client: AsyncClient, limited, sent_emails: list[dict[str, str]]
@@ -232,9 +254,14 @@ class TestLimitsAreEnforced:
         assert other.status_code == 401
 
 
+@pytest.mark.usefixtures("refusal_source")
 class TestTheRefusalResponse:
     async def test_429_uses_the_standard_error_envelope(
-        self, client: AsyncClient, limited, sent_emails: list[dict[str, str]]
+        self,
+        client: AsyncClient,
+        limited,
+        sent_emails: list[dict[str, str]],
+        refusal_source,
     ) -> None:
         """slowapi's default body is ``{"error": "3 per 1 hour"}`` — a different
         shape from every other error, and it leaks the configured limit. Clients
@@ -242,10 +269,18 @@ class TestTheRefusalResponse:
         refused = await _exhaust_forgot_password(client)
         body = refused.json()
 
-        assert set(body) == {"detail", "request_id", "code"}
+        assert set(body) == {"status", "message", "detail", "request_id", "code"}
+        assert body["status"] == "error"
+        assert body["message"] == body["detail"]
         assert isinstance(body["detail"], str)
         assert body["code"] == "RATE_LIMIT_EXCEEDED"
         assert "error" not in body
+        if refusal_source == "ip":
+            assert body["detail"].startswith("Too many requests. Please try again in ")
+        else:
+            assert body["detail"] == (
+                "Too many requests. Try again later or use a link already sent to you."
+            )
         # The correlation id ties the refusal to the log line, as for any other
         # error, and matches the header.
         assert body["request_id"] == refused.headers["X-Request-ID"]

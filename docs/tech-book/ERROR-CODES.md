@@ -1,5 +1,22 @@
 # Error codes
 
+## Superadmin additions (US-AUTH-004)
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 401 | `AUTH_SESSION_EXPIRED` | Superadmin session is missing/idle-expired; sign in again. |
+| 403 | `SUPERADMIN_ROLE_REQUIRED` | Live, verified, non-conflicting Superadmin MFA session required. |
+| 409 | `AUTH_ROLE_CONFLICT` | Admin and Superadmin membership cannot coexist. |
+| 422 | `OVERRIDE_JUSTIFICATION_REQUIRED` | Override reason missing, empty, or whitespace-only. |
+| 403 | `OVERRIDE_REQUIRED` | Suspending an Admin requires a justified override. |
+| 403 | `OVERRIDE_TARGET_INVALID` | The Admin suspension rule requires an Admin target. |
+| 403 | `DUAL_AUTH_SAME_ACTOR` | A restore requester cannot approve their own request. |
+| 422 | `INVALID_CLIENT_ADDRESS` | A real valid IPv4/IPv6 client address is required. |
+
+Unknown rule/backup returns 404; duplicate email and invalid/repeated restore
+transitions return 409 in the existing envelope. Existing Admin MFA lockout/replay
+codes are reused unchanged for Superadmin TOTP.
+
 <!--
 The registry of every error this API returns. It is a contract: the frontend
 renders these messages and branches on these statuses, so an undocumented error
@@ -10,12 +27,12 @@ Add the row in the same commit as the code that raises it.
 
 | | |
 |---|---|
-| **Last updated** | 2026-09-28 |
-| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py` (`auth`, `users`, `iam`, `notifications` in `packages/shared`; `items` in `apps/api-student`; `admin_auth` in `apps/api-admin`) |
+| **Last updated** | 2026-10-02 |
+| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py` (`auth`, `users`, `iam`, `notifications` in `packages/shared`; `student_auth` and `items` in `apps/api-student`; `faculty_auth` in `apps/api-faculty`; `admin_auth` in `apps/api-admin`) |
 
 ## The envelope
 
-Every error response has the same shape, so clients parse one thing:
+Every error response includes these common tracing fields:
 
 ```json
 {
@@ -28,12 +45,29 @@ Every error response has the same shape, so clients parse one thing:
 that request. **Include it in bug reports** — it is what makes an opaque 500
 traceable.
 
+Known application errors also include `status: "error"` and `message`, an alias
+of the human-readable `detail`. Both IP-based and shared-address rate-limit
+refusals use these fields consistently:
+
+```json
+{
+  "status": "error",
+  "message": "Too many requests. Please try again in 60 seconds.",
+  "detail": "Too many requests. Please try again in 60 seconds.",
+  "request_id": "0188d021-c9c1-4fe6-bfa3-050b5fc268cf",
+  "code": "RATE_LIMIT_EXCEEDED"
+}
+```
+
+Rate-limit refusals carry a `Retry-After` header in seconds. Password-reset
+refusals use `RATE_LIMIT_EXCEEDED`; other endpoint limits use `rate_limited`.
+
 Validation errors (422) carry the field-level errors from Pydantic in `detail`
 instead of a string.
 
 ### The optional `code` field
 
-A few errors add a third key:
+A few errors add a `code` key:
 
 ```json
 {
@@ -207,6 +241,16 @@ outbox.
 | 404 | Resource not found. (`code: RESOURCE_NOT_FOUND`) | Faculty member requests course section not assigned to them. Does not confirm section existence to non-owners (AC-002.7). | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
 | 423 | Account locked due to 5 consecutive failed attempts. Try again in 15 minutes. (`code: AUTH_ACCOUNT_LOCKED`) | 5 consecutive failed login attempts within rolling 15 minutes across sign-in and MFA steps. Carries `Retry-After: 900` header and `retry_after_seconds: 900`. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
 | 503 | Database service temporarily unavailable. (`code: SERVICE_UNAVAILABLE`) | Database node is unreachable during authentication resolution. | `cbpupsis_api_faculty/domains/faculty_auth/service.py` |
+
+### student-auth
+
+| Status | Message | When | Raised in |
+|---|---|---|---|
+| 401 | Invalid credentials. Please verify your Student ID, birthdate, and password. (`code: AUTH_FAILED`) | Student login failed. Byte-identical whether student number is unknown, birthdate is incorrect, or password fails. | `cbpupsis_api_student/domains/student_auth/service.py` |
+| 422 | Invalid Student ID format. (`code: AUTH_ID_FORMAT_INVALID`) | Student ID fails regex (`YYYY-XXXXX-CC-S`). Rejected before any database query or password hash calculation. | `cbpupsis_api_student/domains/student_auth/validation.py` |
+| 423 | Account locked due to 5 consecutive failed attempts. Try again in 15 minutes. (`code: ACCOUNT_LOCKED`) | 5 consecutive failed login attempts in 15 minutes. Carries `Retry-After` header and `retry_after_seconds` in payload. | `cbpupsis_api_student/domains/student_auth/service.py` |
+| 401 | Your session has expired due to inactivity. (`code: AUTH_SESSION_EXPIRED`) | Session has had no activity for more than 15 minutes. Session record is invalidated server-side. | `cbpupsis_api_student/domains/student_auth/service.py` |
+| 404 | Resource not found. (`code: RESOURCE_NOT_FOUND`) | Requested student resource does not exist or caller attempts horizontal access on another student's record. 404 over 403 to prevent ID enumeration. | `cbpupsis_api_student/domains/student_auth/dependencies.py` |
 
 ## Adding a code
 

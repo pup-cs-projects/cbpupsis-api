@@ -16,7 +16,40 @@ from cbpupsis_database.models.admin_auth import (
     AuthFailureStep,
     MfaCredential,
     MfaType,
+    SuperadminChallenge,
 )
+
+
+async def get_superadmin_challenge(db: AsyncSession, user_id: uuid.UUID):
+    """Read challenge state.
+
+    SQL::
+
+        SELECT * FROM superadmin_challenges WHERE user_id=:id
+    """
+    return await db.get(SuperadminChallenge, user_id)
+
+
+async def set_superadmin_challenge(
+    db: AsyncSession, user_id: uuid.UUID, jti: str | None
+) -> None:
+    """Replace or consume a challenge under the caller's account lock.
+
+    SQL::
+
+        SELECT * FROM superadmin_challenges WHERE user_id=:id;
+        INSERT INTO superadmin_challenges (user_id,active_jti) VALUES (:id,:jti);
+        UPDATE superadmin_challenges SET active_jti=:jti WHERE user_id=:id;
+        DELETE FROM superadmin_challenges WHERE user_id=:id
+    """
+    existing = await get_superadmin_challenge(db, user_id)
+    if jti is None:
+        if existing is not None:
+            await db.delete(existing)
+    elif existing is None:
+        db.add(SuperadminChallenge(user_id=user_id, active_jti=jti))
+    else:
+        existing.active_jti = jti
 
 
 async def get_admin_profile(

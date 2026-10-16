@@ -18,6 +18,7 @@ from cbpupsis_core.exceptions import (
     AppError,
     ConflictError,
     EmailNotVerifiedError,
+    ForbiddenError,
     UnauthorizedError,
 )
 from cbpupsis_shared.domains.auth.constants import (
@@ -30,6 +31,20 @@ from cbpupsis_shared.domains.auth.constants import (
 
 class AuthError(AppError):
     """Base for every error raised by the auth domain."""
+
+
+class SuperadminRoleRequiredError(AuthError, ForbiddenError):
+    code = "SUPERADMIN_ROLE_REQUIRED"
+
+    def __init__(self) -> None:
+        super().__init__("A live MFA-completed Superadmin session is required")
+
+
+class AuthSessionExpiredError(AuthError, UnauthorizedError):
+    code = "AUTH_SESSION_EXPIRED"
+
+    def __init__(self) -> None:
+        super().__init__("Session expired; sign in again")
 
 
 class InvalidCredentialsError(AuthError, UnauthorizedError):

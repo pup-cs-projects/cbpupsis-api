@@ -29,6 +29,8 @@ from cbpupsis_database.models import (
     notifications,
     outbox,
     sections,
+    superadmin_ops,
+    student_auth,
     system,
     users,
 )
@@ -50,6 +52,8 @@ __all__ = [
     "notifications",
     "outbox",
     "sections",
+    "superadmin_ops",
+    "student_auth",
     "system",
     "users",
 ]

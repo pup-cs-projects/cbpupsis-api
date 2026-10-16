@@ -27,12 +27,19 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.session import get_db
+from cbpupsis_shared.domains.audit import client as audit_client
+from cbpupsis_shared.domains.auth import service as auth_service
 from cbpupsis_shared.domains.auth.exceptions import (
+    AuthSessionExpiredError,
     InactiveUserError,
+    InvalidAuthTokenError,
     NotAuthenticatedError,
+    SuperadminRoleRequiredError,
     UnverifiedEmailError,
 )
 from cbpupsis_shared.domains.auth.security import decode_token, require_session_version
+from cbpupsis_shared.domains.iam import service as iam_service
+from cbpupsis_shared.domains.iam.constants import SUPERADMIN_GROUP
 from cbpupsis_shared.domains.users import service as users_service
 
 # auto_error=False so a MISSING header reaches our own code instead of raising
@@ -52,6 +59,8 @@ class CurrentUser:
 
     id: uuid.UUID
     email: str
+    role: str | None = None
+    session_id: uuid.UUID | None = None
 
 
 async def get_current_user(
@@ -65,21 +74,53 @@ async def get_current_user(
     so deactivating or deleting an account takes effect immediately instead of
     when the token happens to expire.
     """
+    db.info.pop("superadmin_audit", None)
+    db.info.pop("audit_event_handler", None)
     if credentials is None:
         raise NotAuthenticatedError
-    claims = decode_token(credentials.credentials, expected_type="access")
+    try:
+        claims = decode_token(credentials.credentials, expected_type="access")
+    except InvalidAuthTokenError:
+        # A signed but expired JWT can identify an idle session for cleanup,
+        # never authorize a request or extend its activity window.
+        stale = decode_token(
+            credentials.credentials, expected_type="access", allow_expired=True
+        )
+        if stale.get("role") == "superadmin":
+            await auth_service.check_superadmin_session(db, stale, touch=False)
+            raise AuthSessionExpiredError from None
+        raise
     user = await users_service.get_active_user(db, uuid.UUID(claims["sub"]))
     if user is None:
         raise InactiveUserError
 
     require_session_version(claims, user.session_version)
+    role = claims.get("role")
+    sid = None
+    if role == "superadmin":
+        sid = await auth_service.check_superadmin_session(db, claims)
+        request.state.superadmin_audit = audit_client.begin_superadmin_request(
+            db, user.id, request.method, request.url.path
+        )
+        db.info["audit_event_handler"] = audit_client.capture_event
+        request.state.audit_db = db
+    elif await iam_service.is_user_in_group(db, user.id, SUPERADMIN_GROUP):
+        raise SuperadminRoleRequiredError
 
     # Published for the rate limiter, which keys authenticated callers by
     # identity rather than by address so users behind one NAT do not consume
     # each other's allowance. Set only after the token is verified and the
     # account confirmed live, so the value is never attacker-controlled.
     request.state.user_id = str(user.id)
-    return CurrentUser(id=user.id, email=user.email)
+    return CurrentUser(id=user.id, email=user.email, role=role, session_id=sid)
+
+
+async def require_superadmin_session(
+    user: CurrentUser = Depends(get_current_user),
+) -> CurrentUser:
+    if user.role != "superadmin":
+        raise SuperadminRoleRequiredError
+    return user
 
 
 async def require_verified_email(

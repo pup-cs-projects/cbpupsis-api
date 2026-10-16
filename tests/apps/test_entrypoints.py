@@ -27,9 +27,9 @@ APPS: dict[str, FastAPI] = {
 
 #: The router prefixes under /api/v1 each app serves.
 EXPECTED_PREFIXES: dict[str, set[str]] = {
-    "student": {"auth", "users", "notifications", "items"},
+    "student": {"auth", "student-auth", "users", "notifications", "items"},
     "faculty": {"faculty-auth", "users", "notifications"},
-    "admin": {"auth", "users", "notifications", "admin", "iam", "audit"},
+    "admin": {"auth", "users", "notifications", "admin", "superadmin", "iam", "audit"},
 }
 
 
@@ -75,13 +75,13 @@ def test_the_composed_app_registers_each_operation_once() -> None:
     assert not [op_id for op_id, n in counts.items() if n > 1]
 
 
-def test_only_the_admin_app_and_the_composer_mount_the_admin_panel() -> None:
-    """The panel is admin tooling; the student and faculty apps must not carry it."""
+def test_no_app_mounts_the_service_bypassing_admin_panel() -> None:
+    """Even a development panel must not bypass MFA, overrides, and auditing."""
 
     def has_panel(app: FastAPI) -> bool:
         return any(isinstance(r, Mount) and r.path == "/admin" for r in app.routes)
 
-    assert has_panel(admin_app)
-    assert has_panel(main.app)
+    assert not has_panel(admin_app)
+    assert not has_panel(main.app)
     assert not has_panel(student_app)
     assert not has_panel(faculty_app)

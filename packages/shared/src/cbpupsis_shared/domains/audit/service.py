@@ -12,14 +12,17 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import event as sa_event
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from cbpupsis_core.events import Event
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.models.audit import AuditEntry
 from cbpupsis_database.session import AsyncSessionLocal
 from cbpupsis_shared.domains.audit import repository
+from cbpupsis_shared.domains.audit.constants import AUDITED_EVENTS
 from cbpupsis_shared.outbox import add_receipt, already_delivered
 
 #: Which payload key identifies the thing acted upon, per event. The audit row
@@ -75,6 +78,8 @@ async def record_event_on(
     driven against a test session — and so the outbox worker, which already owns
     a session per batch, can call it without opening a second one.
     """
+    if event.payload.get("_audit_recorded") is True:
+        return None
     if message_id is not None and await already_delivered(db, message_id, "audit"):
         return None
 
@@ -157,6 +162,80 @@ def _event_states(event: Event) -> tuple[dict[str, Any] | None, dict[str, Any] |
             key: value for key, value in event.payload.items() if key != "actor_id"
         }
     return None, None
+
+
+def stage(
+    db,
+    *,
+    action,
+    actor_id,
+    target_type,
+    target_id,
+    prior_state=None,
+    new_state=None,
+    payload=None,
+):
+    """Stage a canonical row; never commit or copy credential-bearing bodies."""
+    context = db.info.get("superadmin_audit")
+    if context is not None and context["staged"]:
+        return None
+    entry = repository.add_entry(
+        db,
+        action=action,
+        actor_id=actor_id,
+        target_type=target_type,
+        target_id=str(target_id),
+        occurred_at=datetime.now(UTC),
+        prior_state=prior_state if prior_state is not None else {},
+        new_state=new_state if new_state is not None else {},
+        payload={"outcome": "success", **(payload or {})},
+    )
+    if context is not None:
+        context["staged"] = True
+    return entry
+
+
+def capture_event(db, event: Event) -> None:
+    """Make an existing domain event synchronous for privileged requests."""
+    context = db.info.get("superadmin_audit")
+    if context is None or event.name not in AUDITED_EVENTS:
+        return
+    target_type, key = _TARGETS[event.name]
+    prior, new = _event_states(event)
+    stage(
+        db,
+        action=event.name,
+        actor_id=context["actor"],
+        target_type=target_type,
+        target_id=event.payload.get(key),
+        prior_state=prior,
+        new_state=new,
+        payload={k: v for k, v in event.payload.items() if not k.startswith("_")},
+    )
+    event.payload["_audit_recorded"] = True
+
+
+def begin_superadmin_request(
+    db: AsyncSession, actor_id: uuid.UUID, method: str, path: str
+) -> dict:
+    context = {"actor": actor_id, "method": method, "path": path, "staged": False}
+    db.info["superadmin_audit"] = context
+    return context
+
+
+@sa_event.listens_for(Session, "before_commit")
+def _audit_before_commit(session: Session) -> None:
+    """Even legacy service commits must include their privileged audit row."""
+    context = session.info.get("superadmin_audit")
+    if context is not None and not context["staged"]:
+        stage(
+            session,
+            action="superadmin.request",
+            actor_id=context["actor"],
+            target_type="endpoint",
+            target_id=context["path"],
+            payload={"method": context["method"]},
+        )
 
 
 async def list_entries(
