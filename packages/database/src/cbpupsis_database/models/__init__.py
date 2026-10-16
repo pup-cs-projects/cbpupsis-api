@@ -30,6 +30,7 @@ from cbpupsis_database.models import (
     outbox,
     sections,
     superadmin_ops,
+    student_auth,
     system,
     users,
 )
@@ -52,6 +53,7 @@ __all__ = [
     "outbox",
     "sections",
     "superadmin_ops",
+    "student_auth",
     "system",
     "users",
 ]
