@@ -25,7 +25,7 @@ endif
 # repo, so `make up` serves all four portals already wired to their APIs. Leave them out
 # with clients=0. CLIENT_DIR is relative to docker/, where the compose files live.
 CLIENT_DIR ?= ../../cbpupsis-client
-clients ?= $(if $(and $(filter dev,$(env)),$(wildcard docker/$(CLIENT_DIR)/student/package.json)),1,0)
+clients ?= $(if $(and $(filter dev,$(env)),$(wildcard docker/$(CLIENT_DIR)/apps/student/package.json)),1,0)
 ifeq ($(clients),1)
 export CLIENT_DIR
 COMPOSE := $(COMPOSE) -f docker/docker-compose.clients.yml
