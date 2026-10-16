@@ -204,7 +204,7 @@ moves the failure to your PR.
 | Workflow | When | What |
 |---|---|---|
 | `ci.yml` | every push to `main` or `dev`, and every PR | pre-commit hooks; `pytest` with coverage; `pip-audit` for vulnerable dependencies |
-| `e2e.yml` | every push to `main` or `dev`, and every PR | starts Docker, Postgres, and the API, seeds accounts, runs the Bruno suite |
+| `e2e.yml` | manual only (Actions tab), paused until the Bruno collection stops using the removed `/auth/register` | starts Docker, Postgres, and the API, seeds accounts, runs the Bruno suite |
 | `pr-conventions.yml` | every PR | Conventional Commits title; branch name; PR targets `dev` |
 
 The org is on the GitHub Free plan, so these checks cannot be made required. **The team rule is
