@@ -1,0 +1,121 @@
+# The four web clients, layered on docker-compose.yml by `make up` in dev when the
+# cbpupsis-client checkout sits beside this repo (leave them out with `make up clients=0`).
+#
+#   client-student     http://localhost:3000  ->  api-student  http://localhost:8001
+#   client-faculty     http://localhost:3001  ->  api-faculty  http://localhost:8002
+#   client-admin       http://localhost:3002  ->  api-admin    http://localhost:8003
+#   client-superadmin  http://localhost:3003  ->  api-admin    http://localhost:8003
+#
+# Each client runs its Vite dev server against the app that serves it, and each app is
+# told to accept that client's origin. The browser makes the API calls, so the URLs are
+# the host's localhost ports, not compose service names.
+#
+# CLIENT_DIR is the client checkout, relative to this file. The Makefile exports it.
+
+x-client: &client
+  image: node:22-alpine
+  # Reinstall only when package-lock.json changes; a full `npm ci` on every start would
+  # cost a minute per client.
+  command:
+    - sh
+    - -c
+    - >-
+      lock="$$(md5sum package-lock.json)";
+      [ "$$lock" = "$$(cat node_modules/.lock-md5 2>/dev/null)" ] ||
+      { npm ci --no-audit --no-fund && echo "$$lock" > node_modules/.lock-md5; };
+      exec npx vite --host 0.0.0.0 --port "$$PORT" --strictPort
+
+x-client-env: &client-env
+  # npm ci runs the `prepare` script, and husky would rewrite the HOST repo's
+  # core.hooksPath through the bind mount.
+  HUSKY: "0"
+  # File events do not cross a Windows or macOS bind mount; the apps' vite.config.ts
+  # switches to polling when this is set.
+  VITE_WATCH_POLLING: "1"
+
+services:
+  client-student:
+    <<: *client
+    working_dir: /client/student
+    environment:
+      <<: *client-env
+      PORT: "3000"
+      VITE_API_BASE_URL: http://localhost:8001/api/v1
+    ports:
+      - "3000:3000"
+    volumes:
+      - ${CLIENT_DIR:-../../cbpupsis-client}:/client
+      # The host's node_modules holds binaries for the host OS (esbuild, rollup), which
+      # do not run here. A named volume shadows it.
+      - client-student-modules:/client/student/node_modules
+
+  client-faculty:
+    <<: *client
+    working_dir: /client/faculty
+    environment:
+      <<: *client-env
+      PORT: "3001"
+      VITE_API_BASE_URL: http://localhost:8002/api/v1
+    ports:
+      - "3001:3001"
+    volumes:
+      - ${CLIENT_DIR:-../../cbpupsis-client}:/client
+      - client-faculty-modules:/client/faculty/node_modules
+
+  client-admin:
+    <<: *client
+    working_dir: /client/admin
+    environment:
+      <<: *client-env
+      PORT: "3002"
+      VITE_API_BASE_URL: http://localhost:8003/api/v1
+    ports:
+      - "3002:3002"
+    volumes:
+      - ${CLIENT_DIR:-../../cbpupsis-client}:/client
+      - client-admin-modules:/client/admin/node_modules
+
+  client-superadmin:
+    <<: *client
+    working_dir: /client/superadmin
+    environment:
+      <<: *client-env
+      PORT: "3003"
+      VITE_API_BASE_URL: http://localhost:8003/api/v1
+    ports:
+      - "3003:3003"
+    volumes:
+      - ${CLIENT_DIR:-../../cbpupsis-client}:/client
+      - client-superadmin-modules:/client/superadmin/node_modules
+
+  # `environment` wins over each app's env_file, so these apply without editing the
+  # gitignored env files. They replace CORS_ORIGINS rather than extend it.
+  api-student:
+    environment:
+      CORS_ORIGINS: '["http://localhost:3000"]'
+
+  api-faculty:
+    environment:
+      CORS_ORIGINS: '["http://localhost:3001"]'
+
+  api-admin:
+    environment:
+      CORS_ORIGINS: '["http://localhost:3002", "http://localhost:3003"]'
+      # Security keys bind to the page's origin, so the admin client's must match.
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_ORIGIN: http://localhost:3002
+
+  # The worker renders every account email, so it is the service that needs each
+  # role's portal: links open the client that can sign that account in.
+  worker:
+    environment:
+      FRONTEND_BASE_URL_STUDENT: http://localhost:3000
+      FRONTEND_BASE_URL_FACULTY: http://localhost:3001
+      FRONTEND_BASE_URL_ADMIN: http://localhost:3002
+      FRONTEND_BASE_URL_SUPERADMIN: http://localhost:3003
+
+volumes:
+  client-student-modules:
+  client-faculty-modules:
+  client-admin-modules:
+  client-superadmin-modules:
