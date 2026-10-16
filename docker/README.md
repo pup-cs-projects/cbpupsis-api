@@ -47,6 +47,27 @@ which wait for `migrate` to finish successfully. Three app containers never race
 each other to migrate the same database. Source is bind-mounted: an edit on the
 host reloads the apps in a few seconds.
 
+### The web clients
+
+When the `cbpupsis-client` checkout sits beside this repo, `make up` (dev only) also
+layers `docker-compose.clients.yml` and serves the four portals, each already pointed at
+its app and allowed by that app's CORS:
+
+| Client | URL | Talks to |
+|---|---|---|
+| student | http://localhost:3000 | api-student :8001 |
+| faculty | http://localhost:3001 | api-faculty :8002 |
+| admin | http://localhost:3002 | api-admin :8003 |
+| superadmin | http://localhost:3003 | api-admin :8003 |
+
+- `make up clients=0` leaves them out; `CLIENT_DIR=...` (relative to `docker/`) points at
+  a checkout elsewhere.
+- The overlay sets `CORS_ORIGINS` on each app, and `WEBAUTHN_RP_ID=localhost` with
+  `WEBAUTHN_ORIGIN=http://localhost:3002` on api-admin, overriding the env files.
+- Each client keeps its `node_modules` in a named volume and reinstalls only when its
+  `package-lock.json` changes, so the first start takes a minute or two.
+- Client edits hot-reload through polling, because file events do not cross the bind mount.
+
 First run on a new project:
 
 ```bash

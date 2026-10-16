@@ -1,4 +1,4 @@
-# make up | make up env=staging | make help
+# make up | make up env=staging | make up clients=0 | make help
 #
 # `env` selects the compose files. Production is absent on purpose: it is built
 # by CI and run by an orchestrator.
@@ -19,6 +19,16 @@ export ENV_FILE := $(env)
 COMPOSE := docker compose -f docker/docker-compose.yml
 ifeq ($(env),staging)
 COMPOSE := $(COMPOSE) -f docker/docker-compose.staging.yml
+endif
+
+# The web clients join the dev stack when the cbpupsis-client checkout sits beside this
+# repo, so `make up` serves all four portals already wired to their APIs. Leave them out
+# with clients=0. CLIENT_DIR is relative to docker/, where the compose files live.
+CLIENT_DIR ?= ../../cbpupsis-client
+clients ?= $(if $(and $(filter dev,$(env)),$(wildcard docker/$(CLIENT_DIR)/student/package.json)),1,0)
+ifeq ($(clients),1)
+export CLIENT_DIR
+COMPOSE := $(COMPOSE) -f docker/docker-compose.clients.yml
 endif
 
 # One env file per app: env/<app>/env.<stage>.
@@ -56,6 +66,14 @@ up:  ## Start the stack in the background ($(env))
 	@echo "Student  http://localhost:8001  docs /scalar$(if $(filter staging,$(env)),  (closed in staging),)"
 	@echo "Faculty  http://localhost:8002  docs /scalar$(if $(filter staging,$(env)),  (closed in staging),)"
 	@echo "Admin    http://localhost:8003  docs /scalar, panel /admin$(if $(filter staging,$(env)),  (closed in staging),  (sign in with an account holding ManageIAM))"
+ifeq ($(clients),1)
+	@echo
+	@echo "Clients (first start installs dependencies; follow with make logs service=client-student)"
+	@echo "  Student     http://localhost:3000"
+	@echo "  Faculty     http://localhost:3001"
+	@echo "  Admin       http://localhost:3002"
+	@echo "  Superadmin  http://localhost:3003"
+endif
 	@echo "Logs     make logs env=$(env)"
 
 down:  ## Stop the stack. Add wipe=1 to also delete the database volume
