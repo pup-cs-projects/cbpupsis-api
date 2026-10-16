@@ -1,7 +1,9 @@
 """The routers the admin app serves, and its development-only admin panel.
 
-IAM and audit are shared code, because every app enforces permissions and
-records audited events, but administering them is this app's job alone.
+IAM, audit, and user management are shared code, because every app enforces
+permissions, records audited events, and serves each user's own account, but
+administering them is this app's job alone: the student and faculty apps mount
+none of it.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ from cbpupsis_api_admin.domains.user_import.router import (
     router as user_import_router,
 )
 from cbpupsis_shared.application import RouterMount
-from cbpupsis_shared.routes import AUDIT, COMMON_MOUNTS, IAM
+from cbpupsis_shared.routes import AUDIT, COMMON_MOUNTS, IAM, USER_MANAGEMENT
 
 ADMIN_AUTH = RouterMount(admin_auth_router, "/auth/admin", "admin-auth")
 ADMIN = RouterMount(admin_router, "/admin", "admin")
@@ -36,6 +38,8 @@ MOUNTS: tuple[RouterMount, ...] = (
     ADMIN,
     IAM,
     AUDIT,
+    # After COMMON_MOUNTS, so /users/me resolves before /users/{user_id}.
+    USER_MANAGEMENT,
     RouterMount(superadmin_auth_router, "/auth/superadmin", "superadmin-auth"),
     RouterMount(superadmin_protected_router, "/superadmin", "superadmin"),
     RouterMount(superadmin_ops_router, "/superadmin", "superadmin"),

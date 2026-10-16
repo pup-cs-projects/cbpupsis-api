@@ -5,156 +5,10 @@
     "version": "0.1.0"
   },
   "paths": {
-    "/api/v1/auth/login": {
-      "post": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "Login",
-        "description": "Exchange email and password for an access/refresh token pair.\n\nRate limited against credential stuffing. ``request`` is unused by the\nbody but required: slowapi reads the limiter and the caller's key off it.\n\nThree outcomes, and the difference between them is deliberate:\n\n- **401** \u2014 unknown email, wrong password, or a disabled account, all with\n  one identical message so the endpoint cannot be used to discover which\n  addresses are registered.\n- **401** with ``code: \"AUTH_TEMPORARY_PASSWORD_EXPIRED\"``: the password\n  was a correct temporary one past its expiry; a Superadmin must reissue.\n- **403** with ``code: \"email_not_verified\"`` \u2014 the password was correct but\n  the address is unverified. Branch on the code, not the message, and send\n  the user to a resend-verification screen rather than back to login.\n- **200** \u2014 a token pair.\n\nAccounts with a role-specific sign-in (student, faculty, Admin,\nSuperadmin) get the same 401 here: they must use ``/auth/<role>/login``.",
-        "operationId": "login_api_v1_auth_login_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LoginRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenPair"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/auth/refresh": {
-      "post": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "Refresh",
-        "description": "Exchange a refresh token for a new pair, invalidating the old token.",
-        "operationId": "refresh_api_v1_auth_refresh_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenPair"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/auth/logout": {
-      "post": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "Logout",
-        "description": "Revoke a refresh token. Idempotent: always succeeds.",
-        "operationId": "logout_api_v1_auth_logout_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/auth/whoami": {
-      "get": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "Whoami",
-        "description": "Return the authenticated principal \u2014 useful for verifying token wiring.",
-        "operationId": "whoami_api_v1_auth_whoami_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CurrentUserRead"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
     "/api/v1/auth/verify-email": {
       "post": {
         "tags": [
-          "auth"
+          "account"
         ],
         "summary": "Verify Email",
         "description": "Redeem an email-verification token.\n\n401 for a token that is unknown, expired, already used, or issued for a\ndifferent purpose \u2014 all with the same message, so the response cannot be\nused to probe which.",
@@ -189,7 +43,7 @@
     "/api/v1/auth/resend-verification": {
       "post": {
         "tags": [
-          "auth"
+          "account"
         ],
         "summary": "Resend Verification",
         "description": "Request a fresh verification email.\n\nAlways 204, whether or not the address is registered, active, or already\nverified. Any live token previously issued to that user is invalidated.\n\nThe strictest limit in the app, alongside /forgot-password: this endpoint\nsends mail to an address the caller names, so without one an anonymous\ncaller can bomb a stranger's inbox from your domain and spend your SES\nbudget doing it.",
@@ -224,7 +78,7 @@
     "/api/v1/auth/forgot-password": {
       "post": {
         "tags": [
-          "auth"
+          "account"
         ],
         "summary": "Forgot Password",
         "description": "Request a password-reset email.\n\nAlways 202 Accepted. Returning 404 for an unknown address would make this endpoint a\nmembership oracle for any email list.\n\nA shared per-address allowance prevents inbox flooding; an outer IP limit\nalso guards abusive request volume. Earlier usable links remain valid.",
@@ -266,7 +120,7 @@
     "/api/v1/auth/reset-password": {
       "post": {
         "tags": [
-          "auth"
+          "account"
         ],
         "summary": "Reset Password",
         "description": "Redeem a reset token and set a new password.\n\nEvery existing access and refresh session is invalidated, lockout state\nis cleared, and the client must sign in again with the new password.",
@@ -324,7 +178,7 @@
     "/api/v1/auth/change-password": {
       "post": {
         "tags": [
-          "auth"
+          "account"
         ],
         "summary": "Change Password",
         "description": "Change your own password, returning a replacement token pair.\n\nThe one route open to an account holding a temporary password: changing\nit clears ``PASSWORD_CHANGE_REQUIRED``. The temporary password cannot be\nkept as the new one (422), and once expired it cannot be changed (401\n``AUTH_TEMPORARY_PASSWORD_EXPIRED``).\n\nAuthorization is by identity alone: the target is the authenticated user,\ntaken from the token, so there is no id to tamper with and no object-level\ncheck to make. Requires the current password.\n\nAll existing refresh tokens \u2014 including the caller's \u2014 are revoked, and the\nreturned pair replaces them.",
@@ -366,191 +220,6 @@
             "HTTPBearer": []
           }
         ]
-      }
-    },
-    "/api/v1/users": {
-      "post": {
-        "tags": [
-          "users"
-        ],
-        "summary": "Create User",
-        "description": "Create one account. Superadmin only.\n\nThe account is verified on creation and is mailed a temporary password,\nwhich it must replace at first sign-in. 409 ``USER_ALREADY_EXISTS`` for a\ntaken email or institutional id; 422 for fields the role requires, or an\nunknown program.",
-        "operationId": "create_user_api_v1_users_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AccountCreate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserRead"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "get": {
-        "tags": [
-          "users"
-        ],
-        "summary": "List Users",
-        "description": "List user accounts, newest first. Requires ``ReadAllUser``.\n\nBoth filters are tri-state: omitting one returns accounts in either state,\nwhich is what makes \"everyone\" and \"only the unverified\" the same endpoint.",
-        "operationId": "list_users_api_v1_users_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "is_active",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter by account status. Omit for both.",
-              "title": "Is Active"
-            },
-            "description": "Filter by account status. Omit for both."
-          },
-          {
-            "name": "is_verified",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter by email verification. Omit for both.",
-              "title": "Is Verified"
-            },
-            "description": "Filter by email verification. Omit for both."
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 200,
-              "minimum": 1,
-              "default": 50,
-              "title": "Limit"
-            }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0,
-              "title": "Offset"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Page_UserRead_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/users/{user_id}/reissue-temporary-password": {
-      "post": {
-        "tags": [
-          "users"
-        ],
-        "summary": "Reissue Temporary Password",
-        "description": "Mail a new temporary password and end every session. Superadmin only.\n\nThe way out of an expired or lost temporary password. 404 for a missing or\ninactive account.",
-        "operationId": "reissue_temporary_password_api_v1_users__user_id__reissue_temporary_password_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "user_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "User Id"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
       }
     },
     "/api/v1/users/me": {
@@ -708,153 +377,6 @@
             "HTTPBearer": []
           }
         ]
-      }
-    },
-    "/api/v1/users/{user_id}/deactivate": {
-      "post": {
-        "tags": [
-          "users"
-        ],
-        "summary": "Deactivate User",
-        "description": "Suspend another user's account. Requires ``ManageUser``.\n\nReversible, and every session is revoked immediately. Deliberately not a\nDELETE: account deletion stays self-service and password-confirmed, because\nan administrator cannot supply the password that authorizes it.\n\n422 if the caller aims it at themselves \u2014 see the service for why.",
-        "operationId": "deactivate_user_api_v1_users__user_id__deactivate_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "user_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "User Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserRead"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/users/{user_id}/reactivate": {
-      "post": {
-        "tags": [
-          "users"
-        ],
-        "summary": "Reactivate User",
-        "description": "Restore a suspended account. Requires ``ManageUser``.\n\n422 on a deleted account: deletion scrubs the identity, so there is nothing\nleft to restore.",
-        "operationId": "reactivate_user_api_v1_users__user_id__reactivate_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "user_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "User Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserRead"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/users/{user_id}": {
-      "get": {
-        "tags": [
-          "users"
-        ],
-        "summary": "Read User",
-        "description": "Return another user's profile.\n\nAllowed when the caller holds ``ReadAllUser`` or is asking about themselves.\nThis object-level check cannot be expressed by ``require_permission`` alone,\nwhich answers only \"may they read users in general?\" \u2014 see\n``cbpupsis_api_student.domains.items.service`` for the same pattern on owned\nresources.",
-        "operationId": "read_user_api_v1_users__user_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "user_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "User Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserRead"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
       }
     },
     "/api/v1/notifications": {
@@ -3130,6 +2652,338 @@
         }
       }
     },
+    "/api/v1/users": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Create User",
+        "description": "Create one account. Superadmin only.\n\nThe account is verified on creation and is mailed a temporary password,\nwhich it must replace at first sign-in. 409 ``USER_ALREADY_EXISTS`` for a\ntaken email or institutional id; 422 for fields the role requires, or an\nunknown program.",
+        "operationId": "create_user_api_v1_users_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "List Users",
+        "description": "List user accounts, newest first. Requires ``ReadAllUser``.\n\nBoth filters are tri-state: omitting one returns accounts in either state,\nwhich is what makes \"everyone\" and \"only the unverified\" the same endpoint.",
+        "operationId": "list_users_api_v1_users_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "is_active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by account status. Omit for both.",
+              "title": "Is Active"
+            },
+            "description": "Filter by account status. Omit for both."
+          },
+          {
+            "name": "is_verified",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by email verification. Omit for both.",
+              "title": "Is Verified"
+            },
+            "description": "Filter by email verification. Omit for both."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_UserRead_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}/reissue-temporary-password": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Reissue Temporary Password",
+        "description": "Mail a new temporary password and end every session. Superadmin only.\n\nThe way out of an expired or lost temporary password. 404 for a missing or\ninactive account.",
+        "operationId": "reissue_temporary_password_api_v1_users__user_id__reissue_temporary_password_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}/deactivate": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Deactivate User",
+        "description": "Suspend another user's account. Requires ``ManageUser``.\n\nReversible, and every session is revoked immediately. Deliberately not a\nDELETE: account deletion stays self-service and password-confirmed, because\nan administrator cannot supply the password that authorizes it.\n\n422 if the caller aims it at themselves \u2014 see the service for why.",
+        "operationId": "deactivate_user_api_v1_users__user_id__deactivate_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}/reactivate": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Reactivate User",
+        "description": "Restore a suspended account. Requires ``ManageUser``.\n\n422 on a deleted account: deletion scrubs the identity, so there is nothing\nleft to restore.",
+        "operationId": "reactivate_user_api_v1_users__user_id__reactivate_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Read User",
+        "description": "Return another user's profile.\n\nAllowed when the caller holds ``ReadAllUser`` or is asking about themselves.\nThis object-level check cannot be expressed by ``require_permission`` alone,\nwhich answers only \"may they read users in general?\" \u2014 see\n``cbpupsis_api_student.domains.items.service`` for the same pattern on owned\nresources.",
+        "operationId": "read_user_api_v1_users__user_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/superadmin/login": {
       "post": {
         "tags": [
@@ -4218,27 +4072,6 @@
         "title": "CourseSectionRosterRead",
         "description": "A section with its roster.\n\nThe roster stays empty until the enrollment domain exists to fill it; the\nendpoint already enforces who may see it."
       },
-      "CurrentUserRead": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "email": {
-            "type": "string",
-            "format": "email",
-            "title": "Email"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "email"
-        ],
-        "title": "CurrentUserRead",
-        "description": "The authenticated principal, as returned by /whoami."
-      },
       "DeleteAccountRequest": {
         "properties": {
           "password": {
@@ -4823,28 +4656,6 @@
         "type": "object",
         "title": "ItemUpdate",
         "description": "Partial update: every field optional so PATCH may send a subset."
-      },
-      "LoginRequest": {
-        "properties": {
-          "email": {
-            "type": "string",
-            "format": "email",
-            "title": "Email"
-          },
-          "password": {
-            "type": "string",
-            "maxLength": 128,
-            "title": "Password"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "email",
-          "password"
-        ],
-        "title": "LoginRequest",
-        "description": "Payload for exchanging credentials for tokens."
       },
       "MfaVerifyRequest": {
         "properties": {

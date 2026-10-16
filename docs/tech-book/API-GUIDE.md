@@ -28,7 +28,9 @@ changes revoke sessions.
 ## Account creation (FR19, UC-ADM-002)
 
 There is no public registration: `POST /auth/register` is gone (404). Only a
-Superadmin session creates accounts, one at a time or from a CSV file. Every
+Superadmin session creates accounts, one at a time or from a CSV file, and only
+the admin app (8003) serves account management at all: the student and faculty
+apps serve `/users/me` and nothing aimed at another account. Every
 created account is verified on creation, joins its role's IAM group, gets its
 profile rows, and is mailed a system-generated temporary password. The response
 never contains the password, and it is stored only as a bcrypt digest; the copy
@@ -470,7 +472,7 @@ column. The authorization half is untouched either way.
 | `DELETE /users/me` | Needs the password; soft-deletes and scrubs PII. |
 | `POST /users`, `POST /users/import` | Superadmin only; see Account creation above. |
 | `POST /users/{id}/reissue-temporary-password` | Superadmin only; new temporary password, every session revoked. |
-| `GET /users` | Paginated, `ReadAllUser`. Tri-state `is_active` / `is_verified` filters. |
+| `GET /users` | Admin app only. Paginated, `ReadAllUser`. Tri-state `is_active` / `is_verified` filters. |
 | `POST /users/{id}/deactivate` | `ManageUser`. Revokes their sessions. 422 on yourself. |
 | `POST /users/{id}/reactivate` | `ManageUser`. 422 on a deleted (scrubbed) account. |
 | `GET /audit` | `ReadAllAuditEntry`. The administrative trail, newest first. |

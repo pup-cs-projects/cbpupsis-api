@@ -102,9 +102,9 @@ migrations once before any app starts. Each app has its own API reference:
 
 | App | API reference | Serves |
 |---|---|---|
-| Student | <http://localhost:8001/scalar> | auth, users, notifications, items |
-| Faculty | <http://localhost:8002/scalar> | auth, users, notifications |
-| Admin | <http://localhost:8003/scalar> | auth, users, notifications, iam, audit, and the `/admin` panel |
+| Student | <http://localhost:8001/scalar> | sign-in, your own account, notifications, items |
+| Faculty | <http://localhost:8002/scalar> | sign-in, your own account, notifications, sections |
+| Admin | <http://localhost:8003/scalar> | Admin and Superadmin sign-in, your own account, notifications, user management and CSV import, iam, audit, Superadmin operations, and the `/admin` panel |
 
 Every email the stack sends (verification and reset links, temporary passwords) lands in
 **Mailpit** at <http://localhost:8025>, not in a real inbox, as long as your env files keep

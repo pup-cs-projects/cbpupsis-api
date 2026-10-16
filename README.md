@@ -46,9 +46,9 @@ development only:
 
 | App | URL | API reference | Serves |
 |---|---|---|---|
-| Student | <http://localhost:8001> | <http://localhost:8001/scalar> | auth, users, notifications, items |
-| Faculty | <http://localhost:8002> | <http://localhost:8002/scalar> | auth, users, notifications |
-| Admin | <http://localhost:8003> | <http://localhost:8003/scalar> | auth, users, notifications, iam, audit, and the `/admin` panel |
+| Student | <http://localhost:8001> | <http://localhost:8001/scalar> | sign-in, your own account, notifications, items |
+| Faculty | <http://localhost:8002> | <http://localhost:8002/scalar> | sign-in, your own account, notifications, sections |
+| Admin | <http://localhost:8003> | <http://localhost:8003/scalar> | Admin and Superadmin sign-in, your own account, notifications, user management and CSV import, iam, audit, Superadmin operations, and the `/admin` panel |
 | Mailpit | <http://localhost:8025> | | every email the stack sends, development only |
 
 Sign-in, your own profile, and your own notifications work on every app, with the same
