@@ -109,7 +109,7 @@ class ValidationError(AppError):
     status_code = 422
 
 
-def _request_id(request: Request) -> str | None:
+def request_id_of(request: Request) -> str | None:
     """Return the correlation id attached by the middleware, if present."""
     return getattr(request.state, "request_id", None)
 
@@ -126,24 +126,18 @@ def register_exception_handlers(app: FastAPI) -> None:
         no key appears with a null value for them to misread as meaningful.
         """
         content: dict[str, object] = {
+            "status": "error",
+            "message": exc.detail,
             "detail": exc.detail,
-            "request_id": _request_id(request),
+            "request_id": request_id_of(request),
         }
         if exc.code is not None:
             content["code"] = exc.code
-        if hasattr(exc, "data") and exc.data is not None:
-            content["data"] = exc.data
-
-        headers: dict[str, str] = dict(getattr(exc, "headers", {}) or {})
-        if hasattr(exc, "retry_after_seconds") and exc.retry_after_seconds is not None:
-            headers["Retry-After"] = str(exc.retry_after_seconds)
-            content["retry_after_seconds"] = exc.retry_after_seconds
-
-        content.update(getattr(exc, "response_fields", {}))
+        content.update(exc.response_fields)
         return JSONResponse(
             status_code=exc.status_code,
             content=content,
-            headers=headers if headers else None,
+            headers=exc.headers or None,
         )
 
     @app.exception_handler(RateLimitExceeded)
@@ -184,7 +178,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "status": "error",
                 "message": detail,
                 "detail": detail,
-                "request_id": _request_id(request),
+                "request_id": request_id_of(request),
                 "code": (
                     "RATE_LIMIT_EXCEEDED"
                     if request.url.path.endswith("/auth/forgot-password")
@@ -208,7 +202,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         # malformed body).
         content: dict[str, object] = {
             "detail": jsonable_encoder(exc.errors()),
-            "request_id": _request_id(request),
+            "request_id": request_id_of(request),
         }
         if settings.debug:
             content["body"] = jsonable_encoder(exc.body)
@@ -229,13 +223,13 @@ def register_exception_handlers(app: FastAPI) -> None:
             "Unhandled error on %s %s (request_id=%s)",
             request.method,
             request.url.path,
-            _request_id(request),
+            request_id_of(request),
             exc_info=exc,
         )
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "detail": "Internal server error",
-                "request_id": _request_id(request),
+                "request_id": request_id_of(request),
             },
         )

@@ -38,7 +38,7 @@ TYPE_MAX_LENGTH = 100
 #: JSONB on Postgres, plain JSON elsewhere — the variant the audit and outbox
 #: tables use, and for the same reason: the suite runs on SQLite, which has no
 #: JSONB and cannot compile the type at all.
-_JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
+JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
 
 
 class Notification(UUIDMixin, TimestampMixin, Base):
@@ -68,7 +68,7 @@ class Notification(UUIDMixin, TimestampMixin, Base):
     #: Structured detail the client renders — an id to link to, a count. Kept
     #: separate from the rendered body so a client can deep-link without parsing
     #: prose.
-    payload: Mapped[dict[str, Any]] = mapped_column(_JSON_TYPE, default=dict)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, default=dict)
 
     #: When the user opened it; NULL means unread. A timestamp rather than a
     #: boolean for the same reason as ``email_verified_at``: "when" is the

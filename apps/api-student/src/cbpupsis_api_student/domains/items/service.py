@@ -31,10 +31,11 @@ from cbpupsis_api_student.domains.items.exceptions import (
     ItemAccessDeniedError,
     ItemNotFoundError,
 )
-from cbpupsis_core.events import Event, event_bus
+from cbpupsis_core.events import Event
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.models.items import Item
 from cbpupsis_shared.domains.iam import service as iam_service
+from cbpupsis_shared.outbox import publish_transactional
 
 
 async def _require_owner_or_permission(
@@ -42,13 +43,18 @@ async def _require_owner_or_permission(
 ) -> None:
     """Allow the item's owner, or a user holding ``permission`` (e.g. a moderator).
 
-    Raises :class:`ForbiddenError` otherwise.
+    Otherwise a caller who may see the item (``ReadAllItem``) gets the 403, and
+    one who may not gets the 404 a read would give them, so the refusal never
+    confirms that someone else's item exists.
     """
     if item.owner_id == user_id:
         return
     granted = await iam_service.get_effective_permissions(db, user_id)
-    if permission not in granted:
+    if permission in granted:
+        return
+    if READ_ALL_ITEM in granted:
         raise ItemAccessDeniedError
+    raise ItemNotFoundError(item.id)
 
 
 async def get_item(
@@ -128,21 +134,25 @@ async def create_item(
     price: Decimal,
     description: str | None = None,
 ) -> Item:
-    """Create an item owned by ``owner_id`` and announce it."""
+    """Create an item owned by ``owner_id`` and announce it.
+
+    The announcement is staged in the outbox in the same transaction as the
+    item: it drives the owner's notification, which a frozen or recycled Lambda
+    would otherwise lose between the commit and a background task.
+    """
     item = repository.add_item(
         db, owner_id=owner_id, name=name, price=price, description=description
     )
-    await db.commit()
-    await db.refresh(item)
-
-    # Emitted, not called inline: this domain does not know or care who reacts.
-    # In-process today; the same call goes to a broker after a service split.
-    await event_bus.publish(
+    await db.flush()
+    publish_transactional(
+        db,
         Event(
             name="item.created",
             payload={"item_id": str(item.id), "owner_id": str(owner_id)},
-        )
+        ),
     )
+    await db.commit()
+    await db.refresh(item)
     return item
 
 

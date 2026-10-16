@@ -405,11 +405,11 @@ class TestTheHandlerIsWiredUp:
         async def _handle(event: Event, *, message_id: uuid.UUID) -> None:
             await handlers.deliver_event_on(db, event, message_id=message_id)
 
-        worker._HANDLERS["item.created"] = [_handle]
+        worker.HANDLERS["item.created"] = [_handle]
         try:
             assert await worker.process_batch(db) == 1
         finally:
-            worker._HANDLERS.clear()
+            worker.HANDLERS.clear()
 
         assert await notifications_service.unread_count(db, user_id) == 1
 

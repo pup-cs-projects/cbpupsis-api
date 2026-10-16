@@ -48,7 +48,12 @@ def app_for(environment: str) -> Iterator[FastAPI]:
     import main
 
     previous = os.environ.get("ENVIRONMENT")
+    previous_storage = os.environ.get("RATE_LIMIT_STORAGE_URI")
     os.environ["ENVIRONMENT"] = environment
+    if environment == "production":
+        # Production refuses per-instance counters; limiting is off in tests,
+        # so this store is never contacted.
+        os.environ["RATE_LIMIT_STORAGE_URI"] = "redis://localhost:6379/0"
     try:
         _reload_app_modules()
         # Documentation exposure is independent of database provisioning.
@@ -57,10 +62,14 @@ def app_for(environment: str) -> Iterator[FastAPI]:
         ):
             yield main.app
     finally:
-        if previous is None:
-            os.environ.pop("ENVIRONMENT", None)
-        else:
-            os.environ["ENVIRONMENT"] = previous
+        for name, value in (
+            ("ENVIRONMENT", previous),
+            ("RATE_LIMIT_STORAGE_URI", previous_storage),
+        ):
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
         _reload_app_modules()
 
 

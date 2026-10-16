@@ -11,7 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_en
 
 from cbpupsis_database.session import to_asyncpg_url
 
-EXPECTED_HEAD = "c004scratch"
+#: The migration head every deployed process must find. A constant, not read
+#: from the migrations folder, because the student and faculty images do not
+#: ship it. ``tests/core/test_runtime_head.py`` fails when a new revision lands
+#: without updating this.
+EXPECTED_HEAD = "180508baf0e2"
 
 
 async def inspect_runtime(

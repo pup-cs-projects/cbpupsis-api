@@ -33,7 +33,7 @@ class TestBootstrapAdmin:
         self, db: AsyncSession, monkeypatch
     ) -> None:
         await _seed_admin_group(db)
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="admin@example.com", password="a-long-enough-password"
         )
 
@@ -49,7 +49,7 @@ class TestBootstrapAdmin:
         self, db: AsyncSession, monkeypatch
     ) -> None:
         await _seed_admin_group(db)
-        await auth_service.register(
+        await auth_service.create_console_account(
             db, email="Mixed@Example.com", password="a-long-enough-password"
         )
         monkeypatch.setattr(
@@ -70,7 +70,7 @@ class TestBootstrapAdmin:
         self, db: AsyncSession, monkeypatch
     ) -> None:
         """Seeding is a prerequisite; say so rather than failing obscurely."""
-        await auth_service.register(
+        await auth_service.create_console_account(
             db, email="early@example.com", password="a-long-enough-password"
         )
         monkeypatch.setattr(
@@ -80,7 +80,7 @@ class TestBootstrapAdmin:
 
     async def test_is_idempotent(self, db: AsyncSession, monkeypatch) -> None:
         await _seed_admin_group(db)
-        await auth_service.register(
+        await auth_service.create_console_account(
             db, email="twice@example.com", password="a-long-enough-password"
         )
         monkeypatch.setattr(
@@ -90,17 +90,14 @@ class TestBootstrapAdmin:
         assert await bootstrap_admin("twice@example.com") == 0
 
     async def test_admin_bootstrap_cannot_unlock_superadmin_iam(
-        self, db: AsyncSession, client: AsyncClient, monkeypatch
+        self, console_account, db: AsyncSession, client: AsyncClient, monkeypatch
     ) -> None:
         """Admin promotion revokes old sessions, even with an accidental IAM grant."""
         await _seed_admin_group(db)
-        registered = await client.post(
-            "/api/v1/auth/register",
-            json={"email": "root@example.com", "password": "a-long-enough-password"},
-        )
+        registered = await console_account("root@example.com", "a-long-enough-password")
         # Login requires a verified address; this test is about the IAM
         # bootstrap, so satisfy the gate directly.
-        await users_service.mark_email_verified(db, uuid.UUID(registered.json()["id"]))
+        await users_service.mark_email_verified(db, uuid.UUID(registered["id"]))
         login = await client.post(
             "/api/v1/auth/login",
             json={"email": "root@example.com", "password": "a-long-enough-password"},

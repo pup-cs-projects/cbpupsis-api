@@ -10,26 +10,29 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_api_admin.domains.admin_auth import repository
-from cbpupsis_api_admin.domains.admin_auth.exceptions import (
-    AdminProfileRequiredError,
-    InsufficientAdminRoleError,
-    MfaEnrollmentRequiredError,
-    MfaRequiredError,
-    ScopedResourceNotFoundError,
-)
-from cbpupsis_api_admin.domains.admin_auth.security import decode_challenge_token
+from cbpupsis_api_admin.domains.admin_auth.constants import ADMIN_SESSION_COOKIE
+from cbpupsis_api_admin.domains.admin_auth.exceptions import AdminProfileRequiredError
+from cbpupsis_core.exceptions import AppError
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.auth import client as auth_client
+from cbpupsis_shared.domains.auth.constants import ROLE_ADMIN, ROLE_SUPERADMIN
 from cbpupsis_shared.domains.auth.dependencies import get_current_user
 from cbpupsis_shared.domains.auth.exceptions import (
     InactiveUserError,
+    InsufficientRoleError,
     InvalidAuthTokenError,
+    MfaEnrollmentRequiredError,
+    MfaRequiredError,
     NotAuthenticatedError,
+    ResourceNotFoundError,
 )
 from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
-from cbpupsis_shared.domains.users import service as users_service
+from cbpupsis_shared.domains.users import client as users_client
+from cbpupsis_shared.domains.users.constants import (
+    INSTITUTION_WIDE_POSITIONS,
+    AdminPosition,
+)
 
 logger = logging.getLogger(__name__)
 _bearer = HTTPBearer(auto_error=False)
@@ -44,15 +47,15 @@ class AdminSession:
     position: str
     department_id: str | None
     college_id: str | None
-    role: str = "admin"
+    role: str = ROLE_ADMIN
 
     def require_resource_scope(
         self, *, department_id: str | None, college_id: str | None
     ) -> None:
         """Hide records outside the position's department or college reach."""
         allowed = (
-            self.role == "superadmin"
-            or self.position == "registrar"
+            self.role == ROLE_SUPERADMIN
+            or self.position in INSTITUTION_WIDE_POSITIONS
             or (
                 self.position == "dean"
                 and self.college_id is not None
@@ -65,7 +68,7 @@ class AdminSession:
             )
         )
         if not allowed:
-            raise ScopedResourceNotFoundError
+            raise ResourceNotFoundError
 
 
 async def require_admin_session(
@@ -73,84 +76,79 @@ async def require_admin_session(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
 ) -> AdminSession:
-    """Require a current Admin role, completed MFA, and a valid position scope."""
+    """Require a live Admin session, completed MFA, and a valid position scope."""
+    try:
+        return await _admin_session(request, credentials, db)
+    except AppError as error:
+        # Logged with status and code only, never the token or identity.
+        _log_refusal(request, error)
+        raise
+
+
+async def _admin_session(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+    db: AsyncSession,
+) -> AdminSession:
     token = (
         credentials.credentials
         if credentials is not None
-        else request.cookies.get("admin_session")
+        else request.cookies.get(ADMIN_SESSION_COOKIE)
     )
     if token is None:
-        error = NotAuthenticatedError()
-        _log_refusal(request, error)
-        raise error
-
+        raise NotAuthenticatedError
     try:
         claims = auth_client.decode_access_session(token)
     except InvalidAuthTokenError as access_error:
         try:
-            challenge = decode_challenge_token(token)
+            challenge = auth_client.decode_challenge_token(token, role=ROLE_ADMIN)
         except InvalidAuthTokenError:
-            _log_refusal(request, access_error)
             raise access_error from None
-        error = (
-            MfaEnrollmentRequiredError()
-            if challenge.get("enrollment_required") is True
-            else MfaRequiredError()
-        )
-        _log_refusal(request, error)
-        raise error from access_error
+        if challenge.get("enrollment_required") is True:
+            raise MfaEnrollmentRequiredError from access_error
+        raise MfaRequiredError from access_error
 
     user_id = uuid.UUID(str(claims["sub"]))
-    user = await users_service.get_active_user(db, user_id)
+    user = await users_client.get_active_user(db, user_id)
     if user is None:
-        error = InactiveUserError()
-        _log_refusal(request, error)
-        raise error
-    auth_client.validate_session_version(claims, user.session_version)
+        raise InactiveUserError
     if (
-        claims.get("role") != "admin"
+        claims.get("role") != ROLE_ADMIN
         or claims.get("mfa") is not True
         or not await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP)
         or await iam_service.is_user_in_group(db, user_id, SUPERADMIN_GROUP)
     ):
-        error = InsufficientAdminRoleError()
-        _log_refusal(request, error)
-        raise error
+        raise InsufficientRoleError
+    await auth_client.check_session(db, claims)
 
-    profile = await repository.get_admin_profile(db, user_id)
+    profile = await users_client.get_admin_profile(db, user_id)
     if profile is None or not profile.is_active:
-        error = AdminProfileRequiredError()
-        _log_refusal(request, error)
-        raise error
-
-    position = profile.position
-    department_id = profile.department
-    college_id = profile.college
-    invalid_scope = (
-        position not in {"chairperson", "dean", "registrar"}
+        raise AdminProfileRequiredError
+    position, department_id, college_id = (
+        profile.position,
+        profile.department,
+        profile.college,
+    )
+    if (
+        position not in set(AdminPosition)
         or (position == "chairperson" and not department_id)
         or (position == "dean" and not college_id)
-    )
-    if invalid_scope:
-        error = AdminProfileRequiredError()
-        _log_refusal(request, error)
-        raise error
+    ):
+        raise AdminProfileRequiredError
     if (
         claims.get("position") != position
         or claims.get("department_id") != department_id
         or claims.get("college_id") != college_id
     ):
-        error = InvalidAuthTokenError()
-        _log_refusal(request, error)
-        raise error
+        raise InvalidAuthTokenError
 
     request.state.user_id = str(user_id)
     return AdminSession(
         id=user_id,
         email=user.email,
-        position=str(position),
-        department_id=str(department_id) if department_id is not None else None,
-        college_id=str(college_id) if college_id is not None else None,
+        position=position,
+        department_id=department_id,
+        college_id=college_id,
     )
 
 
@@ -176,13 +174,13 @@ async def require_admin_or_superadmin_session(
             user = await get_current_user(request, credentials, db)
         except InvalidAuthTokenError:
             return await require_admin_session(request, credentials, db)
-        if user.role == "superadmin":
+        if user.role == ROLE_SUPERADMIN:
             return AdminSession(
                 id=user.id,
                 email=user.email,
-                position="superadmin",
+                position=ROLE_SUPERADMIN,
                 department_id=None,
                 college_id=None,
-                role="superadmin",
+                role=ROLE_SUPERADMIN,
             )
     return await require_admin_session(request, credentials, db)

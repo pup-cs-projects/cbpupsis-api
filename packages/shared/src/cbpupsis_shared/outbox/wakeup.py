@@ -45,10 +45,10 @@ from cbpupsis_shared.outbox.constants import WAKEUP_CHANNEL
 
 logger = logging.getLogger(__name__)
 
-#: libpq parameters asyncpg rejects when connecting directly. The same list
+#: libpq parameters asyncpg rejects when connecting directly. Most of the list
 #: ``cbpupsis_database.session`` strips, for the same reason — a URL copied from
 #: the Neon console carries them.
-_LIBPQ_ONLY = frozenset(
+LISTENER_DROPPED_PARAMS = frozenset(
     {"sslmode", "channel_binding", "target_session_attrs", "connect_timeout"}
 )
 
@@ -61,7 +61,9 @@ def listener_dsn() -> str:
     """
     url = settings.outbox_listener_database_url or settings.database_url
     parts = urlsplit(url)
-    kept = [(k, v) for k, v in parse_qsl(parts.query) if k not in _LIBPQ_ONLY]
+    kept = [
+        (k, v) for k, v in parse_qsl(parts.query) if k not in LISTENER_DROPPED_PARAMS
+    ]
     return urlunsplit(("postgresql", parts.netloc, parts.path, urlencode(kept), ""))
 
 
@@ -123,7 +125,7 @@ class WakeupListener:
         self._event = asyncio.Event()
         try:
             self._connection = await asyncpg.connect(listener_dsn())
-            await self._connection.add_listener(WAKEUP_CHANNEL, self._on_notify)
+            await self._connection.add_listener(WAKEUP_CHANNEL, self.on_notify)
             logger.info("outbox.listener.connected", extra={"channel": WAKEUP_CHANNEL})
         except Exception:
             # Degrade to polling rather than refusing to start. A worker that
@@ -141,7 +143,7 @@ class WakeupListener:
                 await self._connection.close()
             self._connection = None
 
-    def _on_notify(self, *_args: object) -> None:
+    def on_notify(self, *_args: object) -> None:
         """asyncpg calls this from the connection's reader task."""
         if self._event is not None:
             self._event.set()

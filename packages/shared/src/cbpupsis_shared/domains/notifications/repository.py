@@ -14,19 +14,10 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Select, delete, func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.models.notifications import Notification, NotificationPreference
-
-
-def _for_user(user_id: uuid.UUID) -> Select[tuple[Notification]]:
-    """Base query scoped to one user.
-
-    Centralised so no caller has to remember the filter — forgetting it on a
-    list endpoint is how one user's notifications end up in another's bell.
-    """
-    return select(Notification).where(Notification.user_id == user_id)
 
 
 async def list_for_user(
@@ -68,7 +59,9 @@ async def list_for_user(
         ORDER BY notifications.created_at DESC, notifications.id DESC
         LIMIT :param_1 OFFSET :param_2
     """
-    query = _for_user(user_id)
+    # The user filter sits on the shared base so the count and the page cannot
+    # disagree, and so no edit can drop it from one of them.
+    query = select(Notification).where(Notification.user_id == user_id)
     total = await db.scalar(select(func.count()).select_from(query.subquery()))
     result = await db.execute(
         query.order_by(Notification.created_at.desc(), Notification.id.desc())

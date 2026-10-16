@@ -8,8 +8,8 @@ swapping the implementation later touches one file.
 surface — the endpoints an anonymous caller can reach without proving anything.
 Two of them (``/resend-verification``, ``/forgot-password``) send email on
 demand, so an unlimited caller can bill you for messages and bomb a stranger's
-inbox from your domain. The other two (``/login``, ``/register``) are the
-classic credential-stuffing and signup-spam targets. Limits are set in
+inbox from your domain. The third (``/login``) is the classic
+credential-stuffing target. Limits are set in
 ``config.py``, not in the decorators, so they can be retuned without a deploy.
 
 **This is not a substitute for the account-level defences.** A distributed
@@ -39,6 +39,7 @@ add the settings field, decorate the route — with nothing to edit here.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 from collections.abc import Callable
 from typing import TypeVar
@@ -50,6 +51,9 @@ from slowapi.errors import RateLimitExceeded
 from cbpupsis_core.config import settings
 
 logger = logging.getLogger(__name__)
+
+#: What :func:`client_ip` returns when the request carries no usable address.
+UNKNOWN_CLIENT = "unknown"
 
 F = TypeVar("F", bound=Callable[..., object])
 
@@ -72,8 +76,8 @@ class UnknownRateLimitError(RuntimeError):
 #: Prefix on IP-derived keys, so a caller identified by address can never
 #: collide with one identified by user id (a UUID and an IP cannot be confused,
 #: but the prefixes make the key self-describing in storage and in logs).
-_IP_PREFIX = "ip:"
-_USER_PREFIX = "user:"
+IP_KEY_PREFIX = "ip:"
+USER_KEY_PREFIX = "user:"
 
 
 def client_ip(request: Request) -> str:
@@ -93,16 +97,50 @@ def client_ip(request: Request) -> str:
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
         # "client, proxy1, proxy2" — the client is first. Each hop appends, so
-        # anything after the first entry is an intermediary.
-        client = forwarded.split(",")[0].strip()
-        if client:
+        # anything after the first entry is an intermediary. A value that is not
+        # an address is ignored rather than trusted, so it can neither mint a
+        # bucket nor reach an INET column as junk.
+        client = normalized_ip_address(forwarded.split(",")[0])
+        if client is not None:
             return client
-    if request.client is None or not request.client.host:
-        # No peer address at all (ASGI transports in tests, some unix sockets).
-        # A constant is the safe answer: it shares one bucket rather than
-        # exempting the caller entirely.
-        return "unknown"
-    return request.client.host
+    peer = normalized_ip_address(request.client.host) if request.client else None
+    # No usable peer address (some ASGI transports, unix sockets): a constant
+    # shares one bucket rather than exempting the caller entirely.
+    return peer or UNKNOWN_CLIENT
+
+
+def client_ip_or_none(request: Request) -> str | None:
+    """Return :func:`client_ip`'s validated address, or ``None`` if there is none.
+
+    For values stored in an ``INET`` column: the limiter's shared ``"unknown"``
+    bucket is not an address, so it is recorded as NULL rather than refusing
+    the request. A missing address usually means a proxy is not forwarding it,
+    so each one logs a warning carrying only the route (the request id comes
+    from the correlation filter), never the caller.
+    """
+    address = client_ip(request)
+    if address != UNKNOWN_CLIENT:
+        return address
+    route = request.scope.get("route")
+    logger.warning(
+        "No usable client address on %s; recording NULL",
+        getattr(route, "path", request.url.path),
+    )
+    return None
+
+
+def normalized_ip_address(value: str | None) -> str | None:
+    """Return ``value`` as a canonical IP address, or ``None`` if it is not one.
+
+    A zone id (``fe80::1%eth0``) is refused: it is not storable in ``INET``.
+    """
+    candidate = (value or "").strip()
+    if not candidate or "%" in candidate:
+        return None
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return None
 
 
 def rate_limit_key(request: Request) -> str:
@@ -124,8 +162,8 @@ def rate_limit_key(request: Request) -> str:
     """
     user_id = getattr(request.state, "user_id", None)
     if user_id is not None:
-        return f"{_USER_PREFIX}{user_id}"
-    return f"{_IP_PREFIX}{client_ip(request)}"
+        return f"{USER_KEY_PREFIX}{user_id}"
+    return f"{IP_KEY_PREFIX}{client_ip(request)}"
 
 
 #: The application limiter.
@@ -150,22 +188,6 @@ limiter = Limiter(
 )
 
 
-def _limit_from_settings(attribute: str):
-    """Return a callable that reads a limit string off ``settings`` per request.
-
-    slowapi accepts a callable for ``limit_value`` and calls it on each request,
-    so the value is not frozen at import time. That keeps the configured limits
-    in ``config.py`` — one typed, documented place — instead of scattered as
-    literals through the router decorators.
-    """
-
-    def _resolve() -> str:
-        value: str = getattr(settings, attribute)
-        return value
-
-    return _resolve
-
-
 def rate_limit(name: str) -> Callable[[F], F]:
     """Return the route decorator that applies the ``name`` limit.
 
@@ -187,6 +209,9 @@ def rate_limit(name: str) -> Callable[[F], F]:
     slowapi reads the limiter and the caller's key off it and refuses to
     decorate an endpoint without it.
 
+    The limit is passed to slowapi as a callable it calls on each request, so the
+    value is read from ``settings`` per request rather than frozen at import.
+
     Decorator order matters: ``@router.post`` goes above ``@rate_limit`` so the
     limit wraps the handler *before* the route registers the result. Reversed,
     the route captures the undecorated function and the limit never runs.
@@ -194,7 +219,7 @@ def rate_limit(name: str) -> Callable[[F], F]:
     attribute = f"rate_limit_{name}"
     if not hasattr(settings, attribute):
         raise UnknownRateLimitError(name, attribute)
-    return limiter.limit(_limit_from_settings(attribute))
+    return limiter.limit(lambda: getattr(settings, attribute))
 
 
 def limit_names() -> tuple[str, ...]:
@@ -219,7 +244,6 @@ def limit_names() -> tuple[str, ...]:
 #: :func:`rate_limit` with the same name — kept because the intent reads at the
 #: call site, and because they resolve their settings field at import time.
 rate_limit_login = rate_limit("login")
-rate_limit_register = rate_limit("register")
 rate_limit_forgot_password = rate_limit("forgot_password")
 rate_limit_resend_verification = rate_limit("resend_verification")
 
@@ -237,13 +261,14 @@ def retry_after_seconds(exc: RateLimitExceeded) -> int:
 
 __all__ = [
     "UnknownRateLimitError",
+    "client_ip",
+    "client_ip_or_none",
     "limit_names",
     "limiter",
     "rate_limit",
     "rate_limit_forgot_password",
     "rate_limit_key",
     "rate_limit_login",
-    "rate_limit_register",
     "rate_limit_resend_verification",
     "retry_after_seconds",
 ]

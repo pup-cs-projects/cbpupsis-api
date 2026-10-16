@@ -26,6 +26,7 @@ from cbpupsis_core.config import settings
 VERIFICATION_SUBJECT = "Verify your email address"
 PASSWORD_RESET_SUBJECT = "Reset your password"
 PASSWORD_CHANGED_SUBJECT = "Your password was changed"
+WELCOME_SUBJECT = "Your account is ready"
 
 
 def verification_email(token: str) -> tuple[str, str]:
@@ -78,3 +79,26 @@ def password_changed_email() -> tuple[str, str]:
         f"support immediately — someone else may have access to your account."
     )
     return PASSWORD_CHANGED_SUBJECT, body
+
+
+def welcome_email(temporary_password: str, *, expires_at: datetime) -> tuple[str, str]:
+    """Return (subject, body) for a new account's temporary password.
+
+    The one message that carries a password. It names no identifier beyond
+    the address it is sent to, and the password stops working at the expiry
+    or as soon as the user sets their own.
+    """
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    expiry = expires_at.astimezone(timezone(timedelta(hours=8))).isoformat()
+    body = (
+        f"An account has been created for you on {settings.app_name}.\n\n"
+        f"Sign in at {settings.frontend_base_url} with this temporary "
+        f"password:\n\n"
+        f"{temporary_password}\n\n"
+        f"You will be asked to set your own password right away. The "
+        f"temporary password stops working at {expiry}.\n\n"
+        f"If you were not expecting this account, contact your system "
+        f"administrator."
+    )
+    return WELCOME_SUBJECT, body

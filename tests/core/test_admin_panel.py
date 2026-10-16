@@ -88,7 +88,7 @@ def backend(db: AsyncSession, monkeypatch) -> AdminAuth:
 
 async def _make_admin(db: AsyncSession, grant, email: str = "admin@example.com"):
     """Register a verified user holding ``ManageIAM``."""
-    user = await auth_service.register(db, email=email, password=PASSWORD)
+    user = await auth_service.create_console_account(db, email=email, password=PASSWORD)
     await users_service.mark_email_verified(db, user.id)
     await grant(user.id, MANAGE_IAM)
     return user
@@ -127,7 +127,12 @@ def app_for(environment: str) -> Iterator[FastAPI]:
     import main
 
     previous = os.environ.get("ENVIRONMENT")
+    previous_storage = os.environ.get("RATE_LIMIT_STORAGE_URI")
     os.environ["ENVIRONMENT"] = environment
+    if environment == "production":
+        # Production refuses per-instance counters; limiting is off in tests,
+        # so this store is never contacted.
+        os.environ["RATE_LIMIT_STORAGE_URI"] = "redis://localhost:6379/0"
     try:
         _reload_app_modules()
         with patch(
@@ -135,10 +140,14 @@ def app_for(environment: str) -> Iterator[FastAPI]:
         ):
             yield main.app
     finally:
-        if previous is None:
-            os.environ.pop("ENVIRONMENT", None)
-        else:
-            os.environ["ENVIRONMENT"] = previous
+        for name, value in (
+            ("ENVIRONMENT", previous),
+            ("RATE_LIMIT_STORAGE_URI", previous_storage),
+        ):
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
         _reload_app_modules()
 
 
@@ -159,7 +168,7 @@ class TestAdminLogin:
         """The single most important test here: valid credentials alone must not
         open the panel. If this fails, every registered account can edit any row
         in the database directly, bypassing every service-layer rule."""
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="plain@example.com", password=PASSWORD
         )
         await users_service.mark_email_verified(db, user.id)

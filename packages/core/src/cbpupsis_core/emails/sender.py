@@ -74,7 +74,7 @@ class SESEmailSender:
         self._from_email = from_email
         self._configuration_set = configuration_set
 
-    def _send_sync(self, to: str, subject: str, body: str) -> None:
+    def send_blocking(self, to: str, subject: str, body: str) -> None:
         """Blocking SES call, run on a worker thread by :meth:`send`."""
         kwargs = {
             "Source": self._from_email,
@@ -90,7 +90,7 @@ class SESEmailSender:
 
     async def send(self, *, to: str, subject: str, body: str) -> None:
         """Deliver via SES without blocking the event loop."""
-        await asyncio.to_thread(self._send_sync, to, subject, body)
+        await asyncio.to_thread(self.send_blocking, to, subject, body)
 
 
 @lru_cache

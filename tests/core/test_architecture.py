@@ -81,8 +81,11 @@ PUBLIC_MODULES = {
     "exceptions",
 }
 
-#: Layer files that must never contain SQL construction.
-NON_REPOSITORY_LAYERS = {"service.py", "router.py", "dependencies.py", "client.py"}
+#: The one module in a domain allowed to build SQL and touch the session. Every
+#: other module is scanned, so a service split into a package (auth's
+#: ``service/sessions.py``, ``service/tokens.py``, ...) cannot slip past by its
+#: file name.
+REPOSITORY_MODULE = "repository.py"
 
 #: Names that declare a table. An app or a non-database package importing one
 #: is about to define a model outside the kernel.
@@ -153,16 +156,36 @@ def imported_modules(tree: ast.Module) -> list[tuple[str, int]]:
     return found
 
 
+def service_package_modules() -> set[tuple[str, str]]:
+    """``(domain, module)`` for each flow module inside a ``service/`` package."""
+    return {
+        (d.name, f.stem)
+        for d in domain_dirs()
+        if (d / "service" / "__init__.py").is_file()
+        for f in (d / "service").glob("*.py")
+        if f.stem != "__init__"
+    }
+
+
 def cross_domain_private_imports(tree: ast.Module, own: str) -> list[str]:
-    """Imports of another domain's private module (``repository`` and the like)."""
+    """Imports of another domain's private module (``repository`` and the like).
+
+    A ``service/`` package is public only through its facade: another domain
+    importing ``auth.service.sessions`` is reaching past it.
+    """
+    package_modules = service_package_modules()
     violations = []
     for module, lineno in imported_modules(tree):
         parts = module.split(".")
         if len(parts) < 4 or parts[1] != "domains":
             continue
         other, member = parts[2], parts[3]
-        if other != own and member not in PUBLIC_MODULES:
+        if other == own:
+            continue
+        if member not in PUBLIC_MODULES:
             violations.append(f"{lineno}: imports {other}.{member}")
+        elif len(parts) > 4 and (other, parts[4]) in package_modules:
+            violations.append(f"{lineno}: imports {other}.{member}.{parts[4]}")
     return violations
 
 
@@ -257,6 +280,25 @@ def session_calls(tree: ast.Module) -> list[str]:
         and node.func.attr in {"execute", "scalar", "scalars", "get"}
         and isinstance(node.func.value, ast.Name)
         and node.func.value.id in {"db", "session"}
+    ]
+
+
+#: Creates an account with no Superadmin behind it. Operator scripts and the
+#: test suite only: an HTTP route that reached it would be public signup again.
+CONSOLE_ACCOUNT_FUNCTION = "create_console_account"
+
+
+def console_account_references(tree: ast.Module) -> list[str]:
+    """Every use of the unattributed account-creation function, by any route."""
+    return [
+        f"{node.lineno}: references {CONSOLE_ACCOUNT_FUNCTION}"
+        for node in ast.walk(tree)
+        if (isinstance(node, ast.Name) and node.id == CONSOLE_ACCOUNT_FUNCTION)
+        or (isinstance(node, ast.Attribute) and node.attr == CONSOLE_ACCOUNT_FUNCTION)
+        or (
+            isinstance(node, ast.alias)
+            and node.name.split(".")[-1] == CONSOLE_ACCOUNT_FUNCTION
+        )
     ]
 
 
@@ -382,19 +424,51 @@ class TestDomainBoundaries:
         _report(violations, "A domain must not import main, routes, or the factory")
 
     def test_every_domain_has_the_expected_layers(self) -> None:
-        """Four layers in the domain folder, plus its models module in the kernel.
+        """Schemas, service, and router always; repository and models together.
 
+        A domain that owns no table (a sign-in flow built on other domains'
+        clients) has no models module and no repository. One that owns tables
+        has both: a repository without its models would be querying someone
+        else's, and models without a repository would be SQL somewhere else.
         ``client.py`` is not required: only a domain another domain calls needs one.
+        The service layer may be ``service.py`` or a ``service/`` package.
         """
-        required = {"schemas.py", "repository.py", "service.py", "router.py"}
+        required = {"schemas.py", "service.py", "router.py"}
         missing: dict[str, set[str]] = {}
         for domain in domain_dirs():
-            absent = required - {f.name for f in domain.iterdir() if f.is_file()}
-            if not (MODELS_DIR / f"{domain.name}.py").is_file():
+            present = {f.name for f in domain.iterdir() if f.is_file()}
+            # A service split into flow modules is a package whose __init__ is
+            # the facade callers import; it satisfies the layer like a module.
+            if (domain / "service" / "__init__.py").is_file():
+                present.add("service.py")
+            absent = required - present
+            has_models = (MODELS_DIR / f"{domain.name}.py").is_file()
+            if has_models and "repository.py" not in present:
+                absent.add("repository.py")
+            if "repository.py" in present and not has_models:
                 absent.add(f"cbpupsis_database/models/{domain.name}.py")
             if absent:
                 missing[domain.name] = absent
         assert not missing, f"domains missing expected layers: {missing}"
+
+    def test_models_modules_define_their_own_tables(self) -> None:
+        """A models module that maps nothing, or re-exports another module's
+        tables, is a facade: it lets a domain satisfy the own-models rule above
+        while querying tables another domain owns."""
+        facades = []
+        for path in MODELS_DIR.glob("*.py"):
+            if path.stem == "__init__":
+                continue
+            tree = parse(path)
+            maps_a_table = any(
+                v.endswith("maps a table") for v in table_definitions(tree)
+            )
+            if not maps_a_table:
+                facades.append(f"{rel(path)}: defines no table")
+            facades.extend(
+                f"{rel(path)}:{v}" for v in foreign_model_imports(tree, path.stem)
+            )
+        _report(facades, "A models module defines only its own domain's tables")
 
 
 class TestLayerSeparation:
@@ -404,7 +478,7 @@ class TestLayerSeparation:
         violations = [
             f"{rel(path)}:{v}"
             for path in domain_files()
-            if path.name in NON_REPOSITORY_LAYERS
+            if path.name != REPOSITORY_MODULE
             for v in sql_builder_calls(parse(path))
         ]
         _report(violations, "All SQL belongs in repository.py")
@@ -413,10 +487,26 @@ class TestLayerSeparation:
         violations = [
             f"{rel(path)}:{v}"
             for path in domain_files()
-            if path.name in NON_REPOSITORY_LAYERS
+            if path.name != REPOSITORY_MODULE
             for v in session_calls(parse(path))
         ]
         _report(violations, "Services must go through repository.py, not the session")
+
+    def test_no_domain_reaches_the_console_account_path(self) -> None:
+        """Only a Superadmin creates accounts over HTTP (product decision).
+
+        The console path is defined in the auth service package and exported by
+        its facade for scripts and tests; no domain module, and so no router,
+        may call it.
+        """
+        service_package = KERNEL["cbpupsis_shared"] / "domains" / "auth" / "service"
+        violations = [
+            f"{rel(path)}:{v}"
+            for path in domain_files()
+            if path.parent != service_package
+            for v in console_account_references(parse(path))
+        ]
+        _report(violations, "Accounts are created by a Superadmin, never by a route")
 
     def test_routers_do_not_import_models(self) -> None:
         """Routers speak DTOs. Returning a model serialises whatever columns exist."""
@@ -513,6 +603,10 @@ class TestTheGuardItself:
                 lambda t: cross_domain_private_imports(t, own="iam"),
             ),
             (
+                "from cbpupsis_shared.domains.auth.service.sessions import as_utc",
+                lambda t: cross_domain_private_imports(t, own="iam"),
+            ),
+            (
                 "from cbpupsis_database.models.users import User",
                 lambda t: foreign_model_imports(t, own="iam"),
             ),
@@ -533,6 +627,10 @@ class TestTheGuardItself:
             ("from sqlalchemy.orm import mapped_column", table_definitions),
             ("from cbpupsis_database.base import Base", table_definitions),
             ("rows = db.execute(query)", session_calls),
+            (
+                "await auth_service.create_console_account(db, email, pw)",
+                console_account_references,
+            ),
             ("stmt = select(Item)", sql_builder_calls),
         ],
     )
@@ -542,12 +640,22 @@ class TestTheGuardItself:
         """The scans walk real files; these snippets prove the detection works."""
         assert detector(ast.parse(source))
 
+    def test_a_facade_models_module_is_seen(self) -> None:
+        """The facade check above relies on these two detectors firing."""
+        facade = ast.parse(
+            "from cbpupsis_database.models.users import User\n__all__ = ['User']\n"
+        )
+        assert foreign_model_imports(facade, own="student_auth")
+        assert not any(v.endswith("maps a table") for v in table_definitions(facade))
+
     def test_own_models_and_public_modules_are_allowed(self) -> None:
         """The detectors must not fire on the imports the rules permit."""
         tree = ast.parse(
             "from cbpupsis_database.models.iam import Group\n"
             "from cbpupsis_shared.domains.users import service\n"
             "from cbpupsis_shared.domains.users.constants import MANAGE_USER\n"
+            "from cbpupsis_shared.domains.auth import service\n"
+            "from cbpupsis_shared.domains.auth.service import login\n"
         )
         assert not foreign_model_imports(tree, own="iam")
         assert not cross_domain_private_imports(tree, own="iam")
@@ -571,5 +679,10 @@ class TestTheGuardItself:
             "cbpupsis_api_student",
         }
         assert any(f.name == "service.py" for f in files)
+        # A service package's flow modules must be scanned too, or SQL and
+        # session calls inside them would escape the layer checks.
+        assert any(
+            f.parent.name == "service" and f.name != "__init__.py" for f in files
+        ), "expected to scan the modules inside a service/ package"
         assert len(list(MODELS_DIR.glob("*.py"))) > 5
         assert len(Base.registry.mappers) > 5

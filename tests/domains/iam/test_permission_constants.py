@@ -27,6 +27,10 @@ from types import ModuleType
 
 import pytest
 
+from cbpupsis_api_admin.domains.superadmin_ops import (
+    constants as superadmin_ops_constants,
+)
+from cbpupsis_api_faculty.domains.sections import constants as sections_constants
 from cbpupsis_api_student.domains.items import constants as items_constants
 from cbpupsis_shared.domains.auth import constants as auth_constants
 from cbpupsis_shared.domains.iam import constants as iam_constants
@@ -42,6 +46,8 @@ DOMAIN_CONSTANTS: dict[str, ModuleType] = {
     "iam": iam_constants,
     "items": items_constants,
     "notifications": notifications_constants,
+    "sections": sections_constants,
+    "superadmin_ops": superadmin_ops_constants,
 }
 
 SEEDED_ACTIONS = {action for action, _ in PERMISSIONS}
@@ -50,7 +56,18 @@ SEEDED_ACTIONS = {action for action, _ in PERMISSIONS}
 #: Identified by value, not by name: an action is a PascalCase string built from
 #: the fixed verb vocabulary, which is what distinguishes it from a group name or
 #: an error message living in the same module.
-_ACTION_VERBS = ("Create", "Read", "Update", "Delete", "ReadAll", "Moderate", "Manage")
+_ACTION_VERBS = (
+    "Create",
+    "Read",
+    "Update",
+    "Delete",
+    "ReadAll",
+    "Moderate",
+    "Manage",
+    # The declared transitions in tests/core/test_permission_naming.py.
+    "Request",
+    "Approve",
+)
 
 
 def _permission_constants(module: ModuleType) -> dict[str, str]:

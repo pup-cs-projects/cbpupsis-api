@@ -8,9 +8,10 @@ Run it once per environment, after ``seed_iam``::
 
     uv run python -m scripts.bootstrap_admin admin@example.com
 
-The user must already exist (register through ``/api/v1/auth/register`` first).
-Creating the account here too would mean this script sets passwords, and a
-password typed on a command line lands in shell history.
+The user must already exist, verified (``make create-user EMAIL=... VERIFIED=1``,
+which prints a generated password once). Creating the account here too would
+mean this script sets passwords, and a password typed on a command line lands
+in shell history. Product Admin accounts are created by a Superadmin instead.
 
 Idempotent: re-running keeps the membership and updates the profile scope.
 """
@@ -24,9 +25,8 @@ import sys
 from sqlalchemy import select
 
 from cbpupsis_api_admin.domains.admin_auth import service as admin_auth_service
-from cbpupsis_database.models.admin_auth import AdminPosition
 from cbpupsis_database.models.iam import Group
-from cbpupsis_database.models.users import User
+from cbpupsis_database.models.users import AdminPosition, User
 from cbpupsis_database.session import AsyncSessionLocal
 from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
@@ -53,7 +53,7 @@ async def bootstrap_admin(
         if user is None:
             print(
                 f"No user found for {email!r}.\n"
-                "Register the account first: POST /api/v1/auth/register",
+                "Create the account first: make create-user EMAIL=... VERIFIED=1",
                 file=sys.stderr,
             )
             return 1
@@ -84,7 +84,7 @@ async def bootstrap_admin(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("email", help="Email of an already-registered user.")
+    parser.add_argument("email", help="Email of an existing, verified user.")
     parser.add_argument(
         "--position",
         type=AdminPosition,

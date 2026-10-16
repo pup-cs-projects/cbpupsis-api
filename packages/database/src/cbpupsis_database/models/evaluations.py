@@ -21,7 +21,7 @@ from sqlalchemy.types import JSON
 
 from cbpupsis_database.base import Base, UUIDMixin
 
-_JSON_TYPE = postgresql.JSONB(astext_type=Text()).with_variant(JSON(), "sqlite")
+JSON_TYPE = postgresql.JSONB(astext_type=Text()).with_variant(JSON(), "sqlite")
 
 
 class FacultyEvaluationPeriod(UUIDMixin, Base):
@@ -53,7 +53,7 @@ class FacultyEvaluation(UUIDMixin, Base):
     section_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("course_sections.id", ondelete="CASCADE")
     )
-    ratings: Mapped[dict[str, Any]] = mapped_column(_JSON_TYPE)
+    ratings: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE)
     comments: Mapped[str | None] = mapped_column(Text, default=None)
     submitted_at_coarsened: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

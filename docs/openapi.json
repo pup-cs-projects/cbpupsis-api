@@ -5,55 +5,13 @@
     "version": "0.1.0"
   },
   "paths": {
-    "/api/v1/auth/register": {
-      "post": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "Register",
-        "description": "Create an account. Returns the new user; tokens come from /login.\n\nRate limited per IP against signup spam. ``request`` is unused by the body\nbut required: slowapi reads the limiter and the caller's key off it, and\nrefuses to decorate an endpoint that does not declare it.",
-        "operationId": "register_api_v1_auth_register_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RegisterRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserRead"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/auth/login": {
       "post": {
         "tags": [
           "auth"
         ],
         "summary": "Login",
-        "description": "Exchange email and password for an access/refresh token pair.\n\nRate limited against credential stuffing.\n\nThree outcomes, and the difference between them is deliberate:\n\n- **401** \u2014 unknown email, wrong password, or a disabled account, all with\n  one identical message so the endpoint cannot be used to discover which\n  addresses are registered.\n- **403** with ``code: \"email_not_verified\"`` \u2014 the password was correct but\n  the address is unverified. Branch on the code, not the message, and send\n  the user to a resend-verification screen rather than back to login.\n- **200** \u2014 a token pair.",
+        "description": "Exchange email and password for an access/refresh token pair.\n\nRate limited against credential stuffing. ``request`` is unused by the\nbody but required: slowapi reads the limiter and the caller's key off it.\n\nThree outcomes, and the difference between them is deliberate:\n\n- **401** \u2014 unknown email, wrong password, or a disabled account, all with\n  one identical message so the endpoint cannot be used to discover which\n  addresses are registered.\n- **401** with ``code: \"AUTH_TEMPORARY_PASSWORD_EXPIRED\"``: the password\n  was a correct temporary one past its expiry; a Superadmin must reissue.\n- **403** with ``code: \"email_not_verified\"`` \u2014 the password was correct but\n  the address is unverified. Branch on the code, not the message, and send\n  the user to a resend-verification screen rather than back to login.\n- **200** \u2014 a token pair.\n\nAccounts with a role-specific sign-in (student, faculty, Admin,\nSuperadmin) get the same 401 here: they must use ``/auth/<role>/login``.",
         "operationId": "login_api_v1_auth_login_post",
         "requestBody": {
           "content": {
@@ -369,7 +327,7 @@
           "auth"
         ],
         "summary": "Change Password",
-        "description": "Change your own password, returning a replacement token pair.\n\nAuthorization is by identity alone: the target is the authenticated user,\ntaken from the token, so there is no id to tamper with and no object-level\ncheck to make. Requires the current password.\n\nAll existing refresh tokens \u2014 including the caller's \u2014 are revoked, and the\nreturned pair replaces them.",
+        "description": "Change your own password, returning a replacement token pair.\n\nThe one route open to an account holding a temporary password: changing\nit clears ``PASSWORD_CHANGE_REQUIRED``. The temporary password cannot be\nkept as the new one (422), and once expired it cannot be changed (401\n``AUTH_TEMPORARY_PASSWORD_EXPIRED``).\n\nAuthorization is by identity alone: the target is the authenticated user,\ntaken from the token, so there is no id to tamper with and no object-level\ncheck to make. Requires the current password.\n\nAll existing refresh tokens \u2014 including the caller's \u2014 are revoked, and the\nreturned pair replaces them.",
         "operationId": "change_password_api_v1_auth_change_password_post",
         "requestBody": {
           "content": {
@@ -416,6 +374,7 @@
           "users"
         ],
         "summary": "Create User",
+        "description": "Create one account. Superadmin only.\n\nThe account is verified on creation and is mailed a temporary password,\nwhich it must replace at first sign-in. 409 ``USER_ALREADY_EXISTS`` for a\ntaken email or institutional id; 422 for fields the role requires, or an\nunknown program.",
         "operationId": "create_user_api_v1_users_post",
         "security": [
           {
@@ -427,7 +386,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RegisterRequest"
+                "$ref": "#/components/schemas/AccountCreate"
               }
             }
           }
@@ -538,6 +497,48 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}/reissue-temporary-password": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Reissue Temporary Password",
+        "description": "Mail a new temporary password and end every session. Superadmin only.\n\nThe way out of an expired or lost temporary password. 404 for a missing or\ninactive account.",
+        "operationId": "reissue_temporary_password_api_v1_users__user_id__reissue_temporary_password_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -1083,6 +1084,152 @@
         }
       }
     },
+    "/api/v1/auth/student/login": {
+      "post": {
+        "tags": [
+          "student-auth"
+        ],
+        "summary": "Student Login",
+        "description": "Sign in with student number, birthdate, and password (US-101).",
+        "operationId": "student_login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudentLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentTokenPair"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/student/refresh": {
+      "post": {
+        "tags": [
+          "student-auth"
+        ],
+        "summary": "Student Refresh",
+        "description": "Rotate the student session's refresh token.",
+        "operationId": "student_refresh",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentTokenPair"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/student/logout": {
+      "post": {
+        "tags": [
+          "student-auth"
+        ],
+        "summary": "Student Logout",
+        "description": "End the session server-side and clear the refresh cookie.",
+        "operationId": "student_logout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/student/me": {
+      "get": {
+        "tags": [
+          "student-auth"
+        ],
+        "summary": "Student Me",
+        "description": "Return the signed-in student; 401 once the session has idled out.",
+        "operationId": "student_me",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentSessionRead"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/items": {
       "get": {
         "tags": [
@@ -1348,29 +1495,41 @@
         }
       }
     },
-    "/api/v1/faculty-auth/login": {
+    "/api/v1/auth/faculty/login": {
       "post": {
         "tags": [
           "faculty-auth"
         ],
         "summary": "Faculty Login",
-        "description": "Authenticate faculty member (AC-002.1).\n\nValidates employee ID and password.\nPassword alone must not yield a session for a privileged role:\nReturns 200 OK with mfa_required=True, a short-lived challenge token,\nand no access token.",
+        "description": "Verify employee id and password; returns only an MFA challenge.",
         "operationId": "faculty_login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FacultyLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/FacultyLoginResponse"
-                    },
-                    {
-                      "$ref": "#/components/schemas/TokenPair"
-                    }
-                  ],
-                  "title": "Response Faculty Login"
+                  "$ref": "#/components/schemas/FacultyLoginChallenge"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1378,13 +1537,97 @@
         }
       }
     },
-    "/api/v1/faculty-auth/mfa/verify": {
+    "/api/v1/auth/faculty/mfa/totp/enroll": {
+      "post": {
+        "tags": [
+          "faculty-auth"
+        ],
+        "summary": "Faculty Totp Enroll",
+        "description": "Start authenticator enrollment for a faculty member not yet enrolled.",
+        "operationId": "faculty_totp_enroll",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChallengeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/cbpupsis_api_faculty__domains__faculty_auth__schemas__TotpEnrollmentRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/faculty/mfa/totp/confirm": {
+      "post": {
+        "tags": [
+          "faculty-auth"
+        ],
+        "summary": "Faculty Totp Confirm",
+        "description": "Confirm the seed; returns the first session and one-time recovery codes.",
+        "operationId": "faculty_totp_confirm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacultyEnrollmentResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/faculty/mfa/verify": {
       "post": {
         "tags": [
           "faculty-auth"
         ],
         "summary": "Faculty Mfa Verify",
-        "description": "Verify MFA code and issue a faculty session (AC-002.2, AC-002.3, AC-002.4).",
+        "description": "Complete sign-in with a TOTP code or one recovery code.",
         "operationId": "faculty_mfa_verify",
         "requestBody": {
           "content": {
@@ -1402,7 +1645,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FacultyMfaVerifyResponse"
+                  "$ref": "#/components/schemas/FacultyTokenPair"
                 }
               }
             }
@@ -1420,347 +1663,13 @@
         }
       }
     },
-    "/api/v1/faculty-auth/mfa/enroll": {
-      "get": {
-        "tags": [
-          "faculty-auth"
-        ],
-        "summary": "Faculty Mfa Enroll",
-        "description": "Generate TOTP seed and provisioning URI for Google Authenticator (AC-002.6).",
-        "operationId": "faculty_mfa_enroll_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FacultyMfaEnrollResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      },
+    "/api/v1/auth/faculty/refresh": {
       "post": {
         "tags": [
           "faculty-auth"
         ],
-        "summary": "Faculty Mfa Enroll Post",
-        "description": "Generate TOTP seed and provisioning URI for Google Authenticator (POST alias).",
-        "operationId": "faculty_mfa_enroll_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FacultyMfaEnrollResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/faculty-auth/mfa/enroll/confirm": {
-      "post": {
-        "tags": [
-          "faculty-auth"
-        ],
-        "summary": "Faculty Mfa Confirm",
-        "description": "Confirm TOTP code, activate MFA enrollment, and issue recovery codes.",
-        "operationId": "faculty_mfa_confirm",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FacultyMfaConfirmRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FacultyMfaConfirmResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/faculty-auth/faculty/sections": {
-      "get": {
-        "tags": [
-          "faculty-auth"
-        ],
-        "summary": "Faculty Sections",
-        "description": "List sections assigned to faculty member (AC-002.6).\n\nGuarded: Returns 403 AUTH_MFA_ENROLLMENT_REQUIRED if MFA is not enrolled.",
-        "operationId": "faculty_sections",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SectionListResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/faculty-auth/sections": {
-      "get": {
-        "tags": [
-          "faculty-auth"
-        ],
-        "summary": "Faculty Sections Alias",
-        "description": "List sections assigned to faculty member (alias).",
-        "operationId": "faculty_sections_alias",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SectionListResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/faculty-auth/sections/{section_id}/roster": {
-      "get": {
-        "tags": [
-          "faculty-auth"
-        ],
-        "summary": "Faculty Section Roster",
-        "description": "Retrieve section roster with ownership protection (AC-002.7).\n\nGuarded: Answers 404 RESOURCE_NOT_FOUND (not 403) for non-owners.",
-        "operationId": "faculty_section_roster",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "section_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Section Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SectionRosterResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/faculty-auth/faculty/sections/{section_id}/roster": {
-      "get": {
-        "tags": [
-          "faculty-auth"
-        ],
-        "summary": "Faculty Section Roster Alias",
-        "description": "Retrieve section roster with ownership protection (alias).",
-        "operationId": "faculty_section_roster_alias",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "section_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Section Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SectionRosterResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/faculty-auth/audit": {
-      "get": {
-        "tags": [
-          "faculty-auth"
-        ],
-        "summary": "Faculty Audit Ledger",
-        "description": "Read the authentication audit ledger (AC-002.8).",
-        "operationId": "faculty_audit_ledger",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AuthAuditLogRead"
-                  },
-                  "type": "array",
-                  "title": "Response Faculty Audit Ledger"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "faculty-auth"
-        ],
-        "summary": "Faculty Delete Audit All",
-        "description": "Refuse deletion of audit trail records (AC-002.8 / BR-AUTH-006).",
-        "operationId": "faculty_delete_audit_all",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/faculty-auth/audit/{log_id}": {
-      "delete": {
-        "tags": [
-          "faculty-auth"
-        ],
-        "summary": "Faculty Delete Audit Item",
-        "description": "Refuse deletion of a single audit trail record (AC-002.8 / BR-AUTH-006).",
-        "operationId": "faculty_delete_audit_item",
-        "parameters": [
-          {
-            "name": "log_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Log Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/faculty-auth/refresh": {
-      "post": {
-        "tags": [
-          "faculty-auth"
-        ],
-        "summary": "Refresh",
-        "description": "Exchange a refresh token for a new pair.",
+        "summary": "Faculty Refresh",
+        "description": "Rotate the faculty session's refresh token.",
         "operationId": "faculty_refresh",
         "requestBody": {
           "content": {
@@ -1778,7 +1687,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenPair"
+                  "$ref": "#/components/schemas/FacultyTokenPair"
                 }
               }
             }
@@ -1796,13 +1705,13 @@
         }
       }
     },
-    "/api/v1/faculty-auth/logout": {
+    "/api/v1/auth/faculty/logout": {
       "post": {
         "tags": [
           "faculty-auth"
         ],
         "summary": "Faculty Logout",
-        "description": "Revoke a refresh token.",
+        "description": "End the session server-side and clear the refresh cookie.",
         "operationId": "faculty_logout",
         "requestBody": {
           "content": {
@@ -1831,13 +1740,13 @@
         }
       }
     },
-    "/api/v1/faculty-auth/me": {
+    "/api/v1/auth/faculty/me": {
       "get": {
         "tags": [
           "faculty-auth"
         ],
-        "summary": "Get Current Faculty Session",
-        "description": "Return the authenticated faculty principal.",
+        "summary": "Faculty Me",
+        "description": "Return the signed-in faculty member.",
         "operationId": "faculty_me",
         "responses": {
           "200": {
@@ -1845,7 +1754,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CurrentUserRead"
+                  "$ref": "#/components/schemas/FacultySessionRead"
                 }
               }
             }
@@ -1856,6 +1765,117 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/sections": {
+      "get": {
+        "tags": [
+          "sections"
+        ],
+        "summary": "List Sections",
+        "description": "List the sections assigned to you.",
+        "operationId": "list_sections_api_v1_sections_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_CourseSectionRead_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sections/{section_id}/roster": {
+      "get": {
+        "tags": [
+          "sections"
+        ],
+        "summary": "Section Roster",
+        "description": "Return one of your sections with its roster; 404 for anyone else's.",
+        "operationId": "section_roster_api_v1_sections__section_id__roster_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Section Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseSectionRosterRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/auth/admin/login": {
@@ -1966,7 +1986,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TotpEnrollmentRead"
+                  "$ref": "#/components/schemas/cbpupsis_api_admin__domains__admin_auth__schemas__TotpEnrollmentRead"
                 }
               }
             }
@@ -2116,7 +2136,7 @@
           "admin-auth"
         ],
         "summary": "Refresh Admin",
-        "description": "Rotate an Admin session and renew its hardened cookie.",
+        "description": "Rotate an Admin session and renew its cookies.",
         "operationId": "refresh_admin_api_v1_auth_admin_refresh_post",
         "requestBody": {
           "content": {
@@ -2158,7 +2178,7 @@
           "admin-auth"
         ],
         "summary": "Logout Admin",
-        "description": "Revoke the refresh token and clear the Admin cookie.",
+        "description": "End the session, revoke the refresh token, and clear the cookies.",
         "operationId": "logout_admin_api_v1_auth_admin_logout_post",
         "requestBody": {
           "content": {
@@ -3048,12 +3068,75 @@
         }
       }
     },
+    "/api/v1/audit/sign-in-attempts": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "List Sign In Attempts",
+        "description": "List every role's sign-in attempts, newest first.\n\nRead-only like the rest of the trail: there is no endpoint that deletes or\nedits an attempt.",
+        "operationId": "list_sign_in_attempts_api_v1_audit_sign_in_attempts_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_SignInAttemptRead_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/superadmin/login": {
       "post": {
         "tags": [
           "superadmin-auth"
         ],
         "summary": "Login Superadmin",
+        "description": "Verify a Superadmin password; returns only an MFA challenge.",
         "operationId": "login_superadmin_api_v1_auth_superadmin_login_post",
         "requestBody": {
           "content": {
@@ -3466,6 +3549,53 @@
         }
       }
     },
+    "/api/v1/users/import": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Import Users",
+        "description": "Create accounts from a CSV file, all or none. Superadmin only.\n\n422 ``USER_IMPORT_INVALID`` lists every problem by row and column when any\nrow is invalid or collides with another row or an existing account; 413\n``USER_IMPORT_TOO_LARGE`` past ``USER_IMPORT_MAX_BYTES``. Each created\naccount is mailed its temporary password.",
+        "operationId": "import_users_api_v1_users_import_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_users_api_v1_users_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserImportResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -3521,6 +3651,125 @@
   },
   "components": {
     "schemas": {
+      "AccountCreate": {
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "First Name"
+          },
+          "surname": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Surname"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "role": {
+            "$ref": "#/components/schemas/AccountRole"
+          },
+          "institutional_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 30
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Institutional Id"
+          },
+          "birthdate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birthdate"
+          },
+          "department": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department"
+          },
+          "college": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "College"
+          },
+          "program": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Program"
+          },
+          "year_level": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 6.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year Level"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "first_name",
+          "surname",
+          "email",
+          "role"
+        ],
+        "title": "AccountCreate",
+        "description": "One account a Superadmin creates: a ``POST /users`` body or a CSV row.\n\nWhich optional fields are required depends on ``role``\n(``ROLE_REQUIRED_FIELDS``). Error messages never repeat the submitted value,\nbecause the CSV import reports them back with only a row and a column."
+      },
+      "AccountRole": {
+        "type": "string",
+        "enum": [
+          "student",
+          "faculty",
+          "admin_registrar",
+          "admin_finance",
+          "admin_chairperson",
+          "admin_dean"
+        ],
+        "title": "AccountRole",
+        "description": "The ``role`` a Superadmin gives a new account, one per CSV row."
+      },
       "AddUserToGroupRequest": {
         "properties": {
           "user_id": {
@@ -3619,6 +3868,7 @@
         "enum": [
           "chairperson",
           "dean",
+          "finance",
           "registrar"
         ],
         "title": "AdminPosition",
@@ -3839,90 +4089,34 @@
         "title": "AuditEntryRead",
         "description": "One recorded administrative change, as returned by the API."
       },
-      "AuthAuditLogRead": {
+      "Body_import_users_api_v1_users_import_post": {
         "properties": {
-          "id": {
+          "file": {
             "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "attempted_id": {
-            "type": "string",
-            "title": "Attempted Id"
-          },
-          "user_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "User Id"
-          },
-          "ip_address": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ip Address"
-          },
-          "user_agent": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "User Agent"
-          },
-          "success": {
-            "type": "boolean",
-            "title": "Success"
-          },
-          "mfa_used": {
-            "type": "boolean",
-            "title": "Mfa Used"
-          },
-          "failure_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Failure Reason"
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "UTF-8 CSV with a header row"
           }
         },
         "type": "object",
         "required": [
-          "id",
-          "created_at",
-          "attempted_id",
-          "user_id",
-          "ip_address",
-          "user_agent",
-          "success",
-          "mfa_used",
-          "failure_reason"
+          "file"
         ],
-        "title": "AuthAuditLogRead",
-        "description": "Schema for reading an audit ledger record."
+        "title": "Body_import_users_api_v1_users_import_post"
+      },
+      "ChallengeRequest": {
+        "properties": {
+          "challenge_token": {
+            "type": "string",
+            "title": "Challenge Token"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "challenge_token"
+        ],
+        "title": "ChallengeRequest"
       },
       "ChangePasswordRequest": {
         "properties": {
@@ -3955,6 +4149,74 @@
         ],
         "title": "Channel",
         "description": "Where a notification can be delivered.\n\nA ``StrEnum`` so it compares equal to the strings stored in preference rows\nand delivery receipts, without those columns needing a database enum that\nwould make adding a channel a migration."
+      },
+      "CourseSectionRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "section_name": {
+            "type": "string",
+            "title": "Section Name"
+          },
+          "capacity": {
+            "type": "integer",
+            "title": "Capacity"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "section_name",
+          "capacity",
+          "status"
+        ],
+        "title": "CourseSectionRead",
+        "description": "One course section assigned to the caller."
+      },
+      "CourseSectionRosterRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "section_name": {
+            "type": "string",
+            "title": "Section Name"
+          },
+          "capacity": {
+            "type": "integer",
+            "title": "Capacity"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "roster": {
+            "items": {
+              "$ref": "#/components/schemas/RosterEntryRead"
+            },
+            "type": "array",
+            "title": "Roster",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "section_name",
+          "capacity",
+          "status"
+        ],
+        "title": "CourseSectionRosterRead",
+        "description": "A section with its roster.\n\nThe roster stays empty until the enrollment domain exists to fill it; the\nendpoint already enforces who may see it."
       },
       "CurrentUserRead": {
         "properties": {
@@ -4031,267 +4293,222 @@
         "title": "EffectivePermissionsRead",
         "description": "Every action a user is effectively granted, and how they got it.\n\nThe two sources are reported separately rather than pre-merged because the\nquestion an admin screen actually asks is not \"what can they do?\" but \"why\ncan they do it, and what do I change to stop it?\" \u2014 and those have different\nanswers: a group grant is revoked by changing membership, a direct grant by\ndetaching the policy. ``effective`` is the union the guards actually check."
       },
-      "FacultyLoginChallengeData": {
+      "FacultyEnrollmentResult": {
         "properties": {
-          "challenge_token": {
+          "access_token": {
             "type": "string",
-            "title": "Challenge Token"
+            "title": "Access Token"
           },
-          "mfa_required": {
-            "type": "boolean",
-            "title": "Mfa Required",
-            "default": true
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "role": {
+            "type": "string",
+            "const": "faculty",
+            "title": "Role",
+            "default": "faculty"
           },
           "expires_in": {
             "type": "integer",
-            "title": "Expires In",
-            "default": 300
+            "title": "Expires In"
           },
-          "mfa_enrolled": {
-            "type": "boolean",
-            "title": "Mfa Enrolled",
-            "default": true
-          }
-        },
-        "type": "object",
-        "required": [
-          "challenge_token"
-        ],
-        "title": "FacultyLoginChallengeData",
-        "description": "Challenge issued when faculty credentials are valid."
-      },
-      "FacultyLoginResponse": {
-        "properties": {
-          "status": {
-            "type": "string",
-            "title": "Status",
-            "default": "success"
-          },
-          "data": {
-            "$ref": "#/components/schemas/FacultyLoginChallengeData"
-          }
-        },
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "title": "FacultyLoginResponse",
-        "description": "HTTP 200 response for successful first-factor credential validation."
-      },
-      "FacultyMfaConfirmData": {
-        "properties": {
           "recovery_codes": {
             "items": {
               "type": "string"
             },
             "type": "array",
             "title": "Recovery Codes"
-          },
-          "message": {
-            "type": "string",
-            "title": "Message",
-            "default": "MFA enrolled successfully. Save these recovery codes in a secure location."
           }
         },
         "type": "object",
         "required": [
+          "access_token",
+          "refresh_token",
+          "expires_in",
           "recovery_codes"
         ],
-        "title": "FacultyMfaConfirmData",
-        "description": "Response data on successful MFA activation."
+        "title": "FacultyEnrollmentResult",
+        "description": "The first session after enrollment, with recovery codes shown once."
       },
-      "FacultyMfaConfirmRequest": {
+      "FacultyLoginChallenge": {
         "properties": {
-          "code": {
-            "type": "string",
-            "maxLength": 6,
-            "minLength": 6,
-            "title": "Code",
-            "description": "Six-digit code generated from newly scanned authenticator"
-          }
-        },
-        "type": "object",
-        "required": [
-          "code"
-        ],
-        "title": "FacultyMfaConfirmRequest",
-        "description": "Payload to confirm TOTP code and activate MFA enrollment."
-      },
-      "FacultyMfaConfirmResponse": {
-        "properties": {
-          "status": {
-            "type": "string",
-            "title": "Status",
-            "default": "success"
-          },
-          "data": {
-            "$ref": "#/components/schemas/FacultyMfaConfirmData"
-          }
-        },
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "title": "FacultyMfaConfirmResponse",
-        "description": "HTTP 200 response upon activating MFA enrollment."
-      },
-      "FacultyMfaEnrollData": {
-        "properties": {
-          "provisioning_uri": {
-            "type": "string",
-            "title": "Provisioning Uri"
-          },
-          "account_name": {
-            "type": "string",
-            "title": "Account Name"
-          },
-          "issuer": {
-            "type": "string",
-            "title": "Issuer",
-            "default": "PUP CBPUPSIS"
-          },
-          "mfa_enrolled": {
+          "mfa_required": {
             "type": "boolean",
-            "title": "Mfa Enrolled",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "provisioning_uri",
-          "account_name"
-        ],
-        "title": "FacultyMfaEnrollData",
-        "description": "Provisioning details returned to enroll Google Authenticator."
-      },
-      "FacultyMfaEnrollResponse": {
-        "properties": {
-          "status": {
-            "type": "string",
-            "title": "Status",
-            "default": "success"
+            "const": true,
+            "title": "Mfa Required",
+            "default": true
           },
-          "data": {
-            "$ref": "#/components/schemas/FacultyMfaEnrollData"
+          "challenge_token": {
+            "type": "string",
+            "title": "Challenge Token"
+          },
+          "enrollment_required": {
+            "type": "boolean",
+            "title": "Enrollment Required"
+          },
+          "methods": {
+            "items": {
+              "type": "string",
+              "const": "totp"
+            },
+            "type": "array",
+            "title": "Methods"
           }
         },
         "type": "object",
         "required": [
-          "data"
+          "challenge_token",
+          "enrollment_required",
+          "methods"
         ],
-        "title": "FacultyMfaEnrollResponse",
-        "description": "HTTP 200 response for starting MFA enrollment."
+        "title": "FacultyLoginChallenge",
+        "description": "The password step's only result: a challenge that grants no API access."
+      },
+      "FacultyLoginRequest": {
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "maxLength": 50,
+            "title": "Employee Id",
+            "description": "Institutional employee id, YYYY-NNNNN-XX-N.",
+            "examples": [
+              "2021-00456-MN-0"
+            ]
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "employee_id",
+          "password"
+        ],
+        "title": "FacultyLoginRequest",
+        "description": "Employee id and password. The id's format is checked by the service."
       },
       "FacultyMfaVerifyRequest": {
         "properties": {
-          "challengeToken": {
+          "challenge_token": {
             "type": "string",
-            "title": "Challengetoken",
-            "description": "Short-lived challenge token issued by login step"
+            "title": "Challenge Token"
           },
-          "totp_code": {
-            "type": "string",
-            "maxLength": 6,
-            "minLength": 6,
-            "title": "Totp Code",
-            "description": "Six-digit time-based code from authenticator app",
-            "examples": [
-              "123456"
-            ]
+          "code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 6,
+                "minLength": 6
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "recovery_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Code"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
-          "challengeToken",
-          "totp_code"
+          "challenge_token"
         ],
         "title": "FacultyMfaVerifyRequest",
-        "description": "Payload submitted to POST /api/v1/auth/mfa/verify."
+        "description": "Exactly one second factor: a TOTP code or an unused recovery code."
       },
-      "FacultyMfaVerifyResponse": {
-        "properties": {
-          "status": {
-            "type": "string",
-            "title": "Status",
-            "default": "success"
-          },
-          "data": {
-            "$ref": "#/components/schemas/FacultySessionData"
-          }
-        },
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "title": "FacultyMfaVerifyResponse",
-        "description": "HTTP 200 response for successful second-factor verification."
-      },
-      "FacultySessionData": {
-        "properties": {
-          "accessToken": {
-            "type": "string",
-            "title": "Accesstoken"
-          },
-          "tokenType": {
-            "type": "string",
-            "title": "Tokentype",
-            "default": "Bearer"
-          },
-          "expiresIn": {
-            "type": "integer",
-            "title": "Expiresin",
-            "default": 1800
-          },
-          "role": {
-            "type": "string",
-            "title": "Role",
-            "default": "faculty"
-          },
-          "user": {
-            "$ref": "#/components/schemas/FacultyUserData"
-          }
-        },
-        "type": "object",
-        "required": [
-          "accessToken",
-          "user"
-        ],
-        "title": "FacultySessionData",
-        "description": "Session credentials returned upon successful MFA verification."
-      },
-      "FacultyUserData": {
+      "FacultySessionRead": {
         "properties": {
           "id": {
             "type": "string",
+            "format": "uuid",
             "title": "Id"
-          },
-          "firstName": {
-            "type": "string",
-            "title": "Firstname"
-          },
-          "lastName": {
-            "type": "string",
-            "title": "Lastname"
           },
           "email": {
             "type": "string",
+            "format": "email",
             "title": "Email"
+          },
+          "employee_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Id"
           },
           "role": {
             "type": "string",
+            "const": "faculty",
             "title": "Role",
-            "default": "FACULTY"
+            "default": "faculty"
           }
         },
         "type": "object",
         "required": [
           "id",
-          "firstName",
-          "lastName",
-          "email"
+          "email",
+          "employee_id"
         ],
-        "title": "FacultyUserData",
-        "description": "User profile data returned upon successful session issuance."
+        "title": "FacultySessionRead",
+        "description": "The signed-in faculty member, as returned by ``/auth/faculty/me``."
+      },
+      "FacultyTokenPair": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "role": {
+            "type": "string",
+            "const": "faculty",
+            "title": "Role",
+            "default": "faculty"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "refresh_token",
+          "expires_in"
+        ],
+        "title": "FacultyTokenPair",
+        "description": "A faculty session's tokens. The refresh token is also set as a cookie."
       },
       "ForgotPasswordRequest": {
         "properties": {
@@ -4856,6 +5073,37 @@
         ],
         "title": "Page[AuditEntryRead]"
       },
+      "Page_CourseSectionRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CourseSectionRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[CourseSectionRead]"
+      },
       "Page_GroupRead_": {
         "properties": {
           "items": {
@@ -5010,6 +5258,37 @@
           "offset"
         ],
         "title": "Page[PolicyRead]"
+      },
+      "Page_SignInAttemptRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SignInAttemptRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[SignInAttemptRead]"
       },
       "Page_UserRead_": {
         "properties": {
@@ -5212,41 +5491,6 @@
         "title": "RefreshRequest",
         "description": "Payload for exchanging a refresh token for a new token pair."
       },
-      "RegisterRequest": {
-        "properties": {
-          "email": {
-            "type": "string",
-            "format": "email",
-            "title": "Email"
-          },
-          "password": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 12,
-            "title": "Password"
-          },
-          "full_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 255
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Full Name"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "email",
-          "password"
-        ],
-        "title": "RegisterRequest",
-        "description": "Payload for creating an account."
-      },
       "ResendVerificationRequest": {
         "properties": {
           "email": {
@@ -5366,77 +5610,205 @@
         ],
         "title": "RestoreRequestRead"
       },
-      "SectionItem": {
+      "RosterEntryRead": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "RosterEntryRead",
+        "description": "One enrolled student on a roster."
+      },
+      "SignInAttemptRead": {
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid",
             "title": "Id"
           },
-          "section_name": {
+          "attempted_id": {
             "type": "string",
-            "title": "Section Name"
+            "title": "Attempted Id"
           },
-          "capacity": {
-            "type": "integer",
-            "title": "Capacity"
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
           },
-          "status": {
+          "ip_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip Address"
+          },
+          "user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Agent"
+          },
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "mfa_used": {
+            "type": "boolean",
+            "title": "Mfa Used"
+          },
+          "created_at": {
             "type": "string",
-            "title": "Status"
+            "title": "Created At"
           }
         },
         "type": "object",
         "required": [
           "id",
-          "section_name",
-          "capacity",
-          "status"
+          "attempted_id",
+          "user_id",
+          "ip_address",
+          "user_agent",
+          "success",
+          "failure_reason",
+          "mfa_used",
+          "created_at"
         ],
-        "title": "SectionItem",
-        "description": "Summary of a course section assigned to faculty."
+        "title": "SignInAttemptRead",
+        "description": "One recorded sign-in attempt from any role's sign-in flow."
       },
-      "SectionListResponse": {
+      "StudentLoginRequest": {
         "properties": {
-          "status": {
+          "student_number": {
             "type": "string",
-            "title": "Status",
-            "default": "success"
+            "maxLength": 50,
+            "title": "Student Number",
+            "description": "Institutional student number, YYYY-NNNNN-XX-N.",
+            "examples": [
+              "2021-00123-MN-0"
+            ]
           },
-          "data": {
-            "items": {
-              "$ref": "#/components/schemas/SectionItem"
-            },
-            "type": "array",
-            "title": "Data"
+          "birthdate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birthdate",
+            "description": "Birthdate on the Registrar record (YYYY-MM-DD)."
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "student_number",
+          "password"
+        ],
+        "title": "StudentLoginRequest",
+        "description": "Student number, birthdate, and password.\n\nThe student number's format is checked by the service, not here, so a\nmalformed number answers ``AUTH_ID_FORMAT_INVALID`` like the other sign-in\nrules rather than a generic schema error."
+      },
+      "StudentSessionRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "role": {
+            "type": "string",
+            "const": "student",
+            "title": "Role",
+            "default": "student"
           }
         },
         "type": "object",
         "required": [
-          "data"
+          "id",
+          "email"
         ],
-        "title": "SectionListResponse",
-        "description": "HTTP 200 response listing sections."
+        "title": "StudentSessionRead",
+        "description": "The signed-in student, as returned by ``/auth/student/me``."
       },
-      "SectionRosterResponse": {
+      "StudentTokenPair": {
         "properties": {
-          "status": {
+          "access_token": {
             "type": "string",
-            "title": "Status",
-            "default": "success"
+            "title": "Access Token"
           },
-          "data": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Data"
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "role": {
+            "type": "string",
+            "const": "student",
+            "title": "Role",
+            "default": "student"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
           }
         },
         "type": "object",
         "required": [
-          "data"
+          "access_token",
+          "refresh_token",
+          "expires_in"
         ],
-        "title": "SectionRosterResponse",
-        "description": "HTTP 200 response with section roster details."
+        "title": "StudentTokenPair",
+        "description": "A student session's tokens. The refresh token is also set as a cookie."
       },
       "SuperadminEnrollmentRead": {
         "properties": {
@@ -5563,6 +5935,27 @@
         "title": "TokenPair",
         "description": "An access/refresh token pair, as returned by login and refresh."
       },
+      "TotpConfirmRequest": {
+        "properties": {
+          "challenge_token": {
+            "type": "string",
+            "title": "Challenge Token"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 6,
+            "minLength": 6,
+            "title": "Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "challenge_token",
+          "code"
+        ],
+        "title": "TotpConfirmRequest"
+      },
       "TotpEnrollmentConfirmRequest": {
         "properties": {
           "challenge_token": {
@@ -5583,24 +5976,6 @@
           "code"
         ],
         "title": "TotpEnrollmentConfirmRequest"
-      },
-      "TotpEnrollmentRead": {
-        "properties": {
-          "secret": {
-            "type": "string",
-            "title": "Secret"
-          },
-          "provisioning_uri": {
-            "type": "string",
-            "title": "Provisioning Uri"
-          }
-        },
-        "type": "object",
-        "required": [
-          "secret",
-          "provisioning_uri"
-        ],
-        "title": "TotpEnrollmentRead"
       },
       "TotpEnrollmentRequest": {
         "properties": {
@@ -5629,6 +6004,29 @@
         ],
         "title": "UnreadCount",
         "description": "The bell badge.\n\nAn object rather than a bare integer so the response can gain a field \u2014 a\nhighest-unread id, a category breakdown \u2014 without breaking every client that\nparses it."
+      },
+      "UserImportResult": {
+        "properties": {
+          "created": {
+            "type": "integer",
+            "title": "Created"
+          },
+          "user_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "User Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created",
+          "user_ids"
+        ],
+        "title": "UserImportResult",
+        "description": "What a successful import created."
       },
       "UserRead": {
         "properties": {
@@ -5982,6 +6380,43 @@
           "challenge_token"
         ],
         "title": "WebAuthnEnrollmentRequest"
+      },
+      "cbpupsis_api_admin__domains__admin_auth__schemas__TotpEnrollmentRead": {
+        "properties": {
+          "secret": {
+            "type": "string",
+            "title": "Secret"
+          },
+          "provisioning_uri": {
+            "type": "string",
+            "title": "Provisioning Uri"
+          }
+        },
+        "type": "object",
+        "required": [
+          "secret",
+          "provisioning_uri"
+        ],
+        "title": "TotpEnrollmentRead"
+      },
+      "cbpupsis_api_faculty__domains__faculty_auth__schemas__TotpEnrollmentRead": {
+        "properties": {
+          "secret": {
+            "type": "string",
+            "title": "Secret"
+          },
+          "provisioning_uri": {
+            "type": "string",
+            "title": "Provisioning Uri"
+          }
+        },
+        "type": "object",
+        "required": [
+          "secret",
+          "provisioning_uri"
+        ],
+        "title": "TotpEnrollmentRead",
+        "description": "A pending seed: the secret for manual entry and the URI to scan."
       }
     },
     "securitySchemes": {

@@ -1,138 +1,77 @@
-"""HTTP routing for student authentication endpoints."""
+"""HTTP routing for student sign-in, mounted at /api/v1/auth/student."""
 
 from __future__ import annotations
 
-import json
-import uuid
-
-from fastapi import APIRouter, Depends, Header, Request, Response, status
-from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_api_student.domains.student_auth import service as student_service
-from cbpupsis_api_student.domains.student_auth.constants import (
-    DEFAULT_CLIENT_IP,
-    REFRESH_TOKEN_COOKIE_MAX_AGE,
-    REFRESH_TOKEN_COOKIE_NAME,
-)
+from cbpupsis_api_student.domains.student_auth import service
 from cbpupsis_api_student.domains.student_auth.dependencies import (
-    get_current_student_id,
+    require_student_session,
 )
 from cbpupsis_api_student.domains.student_auth.schemas import (
     StudentLoginRequest,
-    StudentLoginResponse,
+    StudentSessionRead,
+    StudentTokenPair,
 )
-from cbpupsis_api_student.domains.student_auth.validation import validate_student_id
-from cbpupsis_core.middleware import rate_limit
+from cbpupsis_core.middleware import client_ip_or_none, rate_limit
 from cbpupsis_database.session import get_db
+from cbpupsis_shared.domains.auth.constants import ROLE_STUDENT
+from cbpupsis_shared.domains.auth.dependencies import (
+    CurrentUser,
+    clear_refresh_cookie,
+    set_refresh_cookie,
+)
+from cbpupsis_shared.domains.auth.schemas import RefreshRequest
 
 router = APIRouter()
 
 
-def _extract_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else DEFAULT_CLIENT_IP
-
-
-@router.post(
-    "/login",
-    response_model=StudentLoginResponse,
-    status_code=status.HTTP_200_OK,
-    operation_id="student_login",
-)
+@router.post("/login", response_model=StudentTokenPair, operation_id="student_login")
 @rate_limit("login")
 async def student_login(
     request: Request,
     response: Response,
+    data: StudentLoginRequest,
     db: AsyncSession = Depends(get_db),
-) -> StudentLoginResponse:
-    """Authenticate student using student number, birthdate, and password.
-
-    Sets a refresh token in an HttpOnly, Secure, SameSite=Lax cookie.
-    This route deliberately accepts only student credentials. Generic email/password
-    authentication belongs to the shared ``/auth/login`` endpoint.
-    """
-    body = await request.json()
-
-    # Validate the ID before schema or credential operations (AC-001.2).
-    if isinstance(body, dict) and "student_number" in body:
-        validate_student_id(str(body["student_number"]))
-
-    try:
-        data = StudentLoginRequest.model_validate(body)
-    except ValidationError as exc:
-        # Manual body handling lets the student-number format check run first;
-        # preserve FastAPI's normal 422 contract for every other invalid body.
-        raise RequestValidationError(exc.errors()) from exc
-    client_ip = _extract_client_ip(request)
-    user_agent = request.headers.get("user-agent")
-
-    login_dto, raw_refresh_token = await student_service.login_student(
+) -> StudentTokenPair:
+    """Sign in with student number, birthdate, and password (US-101)."""
+    pair = await service.login_student(
         db,
         data,
-        client_ip=client_ip,
-        user_agent=user_agent,
+        ip_address=client_ip_or_none(request),
+        device_info=request.headers.get("user-agent", ""),
     )
-
-    # Set refresh token cookie matching AC-001.1
-    response.set_cookie(
-        key=REFRESH_TOKEN_COOKIE_NAME,
-        value=raw_refresh_token,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        max_age=REFRESH_TOKEN_COOKIE_MAX_AGE,
-        path="/",
-    )
-
-    return login_dto
+    set_refresh_cookie(response, pair.refresh_token, role=ROLE_STUDENT)
+    return pair
 
 
 @router.post(
-    "/logout",
-    status_code=status.HTTP_204_NO_CONTENT,
-    operation_id="student_logout",
+    "/refresh", response_model=StudentTokenPair, operation_id="student_refresh"
+)
+async def student_refresh(
+    data: RefreshRequest, response: Response, db: AsyncSession = Depends(get_db)
+) -> StudentTokenPair:
+    """Rotate the student session's refresh token."""
+    pair = await service.refresh_student(db, data)
+    set_refresh_cookie(response, pair.refresh_token, role=ROLE_STUDENT)
+    return pair
+
+
+@router.post(
+    "/logout", status_code=status.HTTP_204_NO_CONTENT, operation_id="student_logout"
 )
 async def student_logout(
-    request: Request,
-    response: Response,
-    authorization: str | None = Header(default=None),
-    db: AsyncSession = Depends(get_db),
+    data: RefreshRequest, response: Response, db: AsyncSession = Depends(get_db)
 ) -> None:
-    """Terminate student session server-side, revoke refresh token, and clear cookie.
-
-    A student access token identifies the server-side idle session. Refresh
-    token revocation is delegated to shared auth through the service boundary.
-    """
-    refresh_token = request.cookies.get(REFRESH_TOKEN_COOKIE_NAME)
-    try:
-        body = await request.json()
-    except json.JSONDecodeError:
-        body = None
-    if isinstance(body, dict):
-        refresh_token = body.get(REFRESH_TOKEN_COOKIE_NAME, refresh_token)
-
-    token = (
-        authorization.removeprefix("Bearer ").strip()
-        if authorization and authorization.startswith("Bearer ")
-        else None
-    )
-    await student_service.logout_student(db, token, refresh_token)
-
-    response.delete_cookie(REFRESH_TOKEN_COOKIE_NAME, path="/")
+    """End the session server-side and clear the refresh cookie."""
+    await service.logout_student(db, data)
+    clear_refresh_cookie(response, role=ROLE_STUDENT)
 
 
-# --------------------------------------------------------------------------- #
-# Endpoints supporting AC-001.7 verification
-# --------------------------------------------------------------------------- #
-
-
-@router.get("/me", operation_id="student_auth_me")
-async def get_current_student_session(
-    student_id: uuid.UUID = Depends(get_current_student_id),
-) -> dict[str, str]:
-    """Protected endpoint validating active student session (AC-001.7)."""
-    return {"status": "success", "user_id": str(student_id)}
+@router.get("/me", response_model=StudentSessionRead, operation_id="student_me")
+async def student_me(
+    user: CurrentUser = Depends(require_student_session),
+) -> StudentSessionRead:
+    """Return the signed-in student; 401 once the session has idled out."""
+    return StudentSessionRead(id=user.id, email=user.email)

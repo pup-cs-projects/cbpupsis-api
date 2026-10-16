@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from cbpupsis_database.models import (
     academics,
-    admin_auth,
     announcements,
     audit,
     auth,
@@ -22,7 +21,6 @@ from cbpupsis_database.models import (
     curriculum,
     enrollment,
     evaluations,
-    faculty_auth,
     grading,
     iam,
     items,
@@ -30,14 +28,12 @@ from cbpupsis_database.models import (
     outbox,
     sections,
     superadmin_ops,
-    student_auth,
     system,
     users,
 )
 
 __all__ = [
     "academics",
-    "admin_auth",
     "announcements",
     "audit",
     "auth",
@@ -45,7 +41,6 @@ __all__ = [
     "curriculum",
     "enrollment",
     "evaluations",
-    "faculty_auth",
     "grading",
     "iam",
     "items",
@@ -53,7 +48,6 @@ __all__ = [
     "outbox",
     "sections",
     "superadmin_ops",
-    "student_auth",
     "system",
     "users",
 ]

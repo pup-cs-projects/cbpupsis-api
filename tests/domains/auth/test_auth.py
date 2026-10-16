@@ -7,12 +7,15 @@ silently, because a broken version still passes a naive happy-path test.
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.exceptions import UnauthorizedError
 from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.auth.exceptions import SuperadminRoleRequiredError
 from cbpupsis_shared.domains.auth.security import (
     create_refresh_token,
     decode_token,
@@ -42,42 +45,28 @@ class TestPasswordHashing:
         )
 
 
-class TestRegistration:
-    async def test_register_returns_user_without_password(
-        self, client: AsyncClient
-    ) -> None:
-        response = await client.post(
-            "/api/v1/auth/register",
-            json={
-                "email": "new@example.com",
-                "password": "a-sufficiently-long-password",
-                "full_name": "New User",
-            },
-        )
-        assert response.status_code == 201
-        body = response.json()
-        assert body["email"] == "new@example.com"
-        assert "password" not in body
-        assert "password_hash" not in body
+class TestNoPublicRegistration:
+    """Only a Superadmin creates accounts (product decision); signup is gone."""
 
-    async def test_duplicate_email_conflicts(
-        self, client: AsyncClient, registered_user: dict[str, str]
-    ) -> None:
+    async def test_register_route_is_gone(self, client: AsyncClient) -> None:
         response = await client.post(
             "/api/v1/auth/register",
-            json={
-                "email": registered_user["email"],
-                "password": "another-long-enough-password",
-            },
+            json={"email": "new@example.com", "password": "a-long-enough-password"},
         )
-        assert response.status_code == 409
+        assert response.status_code == 404
 
-    async def test_short_password_rejected(self, client: AsyncClient) -> None:
-        response = await client.post(
-            "/api/v1/auth/register",
-            json={"email": "short@example.com", "password": "tiny"},
-        )
-        assert response.status_code == 422
+    async def test_attributed_register_requires_a_superadmin(
+        self, db: AsyncSession, registered_user: dict[str, str]
+    ) -> None:
+        """The kept service function refuses an actor who is not a Superadmin."""
+        with pytest.raises(SuperadminRoleRequiredError):
+            await auth_service.register(
+                db,
+                email="new@example.com",
+                password="a-long-enough-password",
+                actor_id=uuid.UUID(registered_user["id"]),
+            )
+        assert await users_service.get_by_email(db, "new@example.com") is None
 
 
 class TestLogin:
@@ -294,7 +283,7 @@ class TestServiceLayer:
     """Services are framework-agnostic, so they test without HTTP."""
 
     async def test_register_and_login_directly(self, db: AsyncSession) -> None:
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="Direct@Example.com", password="a-long-enough-password"
         )
         assert user.email == "direct@example.com", "email should be normalised"
@@ -304,17 +293,95 @@ class TestServiceLayer:
         await users_service.mark_email_verified(db, user.id)
 
         pair = await auth_service.login(
-            db, email="direct@example.com", password="a-long-enough-password"
+            db,
+            email="direct@example.com",
+            password="a-long-enough-password",
+            ip_address="127.0.0.1",
         )
         assert pair.access_token
 
     async def test_login_is_case_insensitive_on_email(self, db: AsyncSession) -> None:
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="mixed@example.com", password="a-long-enough-password"
         )
         await users_service.mark_email_verified(db, user.id)
 
         pair = await auth_service.login(
-            db, email="MIXED@example.com", password="a-long-enough-password"
+            db,
+            email="MIXED@example.com",
+            password="a-long-enough-password",
+            ip_address="127.0.0.1",
         )
         assert pair.access_token
+
+
+async def _expired_temporary_password(db, user_id, password: str) -> None:
+    """Give the account a temporary password that expired a minute ago."""
+    from datetime import UTC, datetime, timedelta
+
+    from cbpupsis_shared.domains.auth.security import hash_password
+    from cbpupsis_shared.domains.users import service as users_service
+
+    await users_service.stage_temporary_password(
+        db,
+        user_id,
+        hash_password(password),
+        datetime.now(UTC) - timedelta(minutes=1),
+    )
+    await db.commit()
+
+
+class TestTemporaryPasswordOnEmailSignIn:
+    """``/auth/login`` honors the same rule as every role sign-in."""
+
+    async def test_an_expired_temporary_password_is_refused(
+        self, client: AsyncClient, db: AsyncSession, registered_user: dict[str, str]
+    ) -> None:
+        await _expired_temporary_password(
+            db, uuid.UUID(registered_user["id"]), registered_user["password"]
+        )
+        response = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": registered_user["email"],
+                "password": registered_user["password"],
+            },
+        )
+        assert response.status_code == 401
+        assert response.json()["code"] == "AUTH_TEMPORARY_PASSWORD_EXPIRED"
+
+    async def test_a_live_temporary_password_signs_in_but_only_to_change(
+        self, client: AsyncClient, db: AsyncSession, registered_user: dict[str, str]
+    ) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        await users_service.stage_temporary_password(
+            db,
+            uuid.UUID(registered_user["id"]),
+            hash_password(registered_user["password"]),
+            datetime.now(UTC) + timedelta(days=1),
+        )
+        await db.commit()
+        login = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": registered_user["email"],
+                "password": registered_user["password"],
+            },
+        )
+        assert login.status_code == 200, login.text
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        blocked = await client.get("/api/v1/auth/whoami", headers=headers)
+        assert blocked.status_code == 403
+        assert blocked.json()["code"] == "PASSWORD_CHANGE_REQUIRED"
+        # Refreshing keeps the session alive; what it mints is still blocked.
+        refreshed = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": login.json()["refresh_token"]},
+        )
+        assert refreshed.status_code == 200, refreshed.text
+        again = await client.get(
+            "/api/v1/auth/whoami",
+            headers={"Authorization": f"Bearer {refreshed.json()['access_token']}"},
+        )
+        assert again.status_code == 403

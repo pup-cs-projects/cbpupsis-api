@@ -287,6 +287,16 @@ async def is_user_in_group_named(
     return result is not None
 
 
+async def get_group_id_by_name(db: AsyncSession, name: str) -> int | None:
+    """Return the id of the group named ``name``, or ``None``.
+
+    SQL::
+
+        SELECT groups.id FROM groups WHERE groups.name = :name_1
+    """
+    return await db.scalar(select(Group.id).where(Group.name == name))
+
+
 def add_user_group(db: AsyncSession, user_id: uuid.UUID, group_id: int) -> UserGroup:
     """Stage a user -> group membership edge and return it.
 

@@ -1,168 +1,91 @@
-"""Pydantic schemas for faculty authentication and MFA."""
+"""DTOs for faculty sign-in and MFA (US-102)."""
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
-from typing import Any
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+
+from cbpupsis_shared.domains.auth.constants import PASSWORD_MAX_LENGTH
+from cbpupsis_shared.domains.auth.schemas import TokenPair
 
 
 class FacultyLoginRequest(BaseModel):
-    """Payload submitted to POST /api/v1/auth/login."""
+    """Employee id and password. The id's format is checked by the service."""
 
-    identifier: str | None = Field(
-        default=None,
-        description="Faculty employee ID in format YYYY-NNNNN-XX-N",
+    model_config = ConfigDict(extra="forbid")
+
+    employee_id: str = Field(
+        max_length=50,
+        description="Institutional employee id, YYYY-NNNNN-XX-N.",
         examples=["2021-00456-MN-0"],
     )
-    password: str = Field(description="Account password")
-    birthday: str | None = Field(default=None, description="Optional YYYY-MM-DD")
-    email: str | None = Field(
-        default=None,
-        description="Fallback email for backward compatibility with shared suite",
-    )
+    password: str = Field(max_length=PASSWORD_MAX_LENGTH)
 
 
-class FacultyLoginChallengeData(BaseModel):
-    """Challenge issued when faculty credentials are valid."""
+class FacultyLoginChallenge(BaseModel):
+    """The password step's only result: a challenge that grants no API access."""
+
+    mfa_required: Literal[True] = True
+    challenge_token: str
+    enrollment_required: bool
+    methods: list[Literal["totp"]]
+
+
+class ChallengeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
     challenge_token: str
-    mfa_required: bool = True
-    expires_in: int = 300
-    mfa_enrolled: bool = True
 
 
-class FacultyLoginResponse(BaseModel):
-    """HTTP 200 response for successful first-factor credential validation."""
+class TotpEnrollmentRead(BaseModel):
+    """A pending seed: the secret for manual entry and the URI to scan."""
 
-    status: str = "success"
-    data: FacultyLoginChallengeData
+    secret: str
+    provisioning_uri: str
+
+
+class TotpConfirmRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    challenge_token: str
+    code: str = Field(min_length=6, max_length=6)
 
 
 class FacultyMfaVerifyRequest(BaseModel):
-    """Payload submitted to POST /api/v1/auth/mfa/verify."""
+    """Exactly one second factor: a TOTP code or an unused recovery code."""
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(extra="forbid")
 
-    challenge_token: str = Field(
-        ...,
-        alias="challengeToken",
-        description="Short-lived challenge token issued by login step",
-    )
-    code: str = Field(
-        ...,
-        alias="totp_code",
-        min_length=6,
-        max_length=6,
-        description="Six-digit time-based code from authenticator app",
-        examples=["123456"],
-    )
+    challenge_token: str
+    code: str | None = Field(default=None, min_length=6, max_length=6)
+    recovery_code: str | None = Field(default=None, max_length=32)
+
+    @model_validator(mode="after")
+    def exactly_one_factor(self) -> FacultyMfaVerifyRequest:
+        if (self.code is None) == (self.recovery_code is None):
+            raise ValueError("provide exactly one of code or recovery_code")
+        return self
 
 
-class FacultyUserData(BaseModel):
-    """User profile data returned upon successful session issuance."""
+class FacultyTokenPair(TokenPair):
+    """A faculty session's tokens. The refresh token is also set as a cookie."""
 
-    id: str
-    firstName: str
-    lastName: str
-    email: str
-    role: str = "FACULTY"
+    role: Literal["faculty"] = "faculty"
+    expires_in: int
 
 
-class FacultySessionData(BaseModel):
-    """Session credentials returned upon successful MFA verification."""
-
-    accessToken: str
-    tokenType: str = "Bearer"
-    expiresIn: int = 1800
-    role: str = "faculty"
-    user: FacultyUserData
-
-
-class FacultyMfaVerifyResponse(BaseModel):
-    """HTTP 200 response for successful second-factor verification."""
-
-    status: str = "success"
-    data: FacultySessionData
-
-
-class FacultyMfaEnrollData(BaseModel):
-    """Provisioning details returned to enroll Google Authenticator."""
-
-    provisioning_uri: str
-    account_name: str
-    issuer: str = "PUP CBPUPSIS"
-    mfa_enrolled: bool = False
-
-
-class FacultyMfaEnrollResponse(BaseModel):
-    """HTTP 200 response for starting MFA enrollment."""
-
-    status: str = "success"
-    data: FacultyMfaEnrollData
-
-
-class FacultyMfaConfirmRequest(BaseModel):
-    """Payload to confirm TOTP code and activate MFA enrollment."""
-
-    code: str = Field(
-        ...,
-        min_length=6,
-        max_length=6,
-        description="Six-digit code generated from newly scanned authenticator",
-    )
-
-
-class FacultyMfaConfirmData(BaseModel):
-    """Response data on successful MFA activation."""
+class FacultyEnrollmentResult(FacultyTokenPair):
+    """The first session after enrollment, with recovery codes shown once."""
 
     recovery_codes: list[str]
-    message: str = (
-        "MFA enrolled successfully. Save these recovery codes in a secure location."
-    )
 
 
-class FacultyMfaConfirmResponse(BaseModel):
-    """HTTP 200 response upon activating MFA enrollment."""
-
-    status: str = "success"
-    data: FacultyMfaConfirmData
-
-
-class SectionItem(BaseModel):
-    """Summary of a course section assigned to faculty."""
+class FacultySessionRead(BaseModel):
+    """The signed-in faculty member, as returned by ``/auth/faculty/me``."""
 
     id: uuid.UUID
-    section_name: str
-    capacity: int
-    status: str
-
-
-class SectionListResponse(BaseModel):
-    """HTTP 200 response listing sections."""
-
-    status: str = "success"
-    data: list[SectionItem]
-
-
-class SectionRosterResponse(BaseModel):
-    """HTTP 200 response with section roster details."""
-
-    status: str = "success"
-    data: dict[str, Any]
-
-
-class AuthAuditLogRead(BaseModel):
-    """Schema for reading an audit ledger record."""
-
-    id: uuid.UUID
-    created_at: datetime
-    attempted_id: str
-    user_id: uuid.UUID | None
-    ip_address: str | None
-    user_agent: str | None
-    success: bool
-    mfa_used: bool
-    failure_reason: str | None
+    email: EmailStr
+    employee_id: str | None
+    role: Literal["faculty"] = "faculty"

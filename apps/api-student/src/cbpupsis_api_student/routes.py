@@ -13,7 +13,7 @@ from cbpupsis_api_student.domains.student_auth.router import (
 from cbpupsis_shared.application import RouterMount
 from cbpupsis_shared.routes import COMMON_MOUNTS
 
-STUDENT_AUTH = RouterMount(student_auth_router, "/student-auth", "student-auth")
+STUDENT_AUTH = RouterMount(student_auth_router, "/auth/student", "student-auth")
 ITEMS = RouterMount(items_router, "/items", "items")
 
-MOUNTS: tuple[RouterMount, ...] = (STUDENT_AUTH, *COMMON_MOUNTS, ITEMS)
+MOUNTS: tuple[RouterMount, ...] = (*COMMON_MOUNTS, STUDENT_AUTH, ITEMS)

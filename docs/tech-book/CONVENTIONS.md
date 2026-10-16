@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Last updated** | 2026-09-28 |
+| **Last updated** | 2026-10-16 |
 | **Related** | [API-GUIDE.md](API-GUIDE.md) · [ERROR-CODES.md](ERROR-CODES.md) · [TEST-NOTES.md](TEST-NOTES.md) · [WRITING-ISSUES.md](WRITING-ISSUES.md) · [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 
 The rules every change to `cbpupsis-api` follows. [API-GUIDE.md](API-GUIDE.md) explains the
@@ -38,8 +38,9 @@ against the scaffold as it is until the decision closes.
 | Database | Aurora PostgreSQL, PostgreSQL 16 (SRS 2.4, 5.3) | Config written for Neon (pooled and direct URLs); local compose pinned to `postgres:16` |
 | Authentication | Institutional LDAP or Active Directory with local fallback; Cognito also mentioned (FR1, SRS 2.6) | Self-contained email and password with JWT |
 | Login identifier | Student number `YYYY-NNNNN-XX-N` or employee id (FR1) | Email address |
-| Sessions | Lockout after 5 failures in 15 minutes; 30-minute inactivity timeout; HttpOnly cookies (FR1, SRS 4.2) | Rate limiting only; 15-minute access token and 30-day rotating refresh token in the response body |
-| Password hashing | bcrypt with 12+ rounds "or equivalent" (SRS 4.2) | argon2, which qualifies as equivalent |
+| Sessions | Lockout after 5 failures in 15 minutes; 30-minute inactivity timeout; HttpOnly cookies (FR1, SRS 4.2) | Every role: lockout on the 5th failure in 15 minutes; a server-side session ended after 15 idle minutes (`SESSION_IDLE_TIMEOUT_MINUTES`); 15-minute access token and 30-day rotating refresh token, sent in the response body **and** as an HttpOnly `refresh_token` cookie until cookie-versus-body is decided |
+| Password hashing | bcrypt with 12+ rounds "or equivalent" (SRS 4.2) | bcrypt at `BCRYPT_ROUNDS` (12 or more) for new hashes; existing argon2 hashes still verify |
+| Account creation | Admin creates accounts with a system temporary password (FR19, UC-ADM-002) | Superadmin only, single or CSV, forced expiring temporary password, no self-registration (product owner decision) |
 
 ## Code
 
@@ -63,7 +64,9 @@ against the scaffold as it is until the decision closes.
 - **Five layers per domain:** `models` (in the kernel), then `schemas`, then `repository`, then
   `service`, then `router` (in the domain folder). All SQL lives in `repository.py` (returns ORM
   rows, raises nothing). `service.py` holds every rule and never calls `session.execute`.
-  Routers stay thin.
+  Routers stay thin. A domain that owns no table (a role sign-in built on other domains'
+  clients) has neither a models module nor a repository, and a models module that defines
+  no table of its own (a re-export facade) fails `tests/core/test_architecture.py`.
 - **Domains talk through each other's `service.py`**, via `client.py`, never by importing
   another domain's models or repository. A domain imports only its own models module
   (`cbpupsis_database.models.<own>`). Cross-domain ids are bare UUIDs without a foreign key.

@@ -7,9 +7,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-from cbpupsis_database.models.admin_auth import AdminPosition
 from cbpupsis_shared.domains.auth.constants import PASSWORD_MAX_LENGTH
 from cbpupsis_shared.domains.auth.schemas import RefreshRequest, TokenPair
+from cbpupsis_shared.domains.users.constants import AdminPosition
 
 
 class AdminLoginRequest(BaseModel):

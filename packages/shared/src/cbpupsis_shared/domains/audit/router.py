@@ -20,7 +20,7 @@ from cbpupsis_core.pagination import Page
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.audit import service as audit_service
 from cbpupsis_shared.domains.audit.constants import READ_ALL_AUDIT_ENTRY
-from cbpupsis_shared.domains.audit.schemas import AuditEntryRead
+from cbpupsis_shared.domains.audit.schemas import AuditEntryRead, SignInAttemptRead
 from cbpupsis_shared.domains.auth.dependencies import CurrentUser
 from cbpupsis_shared.domains.iam.dependencies import require_permission
 
@@ -59,6 +59,27 @@ async def list_audit_entries(
     )
     return Page[AuditEntryRead](
         items=[AuditEntryRead.model_validate(row) for row in page.items],
+        total=page.total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+@router.get("/sign-in-attempts", response_model=Page[SignInAttemptRead])
+async def list_sign_in_attempts(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    user: CurrentUser = Depends(require_permission(READ_ALL_AUDIT_ENTRY)),
+    db: AsyncSession = Depends(get_db),
+) -> Page[SignInAttemptRead]:
+    """List every role's sign-in attempts, newest first.
+
+    Read-only like the rest of the trail: there is no endpoint that deletes or
+    edits an attempt.
+    """
+    page = await audit_service.list_sign_in_attempts(db, limit=limit, offset=offset)
+    return Page[SignInAttemptRead](
+        items=[SignInAttemptRead.model_validate(row) for row in page.items],
         total=page.total,
         limit=page.limit,
         offset=page.offset,

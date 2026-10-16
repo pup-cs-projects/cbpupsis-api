@@ -207,7 +207,7 @@ class TestSESDoesNotBlockTheEventLoop:
 
 class TestEmailFailureDoesNotBreakTheRequest:
     async def test_registration_succeeds_when_email_delivery_fails(
-        self, client: AsyncClient, db: AsyncSession, monkeypatch
+        self, console_account, client: AsyncClient, db: AsyncSession, monkeypatch
     ) -> None:
         """The headline rule: a bounced verification email must not roll back a
         signup, or a delivery problem becomes a data problem."""
@@ -220,16 +220,12 @@ class TestEmailFailureDoesNotBreakTheRequest:
             "cbpupsis_core.emails.sender.get_email_sender", lambda: ExplodingSender()
         )
 
-        response = await client.post(
-            "/api/v1/auth/register",
-            json={"email": "bounce@example.com", "password": "a-long-enough-password"},
-        )
-        assert response.status_code == 201
+        response = await console_account("bounce@example.com", "a-long-enough-password")
 
         # The account exists and is usable. Verification never arrived, since
         # the send blew up, so mark it here: the property under test is that the
         # signup survived a delivery failure, not that login skips the gate.
-        await users_service.mark_email_verified(db, uuid.UUID(response.json()["id"]))
+        await users_service.mark_email_verified(db, uuid.UUID(response["id"]))
 
         login = await client.post(
             "/api/v1/auth/login",

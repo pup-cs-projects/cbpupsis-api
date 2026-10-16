@@ -30,7 +30,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import case, delete, select, update
+from sqlalchemy import case, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,11 +38,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cbpupsis_database.models.auth import (
     AuthenticationFailure,
     AuthenticationLockout,
+    AuthFailureStep,
+    MfaChallenge,
+    MfaType,
     OneTimeToken,
     PasswordResetThrottle,
     RefreshToken,
     TokenPurpose,
     UserActiveSession,
+    UserMfaCredential,
+    UserMfaRecoveryCode,
 )
 
 # --------------------------------------------------------------------------- #
@@ -354,24 +359,302 @@ async def get_one_time_token(
     )
 
 
-async def clear_authentication_lockout(db: AsyncSession, user_id: uuid.UUID) -> None:
-    """Clear both the active lock and its rolling failure counter.
+async def acquire_authentication_lock(db: AsyncSession, subject_id: uuid.UUID) -> None:
+    """Serialize one lockout subject's sign-in state for this transaction.
 
     SQL::
 
-        DELETE FROM authentication_lockouts WHERE user_id = :user_id;
-        DELETE FROM authentication_failures WHERE user_id = :user_id;
-        DELETE FROM user_active_sessions WHERE user_id = :user_id;
+        SELECT pg_advisory_xact_lock(hashtextextended(CAST(:subject_id AS text), 0))
+    """
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    await db.execute(
+        text(
+            "SELECT pg_advisory_xact_lock("
+            "hashtextextended(CAST(:subject_id AS text), 0))"
+        ),
+        {"subject_id": str(subject_id)},
+    )
+
+
+def add_authentication_failure(
+    db: AsyncSession,
+    *,
+    subject_id: uuid.UUID,
+    step: AuthFailureStep,
+    occurred_at: datetime,
+) -> AuthenticationFailure:
+    """Stage one failed sign-in step.
+
+    On commit::
+
+        INSERT INTO authentication_failures (id, user_id, step, occurred_at)
+        VALUES (:id, :subject_id, :step, :occurred_at)
+    """
+    failure = AuthenticationFailure(
+        user_id=subject_id, step=step, occurred_at=occurred_at
+    )
+    db.add(failure)
+    return failure
+
+
+async def count_authentication_failures(
+    db: AsyncSession, *, subject_id: uuid.UUID, since: datetime
+) -> int:
+    """Count password and MFA failures in the rolling window.
+
+    SQL::
+
+        SELECT count(*) FROM authentication_failures
+        WHERE user_id = :subject_id AND occurred_at >= :since
+    """
+    count = await db.scalar(
+        select(func.count())
+        .select_from(AuthenticationFailure)
+        .where(
+            AuthenticationFailure.user_id == subject_id,
+            AuthenticationFailure.occurred_at >= since,
+        )
+    )
+    return count or 0
+
+
+async def delete_authentication_failures(
+    db: AsyncSession, subject_id: uuid.UUID
+) -> None:
+    """Remove a subject's rolling failure counter.
+
+    SQL::
+
+        DELETE FROM authentication_failures WHERE user_id = :subject_id
     """
     await db.execute(
-        delete(AuthenticationLockout).where(AuthenticationLockout.user_id == user_id)
+        delete(AuthenticationFailure).where(AuthenticationFailure.user_id == subject_id)
     )
+
+
+async def get_authentication_lockout(
+    db: AsyncSession, subject_id: uuid.UUID
+) -> AuthenticationLockout | None:
+    """Return a subject's current lock row.
+
+    SQL::
+
+        SELECT * FROM authentication_lockouts WHERE user_id = :subject_id
+    """
+    return await db.scalar(
+        select(AuthenticationLockout).where(AuthenticationLockout.user_id == subject_id)
+    )
+
+
+def add_authentication_lockout(
+    db: AsyncSession, *, subject_id: uuid.UUID, locked_until: datetime
+) -> AuthenticationLockout:
+    """Stage a new lock.
+
+    On commit::
+
+        INSERT INTO authentication_lockouts (user_id, locked_until)
+        VALUES (:subject_id, :locked_until)
+    """
+    lockout = AuthenticationLockout(user_id=subject_id, locked_until=locked_until)
+    db.add(lockout)
+    return lockout
+
+
+def update_authentication_lockout(
+    lockout: AuthenticationLockout, *, locked_until: datetime
+) -> AuthenticationLockout:
+    """Stage an extended lock on a loaded row.
+
+    On commit::
+
+        UPDATE authentication_lockouts SET locked_until = :locked_until
+        WHERE user_id = :subject_id
+    """
+    lockout.locked_until = locked_until
+    return lockout
+
+
+async def delete_authentication_lockout(
+    db: AsyncSession, subject_id: uuid.UUID
+) -> None:
+    """Remove an expired or cleared lock.
+
+    SQL::
+
+        DELETE FROM authentication_lockouts WHERE user_id = :subject_id
+    """
     await db.execute(
-        delete(AuthenticationFailure).where(AuthenticationFailure.user_id == user_id)
+        delete(AuthenticationLockout).where(AuthenticationLockout.user_id == subject_id)
     )
+
+
+async def get_mfa_credential(
+    db: AsyncSession, *, user_id: uuid.UUID, mfa_type: MfaType
+) -> UserMfaCredential | None:
+    """Return the user's newest credential for one factor type.
+
+    SQL::
+
+        SELECT * FROM user_mfa_credentials
+        WHERE user_id = :user_id AND mfa_type = :mfa_type
+        ORDER BY created_at DESC LIMIT 1
+    """
+    return await db.scalar(
+        select(UserMfaCredential)
+        .where(
+            UserMfaCredential.user_id == user_id,
+            UserMfaCredential.mfa_type == mfa_type.value,
+        )
+        .order_by(UserMfaCredential.created_at.desc())
+        .limit(1)
+    )
+
+
+async def get_mfa_credential_by_digest(
+    db: AsyncSession, digest: str
+) -> UserMfaCredential | None:
+    """Resolve a registered hardware key by its unique keyed digest.
+
+    SQL::
+
+        SELECT * FROM user_mfa_credentials WHERE credential_id_digest = :digest
+    """
+    return await db.scalar(
+        select(UserMfaCredential).where(
+            UserMfaCredential.credential_id_digest == digest
+        )
+    )
+
+
+def add_mfa_credential(
+    db: AsyncSession, *, user_id: uuid.UUID, mfa_type: MfaType, **fields: object
+) -> UserMfaCredential:
+    """Stage a new factor credential.
+
+    On commit::
+
+        INSERT INTO user_mfa_credentials (id, user_id, mfa_type, ...)
+        VALUES (:id, :user_id, :mfa_type, ...)
+    """
+    credential = UserMfaCredential(user_id=user_id, mfa_type=mfa_type.value, **fields)
+    db.add(credential)
+    return credential
+
+
+def update_mfa_credential(
+    credential: UserMfaCredential, **fields: object
+) -> UserMfaCredential:
+    """Stage changes to a loaded factor credential.
+
+    On commit, using the supplied fields::
+
+        UPDATE user_mfa_credentials SET ... WHERE id = :id
+    """
+    for name, value in fields.items():
+        setattr(credential, name, value)
+    return credential
+
+
+async def get_mfa_challenge(
+    db: AsyncSession, user_id: uuid.UUID
+) -> MfaChallenge | None:
+    """Return the account's live challenge binding.
+
+    SQL::
+
+        SELECT * FROM mfa_challenges WHERE user_id = :user_id
+    """
+    return await db.get(MfaChallenge, user_id, populate_existing=True)
+
+
+def add_mfa_challenge(db: AsyncSession, *, user_id: uuid.UUID, jti: str) -> None:
+    """Stage a challenge binding.
+
+    On commit::
+
+        INSERT INTO mfa_challenges (user_id, active_jti) VALUES (:user_id, :jti)
+    """
+    db.add(MfaChallenge(user_id=user_id, active_jti=jti))
+
+
+def update_mfa_challenge(challenge: MfaChallenge, *, jti: str) -> None:
+    """Stage a replaced challenge binding on a loaded row.
+
+    On commit::
+
+        UPDATE mfa_challenges SET active_jti = :jti WHERE user_id = :user_id
+    """
+    challenge.active_jti = jti
+
+
+async def delete_mfa_challenge(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Retire the account's live challenge, if any.
+
+    SQL::
+
+        DELETE FROM mfa_challenges WHERE user_id = :user_id
+    """
+    await db.execute(delete(MfaChallenge).where(MfaChallenge.user_id == user_id))
+
+
+async def delete_recovery_codes(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Remove every recovery code of a user, used or not.
+
+    SQL::
+
+        DELETE FROM user_mfa_recovery_codes WHERE user_id = :user_id
+    """
     await db.execute(
-        delete(UserActiveSession).where(UserActiveSession.user_id == user_id)
+        delete(UserMfaRecoveryCode).where(UserMfaRecoveryCode.user_id == user_id)
     )
+
+
+def add_recovery_code(db: AsyncSession, *, user_id: uuid.UUID, code_hash: str) -> None:
+    """Stage one recovery code digest.
+
+    On commit::
+
+        INSERT INTO user_mfa_recovery_codes (id, user_id, code_hash, is_used)
+        VALUES (:id, :user_id, :code_hash, false)
+    """
+    db.add(UserMfaRecoveryCode(user_id=user_id, code_hash=code_hash, is_used=False))
+
+
+async def consume_recovery_code(
+    db: AsyncSession, *, user_id: uuid.UUID, code_hash: str, used_at: datetime
+) -> bool:
+    """Mark one unused recovery code used, returning whether one matched.
+
+    A conditional UPDATE, so two racing requests with the same code produce one
+    winner.
+
+    SQL::
+
+        UPDATE user_mfa_recovery_codes SET is_used = true, used_at = :used_at
+        WHERE user_id = :user_id AND code_hash = :code_hash AND is_used = false
+    """
+    result = await db.execute(
+        update(UserMfaRecoveryCode)
+        .where(
+            UserMfaRecoveryCode.user_id == user_id,
+            UserMfaRecoveryCode.code_hash == code_hash,
+            UserMfaRecoveryCode.is_used.is_(False),
+        )
+        .values(is_used=True, used_at=used_at)
+    )
+    return result.rowcount == 1
+
+
+def touch_active_session(session: UserActiveSession, at: datetime) -> None:
+    """Stage a new last-activity time on a loaded session.
+
+    On commit::
+
+        UPDATE user_active_sessions SET last_activity_at = :at WHERE id = :id
+    """
+    session.last_activity_at = at
 
 
 async def claim_reset_request(

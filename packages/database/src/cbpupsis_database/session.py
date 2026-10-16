@@ -22,7 +22,7 @@ from cbpupsis_core.config import settings
 #: driver will. asyncpg raises ``TypeError: connect() got an unexpected keyword
 #: argument 'sslmode'`` instead — at connect time, not at parse time, so the
 #: failure surfaces on the first request rather than at startup.
-_LIBPQ_ONLY_PARAMS = frozenset(
+LIBPQ_ONLY_PARAMS = frozenset(
     {
         "sslmode",
         "channel_binding",
@@ -52,7 +52,7 @@ def to_asyncpg_url(url: str) -> str:
     than ``sslmode`` ever was.
     """
     parts = urlsplit(url)
-    kept = [(k, v) for k, v in parse_qsl(parts.query) if k not in _LIBPQ_ONLY_PARAMS]
+    kept = [(k, v) for k, v in parse_qsl(parts.query) if k not in LIBPQ_ONLY_PARAMS]
     scheme = (
         "postgresql+asyncpg"
         if parts.scheme in ("postgresql", "postgres")
@@ -63,10 +63,8 @@ def to_asyncpg_url(url: str) -> str:
     )
 
 
-_async_url = to_asyncpg_url(settings.database_url)
-
 engine = create_async_engine(
-    _async_url,
+    to_asyncpg_url(settings.database_url),
     pool_pre_ping=True,  # survive Neon scale-to-zero dropped connections
     # Sized explicitly rather than left to the default, because the ceiling is
     # per worker: N workers hold up to N x (pool_size + max_overflow)

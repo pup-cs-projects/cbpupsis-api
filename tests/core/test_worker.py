@@ -9,7 +9,7 @@ staged and committed is delivered by a *later* process. Everything else here
 would also pass for the in-process event bus; only that one distinguishes a
 durable outbox from a fire-and-forget task that died with its process.
 
-Handlers are registered per test and torn down, because ``_HANDLERS`` is a
+Handlers are registered per test and torn down, because ``HANDLERS`` is a
 module-level dict: a handler left behind would run in every later test and make
 failures depend on collection order.
 """
@@ -19,7 +19,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import pathlib
+import time
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,9 +35,9 @@ from cbpupsis_shared.outbox import OutboxStatus, publish_transactional
 @pytest.fixture(autouse=True)
 def _clean_handlers():
     """Isolate the module-level handler registry between tests."""
-    worker._HANDLERS.clear()
+    worker.HANDLERS.clear()
     yield
-    worker._HANDLERS.clear()
+    worker.HANDLERS.clear()
 
 
 @pytest.fixture
@@ -163,9 +165,8 @@ class TestProcessBatch:
     async def test_a_message_with_no_handler_is_discarded_not_retried(
         self, db: AsyncSession
     ) -> None:
-        """An event can legitimately be emitted before anything subscribes —
-        ``item.created`` is in that state today. Retrying it forever would fill
-        the backlog with work nobody wants done."""
+        """An event can legitimately be emitted before anything subscribes.
+        Retrying it forever would fill the backlog with work nobody wants done."""
         message = await _stage(db, "nobody.listens")
 
         await worker.process_batch(db)
@@ -245,7 +246,7 @@ class TestHeartbeat:
         has to actually be emitted. A worker wedged on a poison message keeps
         running and keeps logging; only the age of the backlog reveals it.
 
-        ``_tick`` opens its own session against the application engine, which in
+        ``poll_once`` opens its own session against the application engine, which in
         this suite points at a database that is not running — so the session
         factory is redirected at the test's session. What is verified here is
         the heartbeat contract, not the connection.
@@ -262,13 +263,74 @@ class TestHeartbeat:
         await _stage(db)
 
         with caplog.at_level(logging.INFO, logger="cbpupsis_shared.worker"):
-            claimed = await worker._tick()
+            claimed = await worker.poll_once()
 
         assert claimed == 1
         record = next(r for r in caplog.records if r.message == "outbox.tick")
         assert record.claimed == 1
         assert hasattr(record, "pending")
         assert hasattr(record, "oldest_pending_seconds")
+
+
+class TestOneShotDrain:
+    """The scheduled-Lambda path: drain what is due, then exit. No listener."""
+
+    @pytest.fixture(autouse=True)
+    def _no_listener(self, db: AsyncSession, monkeypatch) -> None:
+        class _Once:
+            async def __aenter__(self):
+                return db
+
+            async def __aexit__(self, *exc):
+                return False
+
+        class _Forbidden:
+            def __init__(self, *args, **kwargs) -> None:
+                raise AssertionError("the one-shot drain must not LISTEN")
+
+        monkeypatch.setattr("cbpupsis_shared.worker.AsyncSessionLocal", _Once)
+        monkeypatch.setattr(worker, "WakeupListener", _Forbidden)
+
+    async def test_drains_every_due_message_across_batches_then_returns(
+        self, db: AsyncSession, received: list[Event], monkeypatch
+    ) -> None:
+        monkeypatch.setattr(settings, "outbox_batch_size", 2)
+        messages = [await _stage(db, n=n) for n in range(5)]
+
+        claimed = await worker.drain_once()
+
+        assert claimed == 5
+        assert sorted(event.payload["n"] for event in received) == list(range(5))
+        assert all(m.status == OutboxStatus.DISPATCHED for m in messages)
+
+    async def test_an_empty_outbox_returns_zero(self, received: list[Event]) -> None:
+        assert await worker.drain_once() == 0
+        assert received == []
+
+    async def test_a_passed_deadline_claims_nothing(
+        self, db: AsyncSession, received: list[Event]
+    ) -> None:
+        message = await _stage(db)
+
+        assert await worker.drain_once(deadline=time.monotonic() - 1) == 0
+        assert message.status == OutboxStatus.PENDING
+        assert received == []
+
+    def test_the_lambda_handler_leaves_a_margin_before_its_limit(
+        self, monkeypatch
+    ) -> None:
+        deadlines: list[float] = []
+
+        async def _run_once(*, deadline: float | None = None) -> int:
+            deadlines.append(deadline)
+            return 3
+
+        monkeypatch.setattr(worker, "run_once", _run_once)
+        context = SimpleNamespace(get_remaining_time_in_millis=lambda: 120_000)
+
+        before = time.monotonic()
+        assert worker.lambda_handler({}, context) == {"claimed": 3}
+        assert before + 85 <= deadlines[0] <= time.monotonic() + 90
 
 
 class TestShutdown:
@@ -310,18 +372,18 @@ class TestShutdown:
         monkeypatch.setattr(worker, "WakeupListener", _NoListener)
 
         captured: list[asyncio.Event] = []
-        real = worker._install_signal_handlers
+        real = worker.install_signal_handlers
 
         def _capture(shutdown: asyncio.Event) -> None:
             captured.append(shutdown)
             real(shutdown)
 
-        monkeypatch.setattr(worker, "_install_signal_handlers", _capture)
+        monkeypatch.setattr(worker, "install_signal_handlers", _capture)
 
         async def _no_work() -> int:
             return 0
 
-        monkeypatch.setattr(worker, "_tick", _no_work)
+        monkeypatch.setattr(worker, "poll_once", _no_work)
 
         task = asyncio.create_task(worker.run())
 
@@ -339,7 +401,7 @@ class TestShutdown:
     async def test_installing_signal_handlers_does_not_raise(self) -> None:
         """Windows has no ``add_signal_handler``; the worker runs in Linux
         containers but must still import and start locally."""
-        worker._install_signal_handlers(asyncio.Event())
+        worker.install_signal_handlers(asyncio.Event())
 
 
 class TestTheEntrypointDoesNotDuplicateTheModule:
@@ -348,7 +410,7 @@ class TestTheEntrypointDoesNotDuplicateTheModule:
     A regression test for a bug that reached a running container: executing the
     package with ``-m`` runs the file as ``__main__``, and anything that later
     does ``from cbpupsis_shared import worker`` imports it a SECOND time under its
-    real name. Two module objects, two ``_HANDLERS`` dicts — so
+    real name. Two module objects, two ``HANDLERS`` dicts — so
     ``register_handler`` writes into one while the loop reads the other.
 
     The symptom was maximally misleading: every message was marked *dispatched*
@@ -374,4 +436,4 @@ class TestTheEntrypointDoesNotDuplicateTheModule:
         two module objects means two registries."""
         import cbpupsis_shared.worker as imported
 
-        assert imported._HANDLERS is worker._HANDLERS
+        assert imported.HANDLERS is worker.HANDLERS

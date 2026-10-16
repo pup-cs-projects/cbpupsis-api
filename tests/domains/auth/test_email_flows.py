@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.exceptions import UnauthorizedError
 from cbpupsis_database.models.auth import OneTimeToken, TokenPurpose
+from cbpupsis_database.models.outbox import OutboxMessage
 from cbpupsis_database.models.users import User
 from cbpupsis_shared.domains.auth import service as auth_service
 from cbpupsis_shared.domains.auth.security import (
@@ -71,24 +72,27 @@ class TestOneTimeTokenPrimitives:
 
 class TestEmailVerification:
     async def test_registration_sends_a_verification_email(
-        self, client: AsyncClient, sent_emails: list[dict[str, str]]
+        self,
+        console_account,
+        client: AsyncClient,
+        sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
-        response = await client.post(
-            "/api/v1/auth/register",
-            json={"email": "verify@example.com", "password": "a-long-enough-password"},
-        )
-        assert response.status_code == 201
-        assert response.json()["email_verified_at"] is None
+        response = await console_account("verify@example.com", "a-long-enough-password")
+        await drain_outbox()
+        assert response["email_verified_at"] is None
         assert len(sent_emails) == 1
         assert sent_emails[0]["to"] == "verify@example.com"
 
     async def test_verifying_marks_the_user_verified(
-        self, client: AsyncClient, sent_emails: list[dict[str, str]]
+        self,
+        console_account,
+        client: AsyncClient,
+        sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
-        await client.post(
-            "/api/v1/auth/register",
-            json={"email": "verify2@example.com", "password": "a-long-enough-password"},
-        )
+        await console_account("verify2@example.com", "a-long-enough-password")
+        await drain_outbox()
         token = token_from_email(sent_emails[0])
 
         assert (
@@ -104,14 +108,16 @@ class TestEmailVerification:
         assert me.json()["email_verified_at"] is not None
 
     async def test_token_cannot_be_used_twice(
-        self, client: AsyncClient, sent_emails: list[dict[str, str]]
+        self,
+        console_account,
+        client: AsyncClient,
+        sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
         """Single use is the core property: a link in a browser history or a
         forwarded mail must be inert after the first redemption."""
-        await client.post(
-            "/api/v1/auth/register",
-            json={"email": "once@example.com", "password": "a-long-enough-password"},
-        )
+        await console_account("once@example.com", "a-long-enough-password")
+        await drain_outbox()
         token = token_from_email(sent_emails[0])
 
         first = await client.post("/api/v1/auth/verify-email", json={"token": token})
@@ -121,29 +127,31 @@ class TestEmailVerification:
 
     async def test_expired_token_is_rejected(
         self,
+        console_account,
         client: AsyncClient,
         db: AsyncSession,
         sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
-        register = await client.post(
-            "/api/v1/auth/register",
-            json={"email": "stale@example.com", "password": "a-long-enough-password"},
-        )
+        register = await console_account("stale@example.com", "a-long-enough-password")
+        await drain_outbox()
         token = token_from_email(sent_emails[0])
-        await _expire_tokens(db, uuid.UUID(register.json()["id"]))
+        await _expire_tokens(db, uuid.UUID(register["id"]))
 
         response = await client.post("/api/v1/auth/verify-email", json={"token": token})
         assert response.status_code == 401
 
     async def test_unknown_and_used_tokens_are_indistinguishable(
-        self, client: AsyncClient, sent_emails: list[dict[str, str]]
+        self,
+        console_account,
+        client: AsyncClient,
+        sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
         """A differing message would tell an attacker whether a guessed value
         was ever a real token."""
-        await client.post(
-            "/api/v1/auth/register",
-            json={"email": "same@example.com", "password": "a-long-enough-password"},
-        )
+        await console_account("same@example.com", "a-long-enough-password")
+        await drain_outbox()
         token = token_from_email(sent_emails[0])
         await client.post("/api/v1/auth/verify-email", json={"token": token})
 
@@ -175,17 +183,63 @@ class TestEmailVerification:
         assert response.status_code == 401
 
 
+class TestVerificationMailIsDurable:
+    """The link is queued with the account, then mailed once by the worker."""
+
+    async def test_registration_queues_the_link_instead_of_mailing_inline(
+        self,
+        console_account,
+        client: AsyncClient,
+        db: AsyncSession,
+        sent_emails: list[dict[str, str]],
+        drain_outbox,
+    ) -> None:
+        await console_account("queued@example.com", "a-long-enough-password")
+        assert sent_emails == []
+        [job] = (
+            await db.scalars(
+                select(OutboxMessage).where(
+                    OutboxMessage.event_name == "auth.verification_email"
+                )
+            )
+        ).all()
+
+        await drain_outbox()
+        assert [mail["to"] for mail in sent_emails] == ["queued@example.com"]
+        assert token_from_email(sent_emails[0]) not in str(job.payload)
+
+        await drain_outbox()  # a delivered job never mails twice
+        assert len(sent_emails) == 1
+
+    async def test_an_address_verified_before_delivery_gets_no_mail(
+        self,
+        console_account,
+        client: AsyncClient,
+        db: AsyncSession,
+        sent_emails: list[dict[str, str]],
+        drain_outbox,
+    ) -> None:
+        response = await console_account("early@example.com", "a-long-enough-password")
+        await users_service.mark_email_verified(db, uuid.UUID(response["id"]))
+
+        await drain_outbox()
+        assert sent_emails == []
+
+
 class TestResendVerification:
     async def test_resend_issues_a_working_token(
-        self, client: AsyncClient, sent_emails: list[dict[str, str]]
+        self,
+        console_account,
+        client: AsyncClient,
+        sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
-        await client.post(
-            "/api/v1/auth/register",
-            json={"email": "resend@example.com", "password": "a-long-enough-password"},
-        )
+        await console_account("resend@example.com", "a-long-enough-password")
+        await drain_outbox()
         await client.post(
             "/api/v1/auth/resend-verification", json={"email": "resend@example.com"}
         )
+        await drain_outbox()
         assert len(sent_emails) == 2
 
         response = await client.post(
@@ -195,17 +249,20 @@ class TestResendVerification:
         assert response.status_code == 204
 
     async def test_resend_invalidates_the_previous_token(
-        self, client: AsyncClient, sent_emails: list[dict[str, str]]
+        self,
+        console_account,
+        client: AsyncClient,
+        sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
         """Otherwise every resend leaves another live credential in an inbox."""
-        await client.post(
-            "/api/v1/auth/register",
-            json={"email": "super@example.com", "password": "a-long-enough-password"},
-        )
+        await console_account("super@example.com", "a-long-enough-password")
+        await drain_outbox()
         first_token = token_from_email(sent_emails[0])
         await client.post(
             "/api/v1/auth/resend-verification", json={"email": "super@example.com"}
         )
+        await drain_outbox()
 
         response = await client.post(
             "/api/v1/auth/verify-email", json={"token": first_token}
@@ -213,7 +270,7 @@ class TestResendVerification:
         assert response.status_code == 401
 
     async def test_unknown_address_still_returns_204(
-        self, client: AsyncClient, sent_emails: list[dict[str, str]]
+        self, client: AsyncClient, sent_emails: list[dict[str, str]], drain_outbox
     ) -> None:
         response = await client.post(
             "/api/v1/auth/resend-verification", json={"email": "nobody@example.com"}
@@ -222,12 +279,14 @@ class TestResendVerification:
         assert sent_emails == []
 
     async def test_already_verified_address_sends_nothing(
-        self, client: AsyncClient, sent_emails: list[dict[str, str]]
+        self,
+        console_account,
+        client: AsyncClient,
+        sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
-        await client.post(
-            "/api/v1/auth/register",
-            json={"email": "done@example.com", "password": "a-long-enough-password"},
-        )
+        await console_account("done@example.com", "a-long-enough-password")
+        await drain_outbox()
         await client.post(
             "/api/v1/auth/verify-email",
             json={"token": token_from_email(sent_emails[0])},
@@ -237,6 +296,7 @@ class TestResendVerification:
         response = await client.post(
             "/api/v1/auth/resend-verification", json={"email": "done@example.com"}
         )
+        await drain_outbox()
         assert response.status_code == 204
         assert sent_emails == []
 
@@ -246,12 +306,9 @@ class TestVerificationIsRequiredToLogIn:
     password check so it cannot be used to enumerate accounts."""
 
     async def test_unverified_user_is_refused_with_a_machine_readable_code(
-        self, client: AsyncClient, sent_emails: list[dict[str, str]]
+        self, console_account, client: AsyncClient, sent_emails: list[dict[str, str]]
     ) -> None:
-        await client.post(
-            "/api/v1/auth/register",
-            json={"email": "unver@example.com", "password": "a-long-enough-password"},
-        )
+        await console_account("unver@example.com", "a-long-enough-password")
         response = await client.post(
             "/api/v1/auth/login",
             json={"email": "unver@example.com", "password": "a-long-enough-password"},
@@ -264,16 +321,13 @@ class TestVerificationIsRequiredToLogIn:
         assert "request_id" in body
 
     async def test_wrong_password_on_an_unverified_account_is_still_401(
-        self, client: AsyncClient, sent_emails: list[dict[str, str]]
+        self, console_account, client: AsyncClient, sent_emails: list[dict[str, str]]
     ) -> None:
         """**The enumeration guarantee.** The 403 must be unreachable without
         the correct password, or it becomes an oracle: an attacker could probe
         an email list with any password and read registration status off the
         status code. Wrong password must look identical to unknown address."""
-        await client.post(
-            "/api/v1/auth/register",
-            json={"email": "probe@example.com", "password": "a-long-enough-password"},
-        )
+        await console_account("probe@example.com", "a-long-enough-password")
 
         wrong_password = await client.post(
             "/api/v1/auth/login",
@@ -291,13 +345,15 @@ class TestVerificationIsRequiredToLogIn:
         assert "code" not in unknown_email.json()
 
     async def test_verifying_then_logging_in_succeeds(
-        self, client: AsyncClient, sent_emails: list[dict[str, str]]
+        self,
+        console_account,
+        client: AsyncClient,
+        sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
         """The gate opens once the mailed token is redeemed."""
-        await client.post(
-            "/api/v1/auth/register",
-            json={"email": "opens@example.com", "password": "a-long-enough-password"},
-        )
+        await console_account("opens@example.com", "a-long-enough-password")
+        await drain_outbox()
         blocked = await client.post(
             "/api/v1/auth/login",
             json={"email": "opens@example.com", "password": "a-long-enough-password"},
@@ -318,6 +374,7 @@ class TestVerificationIsRequiredToLogIn:
 
     async def test_inactive_unverified_account_gets_401_not_403(
         self,
+        console_account,
         client: AsyncClient,
         db: AsyncSession,
         sent_emails: list[dict[str, str]],
@@ -325,11 +382,8 @@ class TestVerificationIsRequiredToLogIn:
         """Ordering: the active check runs before the verification check, so a
         disabled account is indistinguishable from a wrong password even when
         the caller has the right one."""
-        registered = await client.post(
-            "/api/v1/auth/register",
-            json={"email": "off@example.com", "password": "a-long-enough-password"},
-        )
-        await users_service.deactivate(db, uuid.UUID(registered.json()["id"]))
+        registered = await console_account("off@example.com", "a-long-enough-password")
+        await users_service.deactivate(db, uuid.UUID(registered["id"]))
 
         response = await client.post(
             "/api/v1/auth/login",
@@ -628,12 +682,14 @@ class TestResetPassword:
         assert response.json()["code"] == "AUTH_RESET_TOKEN_EXPIRED"
 
     async def test_a_verification_token_cannot_reset_a_password(
-        self, client: AsyncClient, sent_emails: list[dict[str, str]]
+        self,
+        console_account,
+        client: AsyncClient,
+        sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
-        await client.post(
-            "/api/v1/auth/register",
-            json={"email": "cross@example.com", "password": "a-long-enough-password"},
-        )
+        await console_account("cross@example.com", "a-long-enough-password")
+        await drain_outbox()
         verification_token = token_from_email(sent_emails[0])
 
         response = await client.post(
@@ -668,7 +724,7 @@ class TestResetPassword:
         sent_emails: list[dict[str, str]],
         drain_outbox,
     ) -> None:
-        """AC-005.3: Password complexity rejects missing sets (uppercase,
+        """AC-105.3: Password complexity rejects missing sets (uppercase,
         lowercase, digits, symbols) with 422 AUTH_PASSWORD_TOO_WEAK.
         """
         token = await self._request_reset(
@@ -692,7 +748,7 @@ class TestResetPassword:
         sent_emails: list[dict[str, str]],
         drain_outbox,
     ) -> None:
-        """AC-005.6: Successful password reset returns 200 with sessionsRevoked."""
+        """AC-105.6: Successful password reset returns 200 with sessionsRevoked."""
         # Open 2 sessions
         s1 = await client.post(
             "/api/v1/auth/login",
@@ -729,7 +785,7 @@ class TestResetPassword:
         sent_emails: list[dict[str, str]],
         drain_outbox,
     ) -> None:
-        """AC-005.8: Audit trail records password reset requested and completed
+        """AC-105.8: Audit trail records password reset requested and completed
         without leaking passwords or tokens into payloads.
         """
         from cbpupsis_shared.domains.audit import service as audit_service
@@ -975,15 +1031,15 @@ class TestChangePassword:
 class TestNothingSensitiveIsPersistedOrLogged:
     async def test_only_a_digest_reaches_the_database(
         self,
+        console_account,
         client: AsyncClient,
         db: AsyncSession,
         sent_emails: list[dict[str, str]],
+        drain_outbox,
     ) -> None:
         """The stored value must not be the value in the email."""
-        await client.post(
-            "/api/v1/auth/register",
-            json={"email": "digest@example.com", "password": "a-long-enough-password"},
-        )
+        await console_account("digest@example.com", "a-long-enough-password")
+        await drain_outbox()
         raw_token = token_from_email(sent_emails[0])
 
         stored = (await db.execute(select(OneTimeToken.token_hash))).scalars().all()
@@ -1009,15 +1065,17 @@ class TestServiceLayer:
         assert await auth_service.forgot_password(db, "nobody@example.com") is None
 
     async def test_tokens_are_scoped_to_one_user(
-        self, db: AsyncSession, sent_emails: list[dict[str, str]]
+        self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox
     ) -> None:
         """A token must verify the user it was issued to, and only them."""
-        first = await auth_service.register(
+        first = await auth_service.create_console_account(
             db, email="first@example.com", password="a-long-enough-password"
         )
-        second = await auth_service.register(
+        await drain_outbox()
+        second = await auth_service.create_console_account(
             db, email="second@example.com", password="a-long-enough-password"
         )
+        await drain_outbox()
         first_token = token_from_email(sent_emails[0])
 
         await auth_service.verify_email(db, first_token)
@@ -1026,11 +1084,12 @@ class TestServiceLayer:
         assert (await users_service.get_by_id(db, second.id)).email_verified_at is None
 
     async def test_consumed_token_is_stamped(
-        self, db: AsyncSession, sent_emails: list[dict[str, str]]
+        self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox
     ) -> None:
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="stamp@example.com", password="a-long-enough-password"
         )
+        await drain_outbox()
         await auth_service.verify_email(db, token_from_email(sent_emails[0]))
 
         record = await db.scalar(

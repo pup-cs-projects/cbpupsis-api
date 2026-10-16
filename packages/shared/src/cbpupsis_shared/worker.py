@@ -4,6 +4,12 @@ Same image, different command — ``python -m cbpupsis_shared.worker`` instead o
 uvicorn. It claims messages the API staged, dispatches them to handlers, and
 records the outcome. Nothing here serves HTTP.
 
+Two ways to run it. The long-running loop (``python -m cbpupsis_shared.worker``)
+suits a container and wakes on LISTEN/NOTIFY. The one-shot drain
+(``python -m cbpupsis_shared.worker --once``, or :func:`lambda_handler` as a
+scheduled Lambda on EventBridge) processes every due message once and exits,
+with no listener: a frozen Lambda cannot hold a LISTEN connection open.
+
 Thin by design, like the app entry points: wiring and a loop. Every rule lives in
 ``cbpupsis_shared.outbox`` or in the handler being dispatched to.
 
@@ -16,7 +22,7 @@ duration, and a crash mid-send would roll the attempt counter back — producing
 infinite retry loop on a poison message. Committing first means a crash leaves
 the message backed off and eventually dead-lettered.
 
-**Handlers are called directly, not through the event bus.** ``EventBus._run``
+**Handlers are called directly, not through the event bus.** ``EventBus.run_handler``
 deliberately swallows handler exceptions so one broken listener cannot break an
 unrelated flow. That is correct for fire-and-forget, and exactly wrong here: the
 relay must learn that a delivery failed, or it marks undelivered messages as
@@ -31,10 +37,13 @@ kill the process means ECS restarts it, which is the behaviour you want.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import contextlib
 import logging
 import signal
+import time
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,7 +74,7 @@ logger = logging.getLogger(__name__)
 #: are awaited, and are allowed to raise. A bus subscriber is fire-and-forget
 #: and cannot report failure, which is the property this dispatch table exists
 #: to avoid inheriting.
-_HANDLERS: dict[str, list] = {}
+HANDLERS: dict[str, list] = {}
 
 
 def register_handler(event_name: str, handler) -> None:
@@ -75,14 +84,14 @@ def register_handler(event_name: str, handler) -> None:
     imported more than once cannot make one message deliver twice. The same
     guard ``audit/subscribers.py`` uses, and load-bearing for the same reason.
     """
-    handlers = _HANDLERS.setdefault(event_name, [])
+    handlers = HANDLERS.setdefault(event_name, [])
     if handler not in handlers:
         handlers.append(handler)
 
 
 def handlers_for(event_name: str) -> tuple:
     """Return the handlers registered for ``event_name``."""
-    return tuple(_HANDLERS.get(event_name, []))
+    return tuple(HANDLERS.get(event_name, []))
 
 
 async def dispatch(message: OutboxMessage) -> None:
@@ -93,8 +102,8 @@ async def dispatch(message: OutboxMessage) -> None:
     them — would mark the message delivered when it was not.
 
     A message with no registered handler is **not** an error: an event may be
-    emitted before anything subscribes to it (``item.created`` is in exactly
-    that state today). It is logged and marked dispatched, because retrying it
+    emitted before anything subscribes to it, or in a process that registered
+    only some handlers. It is logged and marked dispatched, because retrying it
     forever would fill the backlog with work nobody wants done.
     """
     handlers = handlers_for(message.event_name)
@@ -147,7 +156,7 @@ async def process_batch(db: AsyncSession) -> int:
     return len(messages)
 
 
-async def _tick() -> int:
+async def poll_once() -> int:
     """One poll: process a batch and emit the heartbeat. Its own session.
 
     A fresh session per tick rather than one held for the worker's lifetime: a
@@ -167,7 +176,7 @@ async def _tick() -> int:
     return claimed
 
 
-def _install_signal_handlers(shutdown: asyncio.Event) -> None:
+def install_signal_handlers(shutdown: asyncio.Event) -> None:
     """Ask the loop to set ``shutdown`` on SIGTERM or SIGINT.
 
     ``loop.add_signal_handler`` rather than ``signal.signal``: the latter can
@@ -188,7 +197,7 @@ def _install_signal_handlers(shutdown: asyncio.Event) -> None:
             loop.add_signal_handler(sig, shutdown.set)
 
 
-async def _wait_for_work(listener: WakeupListener, shutdown: asyncio.Event) -> None:
+async def wait_for_work(listener: WakeupListener, shutdown: asyncio.Event) -> None:
     """Sleep until there is work, the poll floor expires, or we are shutting down.
 
     Both waits run concurrently and the loser is cancelled, so a SIGTERM during
@@ -209,17 +218,8 @@ async def _wait_for_work(listener: WakeupListener, shutdown: asyncio.Event) -> N
         task.exception()  # retrieve, so a failure is not reported at GC time
 
 
-async def run() -> None:
-    """The worker loop. Runs until SIGTERM, then finishes cleanly."""
-    await validate_runtime_engine(engine, settings.audit_runtime_role)
-    if settings.outbox_listener_database_url:
-        failures = await check_database(
-            settings.outbox_listener_database_url, settings.audit_runtime_role
-        )
-        if failures:
-            raise RuntimeError(
-                "Outbox listener must use a restricted runtime connection"
-            )
+def register_durable_handlers() -> None:
+    """Register every durable handler. Idempotent, so safe on each invocation."""
     # Imported here rather than at module scope: subscribers.py imports this
     # module to register handlers, so a top-level import would be circular.
     from cbpupsis_shared.domains.audit.subscribers import (  # noqa: PLC0415
@@ -236,8 +236,66 @@ async def run() -> None:
     register_audit_subscribers()
     register_notification_subscribers()
 
+
+async def drain_once(*, deadline: float | None = None) -> int:
+    """Process every due message, then return how many were claimed.
+
+    No LISTEN/NOTIFY: it polls until a batch comes back empty, or until
+    ``deadline`` (a ``time.monotonic()`` value) passes, so a scheduled run
+    stops before its time limit rather than being killed mid-batch. A message
+    that fails is backed off by its claim, so it is not reclaimed in this run.
+    """
+    total = 0
+    while deadline is None or time.monotonic() < deadline:
+        claimed = await poll_once()
+        if not claimed:
+            break
+        total += claimed
+    return total
+
+
+async def run_once(*, deadline: float | None = None) -> int:
+    """Validate, register handlers, drain once, and release the connections.
+
+    The engine is disposed every time: on Lambda each invocation runs its own
+    event loop, and a pooled connection bound to the previous one fails.
+    """
+    try:
+        await validate_runtime_engine(engine, settings.audit_runtime_role)
+        register_durable_handlers()
+        claimed = await drain_once(deadline=deadline)
+        logger.info("outbox.drain.finished", extra={"claimed": claimed})
+        return claimed
+    finally:
+        await engine.dispose()
+
+
+#: Time left for the last batch and the engine shutdown before Lambda's limit.
+LAMBDA_MARGIN_SECONDS = 30.0
+
+
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, int]:
+    """AWS Lambda entry point for the scheduled (EventBridge) one-shot drain."""
+    remaining = context.get_remaining_time_in_millis() / 1000
+    deadline = time.monotonic() + max(remaining - LAMBDA_MARGIN_SECONDS, 0.0)
+    return {"claimed": asyncio.run(run_once(deadline=deadline))}
+
+
+async def run() -> None:
+    """The worker loop. Runs until SIGTERM, then finishes cleanly."""
+    await validate_runtime_engine(engine, settings.audit_runtime_role)
+    if settings.outbox_listener_database_url:
+        failures = await check_database(
+            settings.outbox_listener_database_url, settings.audit_runtime_role
+        )
+        if failures:
+            raise RuntimeError(
+                "Outbox listener must use a restricted runtime connection"
+            )
+    register_durable_handlers()
+
     shutdown = asyncio.Event()
-    _install_signal_handlers(shutdown)
+    install_signal_handlers(shutdown)
 
     logger.info(
         "outbox.worker.started",
@@ -249,7 +307,7 @@ async def run() -> None:
     try:
         async with WakeupListener() as listener:
             while not shutdown.is_set():
-                claimed = await _tick()
+                claimed = await poll_once()
                 if claimed:
                     # A full batch probably means more is waiting; loop
                     # immediately rather than sleeping through a backlog.
@@ -265,16 +323,23 @@ async def run() -> None:
                 # Racing shutdown against it is what keeps SIGTERM responsive.
                 # Waiting on the listener alone would leave a draining task idle
                 # for the whole interval and eventually SIGKILLed.
-                await _wait_for_work(listener, shutdown)
+                await wait_for_work(listener, shutdown)
     finally:
         logger.info("outbox.worker.stopping")
         await engine.dispose()
 
 
-def main() -> None:
-    """Entry point for ``python -m cbpupsis_shared.worker``."""
+def main(argv: list[str] | None = None) -> None:
+    """Entry point for ``python -m cbpupsis_shared.worker [--once]``."""
+    parser = argparse.ArgumentParser(prog="python -m cbpupsis_shared.worker")
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="drain every due message once and exit (no LISTEN/NOTIFY)",
+    )
+    args = parser.parse_args(argv)
     with contextlib.suppress(KeyboardInterrupt):
-        asyncio.run(run())
+        asyncio.run(run_once() if args.once else run())
 
 
 if __name__ == "__main__":
@@ -282,13 +347,13 @@ if __name__ == "__main__":
     #
     # `python -m cbpupsis_shared.worker` executes this file as `__main__`, and
     # anything that later does `from cbpupsis_shared import worker` imports it a
-    # SECOND time under its real name. Two module objects, two `_HANDLERS`
+    # SECOND time under its real name. Two module objects, two `HANDLERS`
     # dicts — so subscribers register into one while the loop reads the other,
     # and every message is discarded as "no handler" while the worker looks
     # perfectly healthy.
     #
     # Found exactly that way: the running worker logged `[__main__]`, not
     # `[cbpupsis_shared.worker]`. Importing here forces both names onto one object.
-    from cbpupsis_shared.worker import main as _main
+    from cbpupsis_shared.worker import main as imported_main
 
-    _main()
+    imported_main()

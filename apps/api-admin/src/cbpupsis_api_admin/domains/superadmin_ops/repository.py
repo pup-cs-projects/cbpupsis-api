@@ -23,3 +23,16 @@ async def lock_backup(db: AsyncSession, backup_id: uuid.UUID) -> SystemBackup | 
         .with_for_update()
         .execution_options(populate_existing=True)
     )
+
+
+def update_backup(backup: SystemBackup, **fields: object) -> SystemBackup:
+    """Stage restore-state changes on a locked backup row.
+
+    On commit, using the supplied fields::
+
+        UPDATE system_backups SET restore_status = :restore_status, ...
+        WHERE id = :id
+    """
+    for name, value in fields.items():
+        setattr(backup, name, value)
+    return backup

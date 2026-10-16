@@ -25,10 +25,20 @@ the honest version is the argument for a broker later:
   evidence that anything happened, only that it was queued.
 - Ordering across two publishes is not guaranteed.
 
-So this is fit for side-effects that may be lost — analytics, a cache refresh, a
-nice-to-have notification. Anything that must not be lost (a payment capture, a
-provisioning step) needs either a durable outbox in the same transaction as the
-write, or a real broker. Both are deliberate additions; neither is what this is.
+On AWS Lambda this is worse, not better: the runtime freezes the instance once
+the response is returned, so a task scheduled by ``publish`` may never run.
+
+**Which handlers belong where.** Only side-effects that are safe to lose
+(analytics, a cache refresh) may subscribe here. Anything whose loss matters
+goes through the transactional outbox (``cbpupsis_shared.outbox``), staged in
+the same transaction as the write and delivered by the worker:
+
+- Outbox, must not be lost: every audited event (``AUDITED_EVENTS`` in
+  ``audit.constants``), every notification (``NOTIFIED_EVENTS`` in
+  ``notifications.constants``, including ``item.created``), the password reset
+  email, the password-changed and account-locked notices.
+- Bus, safe to lose: none today. No production code subscribes to this bus;
+  it stays as the seam for future best-effort listeners.
 
 ``publish_sync`` is the escape hatch for the case where a caller genuinely needs
 the handlers to have finished — a test asserting on a side-effect, or a script
@@ -94,7 +104,7 @@ class EventBus:
         back later.
         """
         for handler in self._handlers.get(event.name, []):
-            task = asyncio.create_task(self._run(handler, event))
+            task = asyncio.create_task(self.run_handler(handler, event))
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
 
@@ -106,9 +116,9 @@ class EventBus:
         ``publish`` scheduled. Failures are still isolated and logged.
         """
         for handler in self._handlers.get(event.name, []):
-            await self._run(handler, event)
+            await self.run_handler(handler, event)
 
-    async def _run(self, handler: Handler, event: Event) -> None:
+    async def run_handler(self, handler: Handler, event: Event) -> None:
         """Run one handler, routing any failure to the error sink.
 
         The explicit sink is what keeps background dispatch honest: a task whose

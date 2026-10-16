@@ -11,7 +11,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -87,11 +87,14 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = 15
     #: Long-lived but single-use: rotated on every refresh (see auth.service).
     refresh_token_ttl_days: int = 30
+    #: Every role's session ends after this much inactivity, server-side.
+    session_idle_timeout_minutes: int = Field(default=15, ge=1)
 
-    # --- Administrative MFA ---
+    # --- Sign-in MFA and lockout (every role) ---
     #: Short-lived and non-privileged: a challenge proves only that the password
-    #: step completed, never that the holder may call an administrative route.
+    #: step completed, never that the holder may call a protected route.
     mfa_challenge_ttl_minutes: int = 5
+    #: Failed password or MFA steps per lockout subject before a temporary lock.
     mfa_lockout_threshold: int = 5
     mfa_lockout_window_minutes: int = 15
     mfa_lockout_minutes: int = 15
@@ -112,6 +115,15 @@ class Settings(BaseSettings):
     #: Shared-store address limits apply equally to known and unknown addresses.
     password_reset_request_limit: int = Field(default=3, ge=1)
     password_reset_request_window_seconds: int = Field(default=3600, ge=1)
+
+    # --- Superadmin-created accounts ---
+    #: How long a system-generated temporary password can still sign in.
+    temporary_password_ttl_days: int = Field(default=7, ge=1)
+    #: CSV import bounds. Every row costs one bcrypt hash (about 37 ms each on 8
+    #: threads at 12 rounds), so 500 rows is roughly 20 seconds of hashing in one
+    #: request; 5000 would be minutes and outlive any gateway timeout.
+    user_import_max_rows: int = Field(default=500, ge=1)
+    user_import_max_bytes: int = Field(default=2 * 1024 * 1024, ge=1)
 
     # --- Outbox (durable side effects) ---
     #: How long the worker waits between claim queries when nothing wakes it.
@@ -165,13 +177,12 @@ class Settings(BaseSettings):
     #: tests and makes them order-dependent — the whole suite then fails
     #: depending on which test ran first.
     rate_limit_enabled: bool = True
-    #: Where the counters live. ``memory://`` keeps them in the process, which
-    #: means the limit is enforced **per replica**: with N replicas behind a load
-    #: balancer a caller effectively gets N times the configured allowance, and
-    #: counters reset on every deploy. That is fine for a single instance and for
-    #: local development. A multi-replica deployment that needs the limit to be
-    #: global must point this at shared storage — ``redis://host:6379`` — which
-    #: is a configuration change only, no code change.
+    #: Where the counters live. ``memory://`` keeps them in the process, so the
+    #: limit is enforced **per instance**: on Lambda every concurrent instance
+    #: has its own counters, which reset on every cold start, so a caller gets
+    #: the allowance many times over. Fine for local development and tests;
+    #: production must use shared storage (``redis://host:6379``), and settings
+    #: validation refuses to start production on ``memory://``.
     rate_limit_storage_uri: str = "memory://"
     #: Per-endpoint limits, in slowapi/limits syntax ("5/minute", "100/hour").
     #: Settings rather than literals in the decorators so an operator can retune
@@ -187,9 +198,6 @@ class Settings(BaseSettings):
     #: attempts a minute is far above what a human retyping a password needs and
     #: far below what makes an online guessing attack worthwhile.
     rate_limit_login: str = "10/minute"
-    #: Signup spam: enough for a shared office NAT to register a few accounts,
-    #: too few to script thousands.
-    rate_limit_register: str = "5/hour"
 
     # --- Email (AWS SES) ---
     #: SES region. Only consulted when ``ses_from_email`` is set.
@@ -225,7 +233,7 @@ class Settings(BaseSettings):
 
     @field_validator("jwt_secret")
     @classmethod
-    def _reject_weak_secret(cls, value: SecretStr) -> SecretStr:
+    def reject_weak_secret(cls, value: SecretStr) -> SecretStr:
         """Reject secrets too short to resist offline brute-forcing.
 
         HS256 security rests entirely on this value; a 12-character secret is
@@ -239,6 +247,19 @@ class Settings(BaseSettings):
                 'print(secrets.token_urlsafe(48))"'
             )
         return value
+
+    @model_validator(mode="after")
+    def require_shared_rate_limit_storage(self) -> Settings:
+        """Refuse production with per-instance rate-limit counters."""
+        if self.environment == "production" and self.rate_limit_storage_uri.startswith(
+            "memory://"
+        ):
+            raise ValueError(
+                "rate_limit_storage_uri must be shared storage in production "
+                "(for example redis://host:6379), not memory://: each instance "
+                "would keep its own counters."
+            )
+        return self
 
 
 @lru_cache

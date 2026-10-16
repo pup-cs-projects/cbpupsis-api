@@ -16,16 +16,21 @@ from __future__ import annotations
 
 from cbpupsis_core.exceptions import (
     AppError,
-    ConflictError,
     EmailNotVerifiedError,
     ForbiddenError,
+    NotFoundError,
     UnauthorizedError,
+    ValidationError,
 )
 from cbpupsis_shared.domains.auth.constants import (
     INVALID_CREDENTIALS_MESSAGE,
     INVALID_TOKEN_MESSAGE,
+    PASSWORD_CHANGE_REQUIRED_MESSAGE,
     RESET_TOKEN_EXPIRED_MESSAGE,
     RESET_TOKEN_USED_MESSAGE,
+    RESOURCE_NOT_FOUND_MESSAGE,
+    SESSION_ENDED_MESSAGE,
+    TEMPORARY_PASSWORD_EXPIRED_MESSAGE,
 )
 
 
@@ -41,10 +46,109 @@ class SuperadminRoleRequiredError(AuthError, ForbiddenError):
 
 
 class AuthSessionExpiredError(AuthError, UnauthorizedError):
+    """The server-side session is missing or idle past the timeout (HTTP 401).
+
+    Shares its code and message with :class:`SessionExpiredError`: the client
+    does the same thing either way, while the class still says which happened.
+    """
+
     code = "AUTH_SESSION_EXPIRED"
 
     def __init__(self) -> None:
-        super().__init__("Session expired; sign in again")
+        super().__init__(SESSION_ENDED_MESSAGE)
+
+
+class IdentifierSignInFailedError(AuthError, UnauthorizedError):
+    """An institutional-identifier sign-in failed (HTTP 401).
+
+    Raised identically for an unknown identifier, a wrong password, a wrong
+    birthdate, and an inactive account. Callers pass their role's message
+    constant, never a message describing which check failed.
+    """
+
+    code = "AUTH_FAILED"
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class IdentifierFormatInvalidError(AuthError, ValidationError):
+    """An institutional identifier failed its format rule (HTTP 422).
+
+    Raised before any lookup or password hash, so malformed input costs nothing.
+    """
+
+    code = "AUTH_ID_FORMAT_INVALID"
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class AccountLockedError(AuthError):
+    """Too many failed sign-in steps in the rolling window (HTTP 423)."""
+
+    status_code = 423
+    code = "AUTH_ACCOUNT_LOCKED"
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        retry_after = max(1, retry_after_seconds)
+        super().__init__(
+            "Account temporarily locked after repeated sign-in failures",
+            response_fields={"retry_after_seconds": retry_after},
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
+class InvalidMfaError(AuthError, UnauthorizedError):
+    code = "AUTH_MFA_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__("The security code or hardware-key response is invalid")
+
+
+class MfaCodeReusedError(AuthError, UnauthorizedError):
+    code = "AUTH_MFA_CODE_REUSED"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "That security code has already been used; enter the current code"
+        )
+
+
+class MfaEnrollmentRequiredError(AuthError, ForbiddenError):
+    code = "AUTH_MFA_ENROLLMENT_REQUIRED"
+
+    def __init__(self) -> None:
+        super().__init__("Set up multi-factor authentication to continue")
+
+
+class MfaRequiredError(AuthError, UnauthorizedError):
+    code = "AUTH_MFA_REQUIRED"
+
+    def __init__(self) -> None:
+        super().__init__("A second factor is required")
+
+
+class InsufficientRoleError(AuthError, ForbiddenError):
+    """The session is not a current MFA-completed session of the needed role."""
+
+    code = "AUTH_INSUFFICIENT_ROLE"
+
+    def __init__(self) -> None:
+        super().__init__("This action is not available to your role")
+
+
+class ResourceNotFoundError(AuthError, NotFoundError):
+    """A record is absent or outside the caller's reach (HTTP 404).
+
+    One class for every role's scope check, so "not yours" and "does not exist"
+    can never drift into two different bodies.
+    """
+
+    code = "RESOURCE_NOT_FOUND"
+
+    def __init__(self) -> None:
+        super().__init__(RESOURCE_NOT_FOUND_MESSAGE)
 
 
 class InvalidCredentialsError(AuthError, UnauthorizedError):
@@ -118,15 +222,30 @@ class IncorrectCurrentPasswordError(AuthError, UnauthorizedError):
         super().__init__("Current password is incorrect")
 
 
-class EmailAlreadyRegisteredError(AuthError, ConflictError):
-    """Registration hit the unique constraint on the email column (HTTP 409).
+class PasswordChangeRequiredError(AuthError, ForbiddenError):
+    """The account still holds a system-issued temporary password (HTTP 403).
 
-    Raised from the ``IntegrityError``, not from a prior SELECT: checking first
-    leaves a race between the check and the insert under concurrent signups.
+    Every authenticated route answers this until the user changes it; only the
+    password change and the logout routes stay open.
     """
 
+    code = "PASSWORD_CHANGE_REQUIRED"
+
     def __init__(self) -> None:
-        super().__init__("Email already registered")
+        super().__init__(PASSWORD_CHANGE_REQUIRED_MESSAGE)
+
+
+class TemporaryPasswordExpiredError(AuthError, UnauthorizedError):
+    """A correct temporary password used after its expiry (HTTP 401).
+
+    Only raised once the password (and, for students, the birthdate) checked
+    out, so it tells nothing to a caller who does not already hold it.
+    """
+
+    code = "AUTH_TEMPORARY_PASSWORD_EXPIRED"
+
+    def __init__(self) -> None:
+        super().__init__(TEMPORARY_PASSWORD_EXPIRED_MESSAGE)
 
 
 class UnverifiedEmailError(AuthError, EmailNotVerifiedError):
@@ -183,7 +302,7 @@ class SessionExpiredError(AuthError, UnauthorizedError):
     code = "AUTH_SESSION_EXPIRED"
 
     def __init__(self) -> None:
-        super().__init__("Your session has ended. Sign in again.")
+        super().__init__(SESSION_ENDED_MESSAGE)
 
 
 class InvalidEmailAddressError(AuthError):

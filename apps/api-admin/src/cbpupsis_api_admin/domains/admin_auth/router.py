@@ -1,13 +1,15 @@
-"""HTTP boundary for Admin credential and MFA sign-in."""
+"""HTTP boundary for Admin and Superadmin credential and MFA sign-in."""
 
 from __future__ import annotations
-
-import ipaddress
 
 from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_api_admin.domains.admin_auth import service
+from cbpupsis_api_admin.domains.admin_auth.constants import (
+    ADMIN_SESSION_COOKIE,
+    ADMIN_SESSION_COOKIE_PATH,
+)
 from cbpupsis_api_admin.domains.admin_auth.dependencies import (
     AdminSession,
     require_admin_session,
@@ -31,12 +33,14 @@ from cbpupsis_api_admin.domains.admin_auth.schemas import (
     WebAuthnEnrollmentRequest,
 )
 from cbpupsis_core.config import settings
-from cbpupsis_core.exceptions import ValidationError
-from cbpupsis_core.middleware import rate_limit
+from cbpupsis_core.middleware import client_ip_or_none, rate_limit
 from cbpupsis_database.session import get_db
+from cbpupsis_shared.domains.auth.constants import ROLE_ADMIN, ROLE_SUPERADMIN
 from cbpupsis_shared.domains.auth.dependencies import (
     CurrentUser,
+    clear_refresh_cookie,
     require_superadmin_session,
+    set_refresh_cookie,
 )
 
 router = APIRouter()
@@ -45,23 +49,16 @@ superadmin_auth_router = APIRouter()
 superadmin_protected_router = APIRouter()
 
 
-def _session_address(request: Request) -> str:
-    try:
-        host = request.client.host if request.client else ""
-        if "%" in host:
-            raise ValueError
-        return str(ipaddress.ip_address(host))
-    except ValueError as exc:
-        raise ValidationError(
-            "A valid client address is required", code="INVALID_CLIENT_ADDRESS"
-        ) from exc
+def _device(request: Request) -> str:
+    return request.headers.get("user-agent", "")
 
 
 @superadmin_auth_router.post("/login", response_model=SuperadminLoginChallenge)
 @rate_limit("login")
 async def login_superadmin(
     request: Request, data: AdminLoginRequest, db: AsyncSession = Depends(get_db)
-):
+) -> SuperadminLoginChallenge:
+    """Verify a Superadmin password; returns only an MFA challenge."""
     return await service.login_superadmin(db, email=data.email, password=data.password)
 
 
@@ -70,7 +67,7 @@ async def login_superadmin(
 )
 async def enroll_superadmin(
     data: TotpEnrollmentRequest, db: AsyncSession = Depends(get_db)
-):
+) -> SuperadminEnrollmentRead:
     return await service.enroll_superadmin_totp(
         db, challenge_token=data.challenge_token
     )
@@ -79,60 +76,76 @@ async def enroll_superadmin(
 @superadmin_auth_router.post("/mfa/totp/confirm", response_model=SuperadminTokenPair)
 async def confirm_superadmin(
     request: Request,
+    response: Response,
     data: TotpEnrollmentConfirmRequest,
     db: AsyncSession = Depends(get_db),
-):
-    return await service.verify_superadmin_totp(
+) -> SuperadminTokenPair:
+    pair = await service.verify_superadmin_totp(
         db,
         challenge_token=data.challenge_token,
         code=data.code,
         enrollment=True,
-        ip_address=_session_address(request),
-        device_info=request.headers.get("user-agent", "")[:512],
+        ip_address=client_ip_or_none(request),
+        device_info=_device(request),
     )
+    set_refresh_cookie(response, pair.refresh_token, role=ROLE_SUPERADMIN)
+    return pair
 
 
 @superadmin_auth_router.post("/mfa/verify", response_model=SuperadminTokenPair)
 async def verify_superadmin(
     request: Request,
+    response: Response,
     data: TotpEnrollmentConfirmRequest,
     db: AsyncSession = Depends(get_db),
-):
-    return await service.verify_superadmin_totp(
+) -> SuperadminTokenPair:
+    pair = await service.verify_superadmin_totp(
         db,
         challenge_token=data.challenge_token,
         code=data.code,
         enrollment=False,
-        ip_address=_session_address(request),
-        device_info=request.headers.get("user-agent", "")[:512],
+        ip_address=client_ip_or_none(request),
+        device_info=_device(request),
     )
+    set_refresh_cookie(response, pair.refresh_token, role=ROLE_SUPERADMIN)
+    return pair
 
 
 @superadmin_auth_router.post("/refresh", response_model=SuperadminTokenPair)
-async def refresh_superadmin(data: RefreshRequest, db: AsyncSession = Depends(get_db)):
-    return await service.refresh_superadmin(db, data)
+async def refresh_superadmin(
+    data: RefreshRequest, response: Response, db: AsyncSession = Depends(get_db)
+) -> SuperadminTokenPair:
+    pair = await service.refresh_superadmin(db, data)
+    set_refresh_cookie(response, pair.refresh_token, role=ROLE_SUPERADMIN)
+    return pair
 
 
 @superadmin_auth_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout_superadmin(data: RefreshRequest, db: AsyncSession = Depends(get_db)):
+async def logout_superadmin(
+    data: RefreshRequest, response: Response, db: AsyncSession = Depends(get_db)
+) -> None:
     await service.logout_superadmin(db, data)
+    clear_refresh_cookie(response, role=ROLE_SUPERADMIN)
 
 
 @superadmin_protected_router.get("/me", response_model=SuperadminSessionRead)
-async def superadmin_me(user: CurrentUser = Depends(require_superadmin_session)):
+async def superadmin_me(
+    user: CurrentUser = Depends(require_superadmin_session),
+) -> SuperadminSessionRead:
     return SuperadminSessionRead(id=user.id, email=user.email)
 
 
-def _set_admin_cookie(response: Response, token: str) -> None:
+def _set_admin_cookies(response: Response, pair: AdminTokenPair) -> None:
     response.set_cookie(
-        key="admin_session",
-        value=token,
+        key=ADMIN_SESSION_COOKIE,
+        value=pair.access_token,
         max_age=settings.access_token_ttl_minutes * 60,
-        path="/api/v1/admin",
+        path=ADMIN_SESSION_COOKIE_PATH,
         secure=True,
         httponly=True,
         samesite="lax",
     )
+    set_refresh_cookie(response, pair.refresh_token, role=ROLE_ADMIN)
 
 
 @router.post("/login", response_model=AdminLoginChallenge)
@@ -148,6 +161,7 @@ async def login_admin(
 
 @router.post("/mfa/verify", response_model=AdminTokenPair)
 async def verify_mfa(
+    request: Request,
     data: MfaVerifyRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
@@ -158,8 +172,10 @@ async def verify_mfa(
         challenge_token=data.challenge_token,
         code=data.code,
         assertion=data.assertion,
+        ip_address=client_ip_or_none(request),
+        device_info=_device(request),
     )
-    _set_admin_cookie(response, pair.access_token)
+    _set_admin_cookies(response, pair)
     return pair
 
 
@@ -174,15 +190,20 @@ async def enroll_totp(
 
 @router.post("/mfa/totp/confirm", response_model=AdminTokenPair)
 async def confirm_totp(
+    request: Request,
     data: TotpEnrollmentConfirmRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> AdminTokenPair:
     """Prove the enrolled seed and issue the first Admin session."""
     pair = await service.confirm_totp_enrollment(
-        db, challenge_token=data.challenge_token, code=data.code
+        db,
+        challenge_token=data.challenge_token,
+        code=data.code,
+        ip_address=client_ip_or_none(request),
+        device_info=_device(request),
     )
-    _set_admin_cookie(response, pair.access_token)
+    _set_admin_cookies(response, pair)
     return pair
 
 
@@ -199,15 +220,20 @@ async def enroll_webauthn(
 
 @router.post("/mfa/webauthn/confirm", response_model=AdminTokenPair)
 async def confirm_webauthn(
+    request: Request,
     data: WebAuthnEnrollmentConfirmRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> AdminTokenPair:
     """Verify registration and issue the first Admin session."""
     pair = await service.confirm_webauthn_enrollment(
-        db, challenge_token=data.challenge_token, credential=data.credential
+        db,
+        challenge_token=data.challenge_token,
+        credential=data.credential,
+        ip_address=client_ip_or_none(request),
+        device_info=_device(request),
     )
-    _set_admin_cookie(response, pair.access_token)
+    _set_admin_cookies(response, pair)
     return pair
 
 
@@ -217,9 +243,9 @@ async def refresh_admin(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> AdminTokenPair:
-    """Rotate an Admin session and renew its hardened cookie."""
+    """Rotate an Admin session and renew its cookies."""
     pair = await service.refresh_admin(db, data)
-    _set_admin_cookie(response, pair.access_token)
+    _set_admin_cookies(response, pair)
     return pair
 
 
@@ -229,15 +255,16 @@ async def logout_admin(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Revoke the refresh token and clear the Admin cookie."""
+    """End the session, revoke the refresh token, and clear the cookies."""
     await service.logout_admin(db, data)
     response.delete_cookie(
-        "admin_session",
-        path="/api/v1/admin",
+        ADMIN_SESSION_COOKIE,
+        path=ADMIN_SESSION_COOKIE_PATH,
         secure=True,
         httponly=True,
         samesite="lax",
     )
+    clear_refresh_cookie(response, role=ROLE_ADMIN)
 
 
 @protected_router.get("/me", response_model=AdminSessionRead)

@@ -36,15 +36,18 @@ from cbpupsis_core.emails.templates import (
     PASSWORD_CHANGED_SUBJECT,
     PASSWORD_RESET_SUBJECT,
     VERIFICATION_SUBJECT,
+    WELCOME_SUBJECT,
     password_changed_email,
     password_reset_email,
     verification_email,
+    welcome_email,
 )
 
 __all__ = [
     "PASSWORD_CHANGED_SUBJECT",
     "PASSWORD_RESET_SUBJECT",
     "VERIFICATION_SUBJECT",
+    "WELCOME_SUBJECT",
     "ConsoleEmailSender",
     "EmailSender",
     "SESEmailSender",
@@ -53,4 +56,5 @@ __all__ = [
     "password_reset_email",
     "send_email",
     "verification_email",
+    "welcome_email",
 ]

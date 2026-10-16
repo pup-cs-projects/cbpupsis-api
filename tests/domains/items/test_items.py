@@ -7,17 +7,18 @@ classic IDOR vulnerability, and a permission check alone does not close it.
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_api_student.domains.items import service as items_service
-from cbpupsis_core.events import Event, event_bus
 from cbpupsis_core.exceptions import ForbiddenError, NotFoundError
+from cbpupsis_database.models.notifications import Notification
+from cbpupsis_database.models.outbox import OutboxMessage
 
 
 class TestItemService:
@@ -94,19 +95,31 @@ class TestObjectLevelAuthorization:
         assert updated.name == "Renamed"
 
     async def test_stranger_may_not_update(self, db: AsyncSession) -> None:
-        """Even with UpdateItem granted, another user's item is off limits."""
+        """Another user's item is off limits, and answers as if it were absent."""
         item = await items_service.create_item(
             db, owner_id=uuid.uuid4(), name="Not Yours", price=Decimal("10.00")
         )
-        with pytest.raises(ForbiddenError):
+        with pytest.raises(NotFoundError):
             await items_service.update_item(db, item.id, uuid.uuid4(), name="Hijacked")
 
     async def test_stranger_may_not_delete(self, db: AsyncSession) -> None:
         item = await items_service.create_item(
             db, owner_id=uuid.uuid4(), name="Not Yours", price=Decimal("10.00")
         )
-        with pytest.raises(ForbiddenError):
+        with pytest.raises(NotFoundError):
             await items_service.delete_item(db, item.id, uuid.uuid4())
+
+    async def test_a_reader_of_all_items_who_may_not_moderate_gets_403(
+        self, db: AsyncSession, grant
+    ) -> None:
+        """ReadAllItem can already see the item, so the 403 confirms nothing."""
+        reader = uuid.uuid4()
+        await grant(reader, "ReadAllItem")
+        item = await items_service.create_item(
+            db, owner_id=uuid.uuid4(), name="Visible", price=Decimal("10.00")
+        )
+        with pytest.raises(ForbiddenError):
+            await items_service.update_item(db, item.id, reader, name="Hijacked")
 
     async def test_moderator_may_update_any_item(self, db: AsyncSession, grant) -> None:
         """The deliberate escape hatch: ModerateItem overrides ownership."""
@@ -208,71 +221,65 @@ class TestItemEndpoints:
             json={"name": "Hijacked"},
             headers=auth_headers,
         )
-        assert response.status_code == 403
+        assert response.status_code == 404
+
+    async def test_deleting_someone_elses_item_answers_404(
+        self,
+        client: AsyncClient,
+        db: AsyncSession,
+        auth_headers: dict[str, str],
+        registered_user: dict[str, str],
+        grant,
+    ) -> None:
+        await grant(uuid.UUID(registered_user["id"]), "DeleteItem")
+        someone_else = await items_service.create_item(
+            db, owner_id=uuid.uuid4(), name="Theirs", price=Decimal("10.00")
+        )
+
+        response = await client.delete(
+            f"/api/v1/items/{someone_else.id}", headers=auth_headers
+        )
+        assert response.status_code == 404
 
 
 class TestEvents:
-    async def test_creating_an_item_publishes_an_event(self, db: AsyncSession) -> None:
-        received: list[Event] = []
+    """``item.created`` drives the owner's notification, so it is durable."""
 
-        async def handler(event: Event) -> None:
-            received.append(event)
-
-        event_bus.subscribe("item.created", handler)
-        item = await items_service.create_item(
-            db, owner_id=uuid.uuid4(), name="Watched", price=Decimal("1.00")
-        )
-
-        # Dispatch is in the background, so publish() returning does not mean
-        # the handler has run — draining is what makes the assertion sound.
-        # Asserting without it would pass or fail on scheduling luck.
-        await event_bus.drain()
-
-        assert len(received) == 1
-        assert received[0].payload["item_id"] == str(item.id)
-
-    async def test_publishing_does_not_wait_for_a_slow_handler(
+    async def test_creating_an_item_stages_its_event_in_the_same_transaction(
         self, db: AsyncSession
     ) -> None:
-        """The point of background dispatch: a slow listener must not be added
-        to the latency of the request that triggered it."""
-        started = asyncio.Event()
-        release = asyncio.Event()
-
-        async def slow(event: Event) -> None:
-            started.set()
-            await release.wait()
-
-        event_bus.subscribe("item.created", slow)
-
-        # Returns while the handler is still parked on release.wait().
+        owner_id = uuid.uuid4()
         item = await items_service.create_item(
-            db, owner_id=uuid.uuid4(), name="Fast", price=Decimal("1.00")
+            db, owner_id=owner_id, name="Watched", price=Decimal("1.00")
         )
-        assert item.id is not None
+        item_id = item.id
+        await db.rollback()  # anything not committed with the item is gone
 
-        await asyncio.wait_for(started.wait(), timeout=1)
-        release.set()
-        await event_bus.drain()
+        [message] = (
+            await db.scalars(
+                select(OutboxMessage).where(OutboxMessage.event_name == "item.created")
+            )
+        ).all()
+        assert message.payload == {"item_id": str(item_id), "owner_id": str(owner_id)}
 
-    async def test_a_failing_handler_does_not_break_the_publisher(
-        self, db: AsyncSession
+    async def test_the_owner_is_notified_through_the_worker(
+        self, db: AsyncSession, make_user, drain_outbox
     ) -> None:
-        """A broken listener must not roll back the action that triggered it."""
-
-        async def broken(event: Event) -> None:
-            raise RuntimeError("handler is down")
-
-        event_bus.subscribe("item.created", broken)
-        item = await items_service.create_item(
-            db, owner_id=uuid.uuid4(), name="Resilient", price=Decimal("1.00")
+        owner = await make_user("owner@example.com")
+        await items_service.create_item(
+            db, owner_id=owner.id, name="Mine", price=Decimal("1.00")
         )
-        assert item.id is not None
 
-        # Drained so the handler has actually run and raised by now: without
-        # this the test would pass even if the failure were never isolated,
-        # because the task would still be pending when the assertion ran.
-        await event_bus.drain()
+        assert await drain_outbox() >= 1
+        notices = (
+            await db.scalars(
+                select(Notification).where(
+                    Notification.user_id == owner.id,
+                    Notification.notification_type == "item.created",
+                )
+            )
+        ).all()
+        assert len(notices) == 1
 
 
 class TestItemsArePrivateByDefault:

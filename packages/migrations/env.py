@@ -14,12 +14,12 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
+from sqlalchemy import CheckConstraint
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from cbpupsis_core.config import settings
-
 # Imported for its side effect: registering every table on Base.metadata.
-from cbpupsis_database import models as _models  # noqa: F401
+import cbpupsis_database.models  # noqa: F401
+from cbpupsis_core.config import settings
 from cbpupsis_database.base import Base
 from cbpupsis_database.session import to_asyncpg_url
 
@@ -33,10 +33,26 @@ target_metadata = Base.metadata
 # Same rewrite as the app's engine, and imported rather than repeated: the
 # libpq parameters Neon puts in the URL break asyncpg here exactly as they do
 # there, and two copies of that list would drift.
-_migration_url = to_asyncpg_url(settings.direct_database_url or settings.database_url)
+migration_url = to_asyncpg_url(settings.direct_database_url or settings.database_url)
+
+
+#: CHECK constraints an ``Enum(create_constraint=True)`` generates. Autogenerate
+#: leaves them out of the model side, so without this it sees the database copy
+#: as unmatched and proposes dropping the enum guard (as it did for
+#: ``ck_authentication_failures_step``, whose name already matches the model).
+TYPE_BOUND_CHECKS = frozenset(
+    constraint.name
+    for table in target_metadata.tables.values()
+    for constraint in table.constraints
+    if isinstance(constraint, CheckConstraint)
+    and getattr(constraint, "_type_bound", False)
+)
 
 
 def include_object(object, name, type_, reflected, compare_to):
+    """Hide what autogenerate must not manage: enum CHECKs and partition defaults."""
+    if type_ == "check_constraint" and name in TYPE_BOUND_CHECKS:
+        return False
     return not (
         type_ == "table"
         and name
@@ -59,7 +75,7 @@ def do_run_migrations(connection):
 
 
 async def run_async_migrations():
-    engine = create_async_engine(_migration_url)
+    engine = create_async_engine(migration_url)
     async with engine.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await engine.dispose()

@@ -117,7 +117,7 @@ seed-e2e:  ## Seed the verified accounts the HTTP suite logs in as (idempotent)
 
 # --- users ------------------------------------------------------------------
 
-create-admin:  ## Promote a registered user to Admins: make create-admin EMAIL=you@example.com
+create-admin:  ## Promote an existing user to Admins: make create-admin EMAIL=you@example.com
 ifndef EMAIL
 	$(error EMAIL is required. Usage: make create-admin EMAIL=you@example.com)
 endif
@@ -129,7 +129,8 @@ ifndef EMAIL
 endif
 	$(RUN_ADMIN) python -m scripts.create_user $(EMAIL) \
 	  $(foreach g,$(GROUP),--group $(g)) \
-	  $(if $(PASSWORD),--password $(PASSWORD),)
+	  $(if $(PASSWORD),--password $(PASSWORD),) \
+	  $(if $(VERIFIED),--verified,)
 
 # --- quality ----------------------------------------------------------------
 # Host-side by default: the suite is in-memory SQLite and needs no services, so

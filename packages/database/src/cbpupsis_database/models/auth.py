@@ -8,6 +8,9 @@ alone, so a database round-trip per request is not needed.
   invalidate them.
 - :class:`OneTimeToken` backs email verification and password reset: mailed
   secrets that must work exactly once and then expire.
+
+Sign-in state for every role also lives here: second factors, the one live MFA
+challenge per account, active sessions, and the rolling lockout counters.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -132,6 +136,13 @@ class OneTimeToken(UUIDMixin, TimestampMixin, Base):
     )
 
 
+class MfaType(enum.StrEnum):
+    """Supported second-factor mechanisms."""
+
+    totp = "totp"
+    webauthn = "webauthn"
+
+
 class UserMfaCredential(UUIDMixin, Base):
     """MFA factors registered by a user (TOTP, WebAuthn, FIDO2)."""
 
@@ -146,6 +157,8 @@ class UserMfaCredential(UUIDMixin, Base):
     credential_id_digest: Mapped[str | None] = mapped_column(String(64), default=None)
     public_key: Mapped[str | None] = mapped_column(Text, default=None)
     sign_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: The last accepted 30-second TOTP step. A code at or below it is a replay.
+    totp_last_counter: Mapped[int | None] = mapped_column(BigInteger, default=None)
     is_enrolled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
@@ -189,8 +202,8 @@ class UserMfaRecoveryCode(UUIDMixin, Base):
     __table_args__ = (Index("idx_fk_user_mfa_recovery_codes_user_id", "user_id"),)
 
 
-_INET_TYPE = postgresql.INET().with_variant(String(45), "sqlite")
-_JSON_TYPE = postgresql.JSONB(astext_type=Text()).with_variant(JSON(), "sqlite")
+INET_TYPE = postgresql.INET().with_variant(String(45), "sqlite")
+JSON_TYPE = postgresql.JSONB(astext_type=Text()).with_variant(JSON(), "sqlite")
 
 
 class UserActiveSession(UUIDMixin, Base):
@@ -203,7 +216,11 @@ class UserActiveSession(UUIDMixin, Base):
     )
     session_token_hash: Mapped[str] = mapped_column(String(64))
     device_info: Mapped[str] = mapped_column(Text)
-    ip_address: Mapped[str] = mapped_column(_INET_TYPE)
+    # Recorded for the owner and auditors, never compared on later requests.
+    # NULL when the request carried no usable address.
+    ip_address: Mapped[str | None] = mapped_column(
+        INET_TYPE, nullable=True, default=None
+    )
     is_current: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
@@ -214,7 +231,23 @@ class UserActiveSession(UUIDMixin, Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    __table_args__ = (Index("idx_fk_user_active_sessions_user_id", "user_id"),)
+    __table_args__ = (
+        Index("idx_fk_user_active_sessions_user_id", "user_id"),
+        Index("ix_user_active_sessions_session_token_hash", "session_token_hash"),
+    )
+
+
+class MfaChallenge(Base):
+    """The single live password challenge of an account, for every role.
+
+    A second-factor step accepts a challenge token only while its ``jti`` is the
+    one stored here, so a newer sign-in or a password reset retires older ones.
+    """
+
+    __tablename__ = "mfa_challenges"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    active_jti: Mapped[str] = mapped_column(String(JTI_LENGTH))
 
 
 class IdempotencyKey(UUIDMixin, Base):
@@ -231,7 +264,7 @@ class IdempotencyKey(UUIDMixin, Base):
     request_payload_hash: Mapped[str | None] = mapped_column(String(64), default=None)
     response_code: Mapped[int | None] = mapped_column(Integer, default=None)
     response_body: Mapped[dict[str, Any] | None] = mapped_column(
-        _JSON_TYPE, default=None
+        JSON_TYPE, default=None
     )
     status: Mapped[str] = mapped_column(
         String(30), default="processing", server_default="processing"
@@ -257,14 +290,19 @@ class IdempotencyKey(UUIDMixin, Base):
 
 
 class AuthFailureStep(enum.StrEnum):
-    """Both halves of Admin sign-in share one failure window."""
+    """Both halves of a sign-in share one failure window."""
 
     credentials = "credentials"
     mfa = "mfa"
 
 
 class AuthenticationFailure(UUIDMixin, Base):
-    """One failed password or MFA attempt in the rolling lockout window."""
+    """One failed password or MFA attempt in the rolling lockout window.
+
+    ``user_id`` is the lockout subject: the account id, or for an identifier
+    that matches no account a keyed pseudonym of it, so unknown and known
+    identifiers lock identically.
+    """
 
     __tablename__ = "authentication_failures"
 
@@ -282,7 +320,7 @@ class AuthenticationFailure(UUIDMixin, Base):
 
 
 class AuthenticationLockout(Base):
-    """The current temporary Admin account lock, if any."""
+    """The current temporary sign-in lock of a lockout subject, if any."""
 
     __tablename__ = "authentication_lockouts"
 

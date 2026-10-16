@@ -1,5 +1,8 @@
-"""HTTP layer for the auth domain: register, login, refresh, logout, and the
-email-verification and password-reset flows.
+"""HTTP layer for the auth domain: login, refresh, logout, and the
+email-verification, password-reset, and password-change flows.
+
+There is no public registration: a Superadmin creates every account
+(``POST /users``), and the account signs in with a mailed temporary password.
 
 Thin by design — each endpoint parses the request, delegates to the service, and
 shapes the response. All flow logic lives in ``cbpupsis_shared.domains.auth.service``.
@@ -14,10 +17,14 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_core.middleware import client_ip, rate_limit
+from cbpupsis_core.middleware import client_ip, client_ip_or_none, rate_limit
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.auth import service as auth_service
-from cbpupsis_shared.domains.auth.dependencies import CurrentUser, get_current_user
+from cbpupsis_shared.domains.auth.dependencies import (
+    CurrentUser,
+    get_current_user,
+    get_password_changing_user,
+)
 from cbpupsis_shared.domains.auth.schemas import (
     ChangePasswordRequest,
     CurrentUserRead,
@@ -25,7 +32,6 @@ from cbpupsis_shared.domains.auth.schemas import (
     ForgotPasswordResponse,
     LoginRequest,
     RefreshRequest,
-    RegisterRequest,
     ResendVerificationRequest,
     ResetPasswordRequest,
     ResetPasswordResponse,
@@ -34,28 +40,8 @@ from cbpupsis_shared.domains.auth.schemas import (
     VerifyEmailRequest,
     VerifyResetTokenRequest,
 )
-from cbpupsis_shared.domains.users.schemas import UserRead
 
 router = APIRouter()
-
-
-@router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
-@rate_limit("register")
-async def register(
-    request: Request,
-    data: RegisterRequest,
-    db: AsyncSession = Depends(get_db),
-) -> UserRead:
-    """Create an account. Returns the new user; tokens come from /login.
-
-    Rate limited per IP against signup spam. ``request`` is unused by the body
-    but required: slowapi reads the limiter and the caller's key off it, and
-    refuses to decorate an endpoint that does not declare it.
-    """
-    user = await auth_service.register(
-        db, email=data.email, password=data.password, full_name=data.full_name
-    )
-    return UserRead.model_validate(user)
 
 
 @router.post("/login", response_model=TokenPair)
@@ -67,19 +53,31 @@ async def login(
 ) -> TokenPair:
     """Exchange email and password for an access/refresh token pair.
 
-    Rate limited against credential stuffing.
+    Rate limited against credential stuffing. ``request`` is unused by the
+    body but required: slowapi reads the limiter and the caller's key off it.
 
     Three outcomes, and the difference between them is deliberate:
 
     - **401** — unknown email, wrong password, or a disabled account, all with
       one identical message so the endpoint cannot be used to discover which
       addresses are registered.
+    - **401** with ``code: "AUTH_TEMPORARY_PASSWORD_EXPIRED"``: the password
+      was a correct temporary one past its expiry; a Superadmin must reissue.
     - **403** with ``code: "email_not_verified"`` — the password was correct but
       the address is unverified. Branch on the code, not the message, and send
       the user to a resend-verification screen rather than back to login.
     - **200** — a token pair.
+
+    Accounts with a role-specific sign-in (student, faculty, Admin,
+    Superadmin) get the same 401 here: they must use ``/auth/<role>/login``.
     """
-    return await auth_service.login(db, email=data.email, password=data.password)
+    return await auth_service.login(
+        db,
+        email=data.email,
+        password=data.password,
+        ip_address=client_ip_or_none(request),
+        device_info=request.headers.get("user-agent", ""),
+    )
 
 
 @router.post("/refresh", response_model=TokenPair)
@@ -187,10 +185,15 @@ async def reset_password(
 @router.post("/change-password", response_model=TokenPair)
 async def change_password(
     data: ChangePasswordRequest,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_password_changing_user),
     db: AsyncSession = Depends(get_db),
 ) -> TokenPair:
     """Change your own password, returning a replacement token pair.
+
+    The one route open to an account holding a temporary password: changing
+    it clears ``PASSWORD_CHANGE_REQUIRED``. The temporary password cannot be
+    kept as the new one (422), and once expired it cannot be changed (401
+    ``AUTH_TEMPORARY_PASSWORD_EXPIRED``).
 
     Authorization is by identity alone: the target is the authenticated user,
     taken from the token, so there is no id to tamper with and no object-level
@@ -205,4 +208,5 @@ async def change_password(
         current_password=data.current_password,
         new_password=data.new_password,
         session_id=user.session_id,
+        session_claims=dict(user.claims),
     )

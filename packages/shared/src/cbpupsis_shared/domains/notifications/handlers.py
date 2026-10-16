@@ -52,28 +52,20 @@ async def deliver_event_on(
         return ()
 
     user_id = uuid.UUID(str(raw_user_id))
-    recipient = await _recipient_for(db, user_id)
+    # Through the users client, never its models. A user that no longer exists
+    # yields a recipient with no address: the in-app row is still written and
+    # the email channel degrades, because retrying cannot bring an address back.
+    try:
+        user = await users_client.get_user(db, user_id)
+    except Exception:  # a missing user must not wedge the queue
+        recipient = Recipient(user_id=user_id)
+    else:
+        recipient = Recipient(user_id=user_id, email=user.email)
     message = render(event)
 
     return await service.deliver(
         db, recipient=recipient, message=message, source_message_id=message_id
     )
-
-
-async def _recipient_for(db: AsyncSession, user_id: uuid.UUID) -> Recipient:
-    """Assemble a recipient once, so no channel has to query.
-
-    Goes through the users domain's ``client``, never its models — the seam that
-    keeps this domain extractable. A user that no longer exists yields a
-    recipient with no address: the in-app row is still written, and the email
-    channel degrades rather than raising, because a deleted account's address is
-    never coming back and retrying cannot help.
-    """
-    try:
-        user = await users_client.get_user(db, user_id)
-    except Exception:  # a missing user must not wedge the queue
-        return Recipient(user_id=user_id)
-    return Recipient(user_id=user_id, email=user.email)
 
 
 __all__ = ["Recipient", "RenderedNotification", "deliver_event", "deliver_event_on"]

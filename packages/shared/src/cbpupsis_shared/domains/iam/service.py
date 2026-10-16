@@ -19,6 +19,7 @@ policies) and unioning the results.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,7 +39,7 @@ from cbpupsis_shared.domains.users import client as users_client
 from cbpupsis_shared.outbox import publish_transactional
 
 
-def _audit(
+def stage_audit_event(
     db: AsyncSession,
     name: str,
     actor_id: uuid.UUID | None,
@@ -117,7 +118,7 @@ async def create_permission(
     """
     permission = repository.add_permission(db, action=action, description=description)
     await db.flush()
-    _audit(
+    stage_audit_event(
         db,
         "iam.permission_created",
         actor_id,
@@ -154,7 +155,7 @@ async def create_policy(
     for permission in permissions:
         repository.add_policy_permission(db, policy.id, permission.id)
 
-    _audit(
+    stage_audit_event(
         db,
         "iam.policy_created",
         actor_id,
@@ -178,7 +179,9 @@ async def create_group(
     """Create a new (empty) group."""
     group = repository.add_group(db, name=name, description=description)
     await db.flush()
-    _audit(db, "iam.group_created", actor_id, {"group_id": group.id, "name": name})
+    stage_audit_event(
+        db, "iam.group_created", actor_id, {"group_id": group.id, "name": name}
+    )
     await db.commit()
     await db.refresh(group)
     return group
@@ -196,7 +199,7 @@ async def attach_policy_to_group(
     if await repository.exists_group_policy(db, group_id, policy_id):
         return
     repository.add_group_policy(db, group_id, policy_id)
-    _audit(
+    stage_audit_event(
         db,
         "iam.policy_attached_to_group",
         actor_id,
@@ -231,13 +234,36 @@ async def add_user_to_group(
     if group.name in {ADMIN_GROUP, SUPERADMIN_GROUP}:
         await users_client.invalidate_role_sessions(db, user_id)
     repository.add_user_group(db, user_id, group_id)
-    _audit(
+    stage_audit_event(
         db,
         "iam.user_added_to_group",
         actor_id,
         {"user_id": str(user_id), "group_id": group_id},
     )
     await db.commit()
+
+
+async def stage_new_members(
+    db: AsyncSession, memberships: Sequence[tuple[uuid.UUID, str]]
+) -> None:
+    """Stage each just-created account's role group, **without committing**.
+
+    Only for accounts staged in the same transaction: they have no memberships
+    and no sessions yet, so the role-conflict and session checks of
+    :func:`add_user_to_group` have nothing to find. The account-creation audit
+    row records the creation, so no separate IAM event is staged. A group the
+    seed has not created is a deployment fault, not a client error.
+    """
+    group_ids: dict[str, int] = {}
+    for user_id, group_name in memberships:
+        if group_name not in group_ids:
+            group_id = await repository.get_group_id_by_name(db, group_name)
+            if group_id is None:
+                raise RuntimeError(
+                    f"IAM group {group_name!r} is missing; run scripts.seed_iam"
+                )
+            group_ids[group_name] = group_id
+        repository.add_user_group(db, user_id, group_ids[group_name])
 
 
 async def remove_user_from_group(
@@ -252,7 +278,7 @@ async def remove_user_from_group(
         await users_client.lock_role_subject(db, user_id)
         await users_client.invalidate_role_sessions(db, user_id)
     await repository.delete_user_group(db, user_id, group_id)
-    _audit(
+    stage_audit_event(
         db,
         "iam.user_removed_from_group",
         actor_id,
@@ -275,7 +301,7 @@ async def attach_policy_to_user(
     if await repository.exists_user_policy(db, user_id, policy_id):
         return
     repository.add_user_policy(db, user_id, policy_id)
-    _audit(
+    stage_audit_event(
         db,
         "iam.policy_attached_to_user",
         actor_id,
@@ -292,7 +318,7 @@ async def detach_policy_from_user(
 ) -> None:
     """Remove a directly attached policy from a user."""
     await repository.delete_user_policy(db, user_id, policy_id)
-    _audit(
+    stage_audit_event(
         db,
         "iam.policy_detached_from_user",
         actor_id,
@@ -367,7 +393,7 @@ async def detach_policy_from_group(
     revocation immediate rather than pending until a token expires.
     """
     await repository.delete_group_policy(db, group_id, policy_id)
-    _audit(
+    stage_audit_event(
         db,
         "iam.policy_detached_from_group",
         actor_id,
