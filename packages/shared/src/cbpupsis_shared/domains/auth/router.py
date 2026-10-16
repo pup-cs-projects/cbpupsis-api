@@ -43,8 +43,13 @@ from cbpupsis_shared.domains.auth.schemas import (
 
 router = APIRouter()
 
+# login, refresh, logout, and whoami are the template's email sign-in. Every CBPUPSIS
+# account signs in through /auth/<role> instead (this login answers them 401), so these
+# four are left out of the docs, where they read as a second sign-in. They stay served
+# until the pytest fixtures and the Bruno suite stop signing in through them.
 
-@router.post("/login", response_model=TokenPair)
+
+@router.post("/login", response_model=TokenPair, include_in_schema=False)
 @rate_limit("login")
 async def login(
     request: Request,
@@ -80,7 +85,7 @@ async def login(
     )
 
 
-@router.post("/refresh", response_model=TokenPair)
+@router.post("/refresh", response_model=TokenPair, include_in_schema=False)
 async def refresh(
     data: RefreshRequest, db: AsyncSession = Depends(get_db)
 ) -> TokenPair:
@@ -88,13 +93,13 @@ async def refresh(
     return await auth_service.refresh(db, data.refresh_token)
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, include_in_schema=False)
 async def logout(data: RefreshRequest, db: AsyncSession = Depends(get_db)) -> None:
     """Revoke a refresh token. Idempotent: always succeeds."""
     await auth_service.logout(db, data.refresh_token)
 
 
-@router.get("/whoami", response_model=CurrentUserRead)
+@router.get("/whoami", response_model=CurrentUserRead, include_in_schema=False)
 async def whoami(user: CurrentUser = Depends(get_current_user)) -> CurrentUserRead:
     """Return the authenticated principal — useful for verifying token wiring."""
     return CurrentUserRead(id=user.id, email=user.email)
