@@ -64,6 +64,8 @@ its app and allowed by that app's CORS:
   a checkout elsewhere.
 - The overlay sets `CORS_ORIGINS` on each app, and `WEBAUTHN_RP_ID=localhost` with
   `WEBAUTHN_ORIGIN=http://localhost:3002` on api-admin, overriding the env files.
+- It also sets `FRONTEND_BASE_URL_STUDENT`, `_FACULTY`, `_ADMIN`, and `_SUPERADMIN` on the
+  worker, which renders every account email, so each link opens that account's portal.
 - Each client keeps its `node_modules` in a named volume and reinstalls only when its
   `package-lock.json` changes, so the first start takes a minute or two.
 - Client edits hot-reload through polling, because file events do not cross the bind mount.

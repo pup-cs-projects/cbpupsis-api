@@ -105,6 +105,15 @@ services:
       WEBAUTHN_RP_ID: localhost
       WEBAUTHN_ORIGIN: http://localhost:3002
 
+  # The worker renders every account email, so it is the service that needs each
+  # role's portal: links open the client that can sign that account in.
+  worker:
+    environment:
+      FRONTEND_BASE_URL_STUDENT: http://localhost:3000
+      FRONTEND_BASE_URL_FACULTY: http://localhost:3001
+      FRONTEND_BASE_URL_ADMIN: http://localhost:3002
+      FRONTEND_BASE_URL_SUPERADMIN: http://localhost:3003
+
 volumes:
   client-student-modules:
   client-faculty-modules:
