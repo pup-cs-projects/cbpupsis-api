@@ -27,7 +27,7 @@ from cbpupsis_database.models.outbox import OutboxMessage
 from cbpupsis_database.models.users import User
 from cbpupsis_shared import worker
 from cbpupsis_shared.domains.audit.schemas import AuditEntryRead
-from cbpupsis_shared.domains.auth import delivery, service
+from cbpupsis_shared.domains.auth import delivery, repository, service
 from cbpupsis_shared.domains.auth.security import verify_password
 from cbpupsis_shared.domains.auth.subscribers import register_auth_subscribers
 from tests.conftest import token_from_email
@@ -58,9 +58,17 @@ async def test_request_queues_encrypted_delivery_and_uniform_audit(
     assert known.status_code == unknown.status_code == 202
     assert known.content == unknown.content
     assert sent_emails == []
-    messages = list((await db.scalars(select(OutboxMessage))).all())
+    # The fixture's signup also queued a verification job; only reset jobs here.
+    messages = list(
+        (
+            await db.scalars(
+                select(OutboxMessage).where(
+                    OutboxMessage.event_name == "auth.password_reset_email"
+                )
+            )
+        ).all()
+    )
     assert len(messages) == 1
-    assert messages[0].event_name == "auth.password_reset_email"
     await drain_outbox()
     raw = token_from_email(sent_emails[0])
     assert raw not in json.dumps(messages[0].payload)
@@ -257,7 +265,7 @@ async def test_failure_rolls_back_password_consumption_revocation_and_notice(
     async def fail(*args, **kwargs):
         raise RuntimeError("injected clear-lockout failure")
 
-    monkeypatch.setattr(service.repository, "clear_authentication_lockout", fail)
+    monkeypatch.setattr(repository, "delete_authentication_lockout", fail)
     with pytest.raises(RuntimeError):
         await service.reset_password(db, token, "Strong1!")
     user = await db.get(User, uid)
@@ -440,7 +448,7 @@ def test_weak_password_service_validation_and_cost_floor():
 
 
 def test_worker_registers_reset_delivery_idempotently(monkeypatch):
-    monkeypatch.setattr(worker, "_HANDLERS", {})
+    monkeypatch.setattr(worker, "HANDLERS", {})
     register_auth_subscribers()
     register_auth_subscribers()
     assert worker.handlers_for("auth.password_reset_email") == (

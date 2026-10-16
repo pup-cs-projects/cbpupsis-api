@@ -12,7 +12,9 @@ and when a change is committed.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,17 +22,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cbpupsis_core.events import Event
 from cbpupsis_core.exceptions import ForbiddenError
 from cbpupsis_core.pagination import Page
-from cbpupsis_database.models.users import User
+from cbpupsis_database.models.users import AdminPosition, User
 from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.auth import client as auth_client
+from cbpupsis_shared.domains.auth.exceptions import SuperadminRoleRequiredError
+from cbpupsis_shared.domains.curriculum import client as curriculum_client
 from cbpupsis_shared.domains.iam import service as iam_service
-from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
+from cbpupsis_shared.domains.iam.constants import (
+    ADMIN_GROUP,
+    FACULTY_GROUP,
+    STUDENT_GROUP,
+)
 from cbpupsis_shared.domains.users import repository
 from cbpupsis_shared.domains.users.constants import (
+    ADMIN_ROLE_POSITIONS,
     EDITABLE_PROFILE_FIELDS,
+    INSTITUTION_WIDE_POSITIONS,
     MANAGE_USER,
     READ_ALL_USER,
     REQUIRED_ONBOARDING_FIELDS,
+    AccountRole,
 )
 from cbpupsis_shared.domains.users.exceptions import (
     AccountDeletedError,
@@ -38,7 +49,14 @@ from cbpupsis_shared.domains.users.exceptions import (
     IncorrectPasswordError,
     ProfileAccessDeniedError,
     ProfileIncompleteError,
+    UnknownProgramError,
+    UserAlreadyExistsError,
     UserNotFoundError,
+)
+from cbpupsis_shared.domains.users.schemas import (
+    AccountCreate,
+    AdminProfileRead,
+    FacultyProfileRead,
 )
 from cbpupsis_shared.outbox import publish_transactional
 
@@ -244,7 +262,7 @@ async def delete_own_account(
     after the scrub, so every token the account held is dead.
     """
     user = await get_by_id(db, user_id)
-    if not auth_client.check_password(password, user.password_hash):
+    if not await auth_client.check_password(password, user.password_hash):
         raise IncorrectPasswordError
 
     await soft_delete(db, user_id, commit=False)
@@ -345,10 +363,15 @@ async def get_profile_for(
     background job or another domain can walk straight past.
     """
     if user_id != viewer_id:
-        await auth_client.require_superadmin_actor(db, viewer_id)
+        # Someone else's record answers 404, never 403: a 403 would confirm to
+        # a caller who may not read it that the id exists.
+        try:
+            await auth_client.require_superadmin_actor(db, viewer_id)
+        except SuperadminRoleRequiredError:
+            raise UserNotFoundError(user_id) from None
         granted = await iam_service.get_effective_permissions(db, viewer_id)
         if READ_ALL_USER not in granted:
-            raise ProfileAccessDeniedError(READ_ALL_USER)
+            raise UserNotFoundError(user_id)
     return await get_by_id(db, user_id)
 
 
@@ -488,13 +511,162 @@ async def get_role_subject_for_update(db: AsyncSession, user_id: uuid.UUID):
 async def stage_password_reset(
     db: AsyncSession, user_id: uuid.UUID, password_hash: str
 ):
-    """Stage a digest and invalidate access tokens without an intermediate commit."""
+    """Stage a digest the user chose, ending any temporary-password state.
+
+    Shared by the reset and change flows: either way the user now holds a
+    password of their own, so the forced change no longer applies.
+    """
     user = await repository.get_user_for_update(db, user_id)
     if user is None:
         raise UserNotFoundError(user_id)
-    repository.update_user(db, user, password_hash=password_hash)
-    await repository.clear_pending_mfa_challenge(db, user_id)
+    repository.update_user(
+        db,
+        user,
+        password_hash=password_hash,
+        password_change_required=False,
+        temporary_password_expires_at=None,
+    )
     return user
+
+
+async def stage_temporary_password(
+    db: AsyncSession, user_id: uuid.UUID, password_hash: str, expires_at: datetime
+):
+    """Stage a system-issued digest that the user must replace before ``expires_at``.
+
+    404 for a missing, deleted, or deactivated account: a temporary password
+    for an account that cannot sign in would only put a credential in an inbox.
+    """
+    user = await repository.get_user_for_update(db, user_id)
+    if user is None or not user.is_active:
+        raise UserNotFoundError(user_id)
+    repository.update_user(
+        db,
+        user,
+        password_hash=password_hash,
+        password_change_required=True,
+        temporary_password_expires_at=expires_at,
+    )
+    return user
+
+
+@dataclass(frozen=True)
+class SignInSubject:
+    """What a role-specific sign-in needs to verify an institutional identifier.
+
+    Internal only, never a response: it carries the password hash, which is why
+    it is a plain dataclass here rather than a schema in ``schemas.py``.
+    """
+
+    user_id: uuid.UUID
+    email: str
+    password_hash: str
+    is_active: bool
+    email_verified: bool
+    session_version: int
+    birthdate: date | None = None
+    password_change_required: bool = False
+    temporary_password_expires_at: datetime | None = None
+
+    @classmethod
+    def from_user(cls, user: User, birthdate: date | None = None) -> SignInSubject:
+        """Build the subject from a user row; an anonymized account is inactive."""
+        return cls(
+            user_id=user.id,
+            email=user.email,
+            password_hash=user.password_hash,
+            is_active=user.is_active and user.anonymized_at is None,
+            email_verified=user.email_verified_at is not None,
+            session_version=user.session_version,
+            birthdate=birthdate,
+            password_change_required=user.password_change_required,
+            temporary_password_expires_at=user.temporary_password_expires_at,
+        )
+
+
+async def get_email_sign_in(db: AsyncSession, email: str) -> SignInSubject | None:
+    """Return the sign-in subject for an email, holding the account row lock."""
+    user = await repository.get_user_by_email_for_update(db, email.lower())
+    return None if user is None else SignInSubject.from_user(user)
+
+
+async def get_session_version(db: AsyncSession, user_id: uuid.UUID) -> int | None:
+    """Return a usable account's session generation, or ``None``."""
+    user = await repository.get_active_user(db, user_id)
+    return None if user is None else user.session_version
+
+
+async def get_student_sign_in(
+    db: AsyncSession, student_number: str
+) -> SignInSubject | None:
+    """Return the sign-in subject holding a student number, or ``None``."""
+    row = await repository.get_student_by_number(db, student_number)
+    if row is None:
+        return None
+    user, profile = row
+    return SignInSubject.from_user(
+        user, profile.birthdate if profile is not None else None
+    )
+
+
+async def get_faculty_sign_in(
+    db: AsyncSession, employee_id: str
+) -> SignInSubject | None:
+    """Return the sign-in subject holding an employee id, or ``None``."""
+    row = await repository.get_faculty_by_employee_id(db, employee_id)
+    return None if row is None else SignInSubject.from_user(row[0])
+
+
+async def get_faculty_profile(
+    db: AsyncSession, user_id: uuid.UUID
+) -> FacultyProfileRead | None:
+    """Return a user's faculty profile, or ``None``."""
+    profile = await repository.get_faculty_profile(db, user_id)
+    return None if profile is None else FacultyProfileRead.model_validate(profile)
+
+
+async def has_role_sign_in(db: AsyncSession, user_id: uuid.UUID) -> bool:
+    """Return whether the account signs in through a student or faculty route."""
+    return await repository.exists_role_profile(db, user_id)
+
+
+async def get_admin_profile(
+    db: AsyncSession, user_id: uuid.UUID
+) -> AdminProfileRead | None:
+    """Return a user's Admin position profile, or ``None``."""
+    profile = await repository.get_admin_profile(db, user_id)
+    return None if profile is None else AdminProfileRead.model_validate(profile)
+
+
+async def save_admin_profile(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    position: AdminPosition,
+    department: str | None,
+    college: str | None,
+) -> AdminProfileRead:
+    """Create or replace a user's active Admin position profile, and commit."""
+    profile = await repository.get_admin_profile(db, user_id)
+    if profile is None:
+        profile = repository.add_admin_profile(
+            db,
+            user_id=user_id,
+            position=position.value,
+            department=department,
+            college=college,
+        )
+    else:
+        repository.update_admin_profile(
+            profile,
+            position=position.value,
+            department=department,
+            college=college,
+            is_active=True,
+        )
+    await db.commit()
+    await db.refresh(profile)
+    return AdminProfileRead.model_validate(profile)
 
 
 async def stage_invalidate_sessions(db: AsyncSession, user_id: uuid.UUID) -> None:
@@ -521,3 +693,215 @@ async def stage_admin_deactivation_override(
     repository.update_user(db, user, is_active=False)
     await auth_client.stage_revoke_all_sessions(db, user_id)
     return prior, {"is_active": False}
+
+
+#: The IAM group each account role joins.
+ROLE_GROUPS: dict[AccountRole, str] = {
+    AccountRole.student: STUDENT_GROUP,
+    AccountRole.faculty: FACULTY_GROUP,
+    **dict.fromkeys(ADMIN_ROLE_POSITIONS, ADMIN_GROUP),
+}
+
+
+def role_group(role: AccountRole) -> str:
+    """Return the IAM group an account of ``role`` belongs to."""
+    return ROLE_GROUPS[role]
+
+
+def admin_scope(
+    position: AdminPosition, department: str | None, college: str | None
+) -> tuple[str | None, str | None]:
+    """Keep only the scope a position holds: ``(department, college)``.
+
+    A chairperson keeps a department, a dean a college, and an
+    institution-wide position (registrar, finance) neither.
+    """
+    if position is not AdminPosition.chairperson:
+        department = None
+    if position in INSTITUTION_WIDE_POSITIONS:
+        college = None
+    return department, college
+
+
+@dataclass(frozen=True)
+class AccountProblem:
+    """Why one account in a batch cannot be created. Never carries the value."""
+
+    index: int
+    column: str
+    rule: str
+    #: True when the account collides with one that already exists.
+    taken: bool = False
+
+
+@dataclass(frozen=True)
+class NewAccount:
+    """A checked account with its issued credential, ready to stage."""
+
+    account: AccountCreate
+    password_hash: str
+    expires_at: datetime
+    program_id: uuid.UUID | None
+
+
+def _id_kind(role: AccountRole) -> str:
+    """Which profile table holds the institutional id; each one is unique alone."""
+    if role is AccountRole.student:
+        return "student"
+    return "faculty" if role is AccountRole.faculty else "admin"
+
+
+async def find_account_problems(
+    db: AsyncSession, accounts: Sequence[AccountCreate]
+) -> tuple[list[AccountProblem], dict[str, uuid.UUID]]:
+    """Check a batch against itself and the database, before anything is staged.
+
+    Returns every problem, ordered by account, and the id of each program code
+    the batch names (upper-cased). An institutional id is unique per profile
+    table, as the constraints are: a chairperson may hold the same employee id
+    on an Admin account as on a faculty one.
+    """
+    problems: list[AccountProblem] = []
+    emails: set[str] = set()
+    ids: dict[str, set[str]] = {"student": set(), "faculty": set(), "admin": set()}
+    for index, account in enumerate(accounts):
+        if account.email in emails:
+            problems.append(AccountProblem(index, "email", "duplicated in this file"))
+        emails.add(account.email)
+        if account.institutional_id is not None:
+            kind_ids = ids[_id_kind(account.role)]
+            if account.institutional_id in kind_ids:
+                problems.append(
+                    AccountProblem(index, "institutional_id", "duplicated in this file")
+                )
+            kind_ids.add(account.institutional_id)
+
+    taken_emails = set(await repository.list_taken_emails(db, emails))
+    taken_ids = {
+        "student": set(await repository.list_taken_student_numbers(db, ids["student"])),
+        "faculty": set(
+            await repository.list_taken_faculty_employee_ids(db, ids["faculty"])
+        ),
+        "admin": set(await repository.list_taken_admin_employee_ids(db, ids["admin"])),
+    }
+    programs = await curriculum_client.active_programs_by_code(
+        db, (a.program for a in accounts if a.role is AccountRole.student and a.program)
+    )
+    for index, account in enumerate(accounts):
+        if account.email in taken_emails:
+            problems.append(
+                AccountProblem(index, "email", "already registered", taken=True)
+            )
+        if account.institutional_id in taken_ids[_id_kind(account.role)]:
+            problems.append(
+                AccountProblem(
+                    index, "institutional_id", "already registered", taken=True
+                )
+            )
+        if (
+            account.role is AccountRole.student
+            and (account.program or "").upper() not in programs
+        ):
+            problems.append(
+                AccountProblem(index, "program", "unknown or inactive program code")
+            )
+    problems.sort(key=lambda problem: problem.index)
+    return problems, {code: program.id for code, program in programs.items()}
+
+
+def program_id_for(
+    account: AccountCreate, program_ids: dict[str, uuid.UUID]
+) -> uuid.UUID | None:
+    """The program a checked student account joins; ``None`` for other roles."""
+    if account.role is not AccountRole.student or account.program is None:
+        return None
+    return program_ids[account.program.upper()]
+
+
+def raise_for_problems(problems: Sequence[AccountProblem]) -> None:
+    """Raise the error one problem stands for: a collision first, then a program."""
+    for problem in problems:
+        if problem.taken or problem.column != "program":
+            raise UserAlreadyExistsError(problem.column)
+    if problems:
+        raise UnknownProgramError
+
+
+async def check_new_account(
+    db: AsyncSession, account: AccountCreate
+) -> uuid.UUID | None:
+    """Check one account, raising its first problem; return its program id."""
+    problems, program_ids = await find_account_problems(db, [account])
+    raise_for_problems(problems)
+    return program_id_for(account, program_ids)
+
+
+async def stage_accounts(
+    db: AsyncSession, accounts: Sequence[NewAccount]
+) -> list[uuid.UUID]:
+    """Stage verified users and their profiles, **without committing**.
+
+    Flushes the users before their profiles, so the profile rows never reach
+    the database ahead of the row they reference. A unique-constraint race
+    surfaces as ``IntegrityError`` from either flush, inside the caller's
+    transaction.
+    """
+    now = datetime.now(UTC)
+    user_ids: list[uuid.UUID] = []
+    for item in accounts:
+        account = item.account
+        user_id = uuid.uuid4()
+        repository.add_user(
+            db,
+            email=account.email,
+            password_hash=item.password_hash,
+            full_name=f"{account.first_name} {account.surname}",
+            user_id=user_id,
+            email_verified_at=now,
+            password_change_required=True,
+            temporary_password_expires_at=item.expires_at,
+        )
+        user_ids.append(user_id)
+    await db.flush()
+    for user_id, item in zip(user_ids, accounts, strict=True):
+        _stage_profiles(db, user_id, item)
+    await db.flush()
+    return user_ids
+
+
+def _stage_profiles(db: AsyncSession, user_id: uuid.UUID, item: NewAccount) -> None:
+    account = item.account
+    repository.add_user_profile(
+        db,
+        user_id=user_id,
+        first_name=account.first_name,
+        last_name=account.surname,
+        birthdate=account.birthdate,
+    )
+    if account.role is AccountRole.student:
+        repository.add_student_profile(
+            db,
+            user_id=user_id,
+            student_number=account.institutional_id,
+            program_id=item.program_id,
+            year_level=account.year_level,
+        )
+    elif account.role is AccountRole.faculty:
+        repository.add_faculty_profile(
+            db,
+            user_id=user_id,
+            employee_id=account.institutional_id,
+            department=account.department,
+            college=account.college,
+        )
+    else:
+        position = ADMIN_ROLE_POSITIONS[account.role]
+        department, college = admin_scope(position, account.department, account.college)
+        repository.add_admin_profile(
+            db,
+            user_id=user_id,
+            employee_id=account.institutional_id,
+            position=position.value,
+            department=department,
+            college=college,
+        )

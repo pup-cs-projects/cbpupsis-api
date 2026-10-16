@@ -31,7 +31,7 @@ TARGET_TYPE_MAX_LENGTH = 50
 #: has no JSONB — without the variant every audit test fails on a type the
 #: dialect cannot compile, and the production column would still be the one that
 #: matters.
-_JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
+JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
 
 
 class AuditEntry(UUIDMixin, Base):
@@ -67,12 +67,12 @@ class AuditEntry(UUIDMixin, Base):
 
     #: The event payload verbatim, for the detail the columns above do not
     #: capture. JSONB so it stays queryable rather than becoming an opaque blob.
-    payload: Mapped[dict[str, Any]] = mapped_column(_JSON_TYPE, default=dict)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, default=dict)
 
     #: Explicit state snapshots make a change reconstructible without parsing
     #: action-specific payload shapes. ``None`` is valid for create/delete.
-    prior_state: Mapped[dict[str, Any] | None] = mapped_column(_JSON_TYPE, default=None)
-    new_state: Mapped[dict[str, Any] | None] = mapped_column(_JSON_TYPE, default=None)
+    prior_state: Mapped[dict[str, Any] | None] = mapped_column(JSON_TYPE, default=None)
+    new_state: Mapped[dict[str, Any] | None] = mapped_column(JSON_TYPE, default=None)
 
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
@@ -87,12 +87,12 @@ class AuditEntry(UUIDMixin, Base):
 
 @event.listens_for(AuditEntry, "before_update")
 @event.listens_for(AuditEntry, "before_delete")
-def _refuse_audit_mutation(_mapper, _connection, _target) -> None:
+def refuse_audit_mutation(_mapper, _connection, _target) -> None:
     """Fail ORM updates/deletes; the migration installs the same DB guard."""
     raise PermissionError("audit entries are append-only")
 
 
-_INET_TYPE = postgresql.INET().with_variant(String(45), "sqlite")
+INET_TYPE = postgresql.INET().with_variant(String(45), "sqlite")
 
 
 class AuthAuditLog(Base):
@@ -103,7 +103,7 @@ class AuthAuditLog(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID | None] = mapped_column(default=None)
     attempted_id: Mapped[str] = mapped_column(String(50))
-    ip_address: Mapped[str | None] = mapped_column(_INET_TYPE, default=None)
+    ip_address: Mapped[str | None] = mapped_column(INET_TYPE, default=None)
     user_agent: Mapped[str | None] = mapped_column(Text, default=None)
     success: Mapped[bool] = mapped_column(Boolean)
     failure_reason: Mapped[str | None] = mapped_column(String(100), default=None)
@@ -133,10 +133,10 @@ class AdminAuditTrail(Base):
     target_entity: Mapped[str] = mapped_column(String(100))
     target_entity_id: Mapped[uuid.UUID] = mapped_column()
     previous_state: Mapped[dict[str, Any] | None] = mapped_column(
-        _JSON_TYPE, default=None
+        JSON_TYPE, default=None
     )
     updated_state: Mapped[dict[str, Any] | None] = mapped_column(
-        _JSON_TYPE, default=None
+        JSON_TYPE, default=None
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

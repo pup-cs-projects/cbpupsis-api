@@ -1,14 +1,19 @@
 """Create a user and optionally add them to groups.
 
 For seeding a development database and for one-off administrative accounts.
-Everyday user creation goes through ``POST /api/v1/auth/register``; this exists
-for the cases the API cannot serve — the first accounts on a fresh database,
-before anyone holds ``ManageIAM``.
+Everyday accounts are created by a Superadmin (``POST /api/v1/users`` or the CSV
+import); this exists for the cases the API cannot serve, above all the first
+Superadmin on a fresh database, before anyone can sign in to create one.
 
     uv run python -m scripts.create_user alice@example.com
+    uv run python -m scripts.create_user alice@example.com --verified
     uv run python -m scripts.create_user alice@example.com --group Members
     uv run python -m scripts.create_user alice@example.com
         --group Members --group Moderators
+
+``--verified`` marks the address verified, for an operator vouching for it: the
+admin and Superadmin sign-ins refuse an unverified address, and a local
+verification link only ever reaches the console mail backend.
 
 The password is read from ``--password`` or generated. A generated one is
 printed once and never stored in plaintext, so capture it from the output.
@@ -32,6 +37,7 @@ from cbpupsis_database.models.users import User
 from cbpupsis_database.session import AsyncSessionLocal
 from cbpupsis_shared.domains.auth import service as auth_service
 from cbpupsis_shared.domains.iam import service as iam_service
+from cbpupsis_shared.domains.users import service as users_service
 
 #: Long enough that a generated development password is not worth cracking, and
 #: comfortably over the 12-character minimum the register schema enforces.
@@ -43,6 +49,7 @@ async def create_user(
     password: str | None,
     group_names: list[str],
     full_name: str | None,
+    verified: bool = False,
 ) -> int:
     """Create (or reuse) a user and add them to ``group_names``.
 
@@ -72,13 +79,13 @@ async def create_user(
             group_ids.append(group_id)
 
         try:
-            user = await auth_service.register(
+            user = await auth_service.create_console_account(
                 session, email=email, password=password, full_name=full_name
             )
             created = True
         except ConflictError:
             # Already registered: reuse the account and just apply the groups.
-            # Rolled back by register(), so the session is usable again.
+            # Rolled back on the conflict, so the session is usable again.
             user = await session.scalar(select(User).where(User.email == email.lower()))
             if user is None:  # pragma: no cover - only if deleted concurrently
                 print(f"Could not resolve existing user {email!r}", file=sys.stderr)
@@ -91,6 +98,8 @@ async def create_user(
         # triggers a lazy refresh — which raises MissingGreenlet under async
         # SQLAlchemy. Plain values survive where the instance does not.
         user_id, user_email = user.id, user.email
+        if verified:
+            await users_service.mark_email_verified(session, user_id)
 
         for group_id in group_ids:
             await iam_service.add_user_to_group(session, user_id, group_id)
@@ -118,10 +127,17 @@ def main() -> None:
     )
     parser.add_argument("--password", help="Password. Generated when omitted.")
     parser.add_argument("--full-name", default=None)
+    parser.add_argument(
+        "--verified", action="store_true", help="Mark the address verified."
+    )
     args = parser.parse_args()
 
     raise SystemExit(
-        asyncio.run(create_user(args.email, args.password, args.group, args.full_name))
+        asyncio.run(
+            create_user(
+                args.email, args.password, args.group, args.full_name, args.verified
+            )
+        )
     )
 
 

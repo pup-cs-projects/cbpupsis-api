@@ -40,8 +40,7 @@ import sys
 from sqlalchemy import delete, select
 
 from cbpupsis_core.exceptions import ConflictError
-from cbpupsis_database.models.admin_auth import SuperadminChallenge
-from cbpupsis_database.models.auth import UserMfaCredential
+from cbpupsis_database.models.auth import MfaChallenge, UserMfaCredential
 from cbpupsis_database.models.iam import Group, GroupPolicy, Policy
 from cbpupsis_database.models.users import User
 from cbpupsis_database.session import AsyncSessionLocal
@@ -164,13 +163,13 @@ async def seed_e2e(password: str, quiet: bool) -> int:
 
         for email, group_names in ACCOUNTS:
             try:
-                user = await auth_service.register(
+                user = await auth_service.create_console_account(
                     session, email=email, password=password
                 )
                 created = True
             except ConflictError:
                 # Already seeded: reuse the account, leaving its password as is.
-                # Rolled back by register(), so the session is usable again.
+                # Rolled back on the conflict, so the session is usable again.
                 user = await session.scalar(
                     select(User).where(User.email == email.lower())
                 )
@@ -208,9 +207,7 @@ async def seed_e2e(password: str, quiet: bool) -> int:
                     )
                 )
                 await session.execute(
-                    delete(SuperadminChallenge).where(
-                        SuperadminChallenge.user_id == user_id
-                    )
+                    delete(MfaChallenge).where(MfaChallenge.user_id == user_id)
                 )
                 await session.commit()
 

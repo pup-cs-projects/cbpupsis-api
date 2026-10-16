@@ -41,7 +41,7 @@ class TestLivenessStaysDatabaseFree:
         silently reintroducing the coupling that gets healthy pods killed.
         """
         with patch(
-            "cbpupsis_shared.application._check_database",
+            "cbpupsis_shared.application.ping_database",
             side_effect=AssertionError("queried"),
         ):
             response = await probe_client.get("/health")
@@ -67,7 +67,7 @@ class TestReadiness:
         async def _answers() -> None:
             return None
 
-        with patch("cbpupsis_shared.application._check_database", _answers):
+        with patch("cbpupsis_shared.application.ping_database", _answers):
             response = await probe_client.get("/ready")
 
         assert response.status_code == 200, response.text
@@ -79,7 +79,7 @@ class TestReadiness:
         """503, not a 200 with a status field: orchestrators route on the code,
         so a body saying "not ready" behind a 200 keeps traffic arriving."""
         failure = OperationalError("SELECT 1", {}, Exception("connection refused"))
-        with patch("cbpupsis_shared.application._check_database", side_effect=failure):
+        with patch("cbpupsis_shared.application.ping_database", side_effect=failure):
             response = await probe_client.get("/ready")
 
         assert response.status_code == 503, response.text
@@ -97,7 +97,7 @@ class TestReadiness:
 
                 await asyncio.sleep(5)
 
-            with patch("cbpupsis_shared.application._check_database", _never_answers):
+            with patch("cbpupsis_shared.application.ping_database", _never_answers):
                 response = await probe_client.get("/ready")
 
         assert response.status_code == 503, response.text
@@ -110,7 +110,7 @@ class TestReadiness:
         failure = OperationalError(
             "SELECT 1", {}, Exception("password authentication failed for user admin")
         )
-        with patch("cbpupsis_shared.application._check_database", side_effect=failure):
+        with patch("cbpupsis_shared.application.ping_database", side_effect=failure):
             response = await probe_client.get("/ready")
 
         assert "password" not in response.text

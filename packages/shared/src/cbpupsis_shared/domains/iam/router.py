@@ -37,7 +37,7 @@ from cbpupsis_shared.domains.iam.schemas import (
 router = APIRouter()
 
 # Every management endpoint requires this permission. Declared once and reused.
-_manage = Depends(require_permission(MANAGE_IAM))
+requires_manage_iam = Depends(require_permission(MANAGE_IAM))
 
 
 @router.post(
@@ -47,7 +47,7 @@ _manage = Depends(require_permission(MANAGE_IAM))
 )
 async def create_permission(
     data: PermissionCreate,
-    user: CurrentUser = _manage,
+    user: CurrentUser = requires_manage_iam,
     db: AsyncSession = Depends(get_db),
 ) -> PermissionRead:
     """Create a new permission (an atomic action)."""
@@ -64,7 +64,7 @@ async def create_permission(
 )
 async def create_policy(
     data: PolicyCreate,
-    user: CurrentUser = _manage,
+    user: CurrentUser = requires_manage_iam,
     db: AsyncSession = Depends(get_db),
 ) -> PolicyRead:
     """Create a policy bundling the named (existing) permissions."""
@@ -85,7 +85,7 @@ async def create_policy(
 )
 async def create_group(
     data: GroupCreate,
-    user: CurrentUser = _manage,
+    user: CurrentUser = requires_manage_iam,
     db: AsyncSession = Depends(get_db),
 ) -> GroupRead:
     """Create a new (empty) group."""
@@ -102,7 +102,7 @@ async def create_group(
 async def attach_policy_to_group(
     group_id: int,
     data: AttachPolicyRequest,
-    user: CurrentUser = _manage,
+    user: CurrentUser = requires_manage_iam,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Attach a policy to a group; members inherit its permissions."""
@@ -118,7 +118,7 @@ async def attach_policy_to_group(
 async def add_user_to_group(
     group_id: int,
     data: AddUserToGroupRequest,
-    user: CurrentUser = _manage,
+    user: CurrentUser = requires_manage_iam,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Add a user to a group, granting them the group's policies."""
@@ -134,7 +134,7 @@ async def add_user_to_group(
 async def detach_policy_from_group(
     group_id: int,
     policy_id: int,
-    user: CurrentUser = _manage,
+    user: CurrentUser = requires_manage_iam,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Detach a policy from a group; members lose the permissions it granted.
@@ -154,7 +154,7 @@ async def detach_policy_from_group(
 async def remove_user_from_group(
     group_id: int,
     user_id: uuid.UUID,
-    user: CurrentUser = _manage,
+    user: CurrentUser = requires_manage_iam,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Remove a user from a group, revoking the policies it granted them."""
@@ -170,7 +170,11 @@ async def remove_user_from_group(
 # --------------------------------------------------------------------------- #
 
 
-@router.get("/permissions", response_model=Page[PermissionRead], dependencies=[_manage])
+@router.get(
+    "/permissions",
+    response_model=Page[PermissionRead],
+    dependencies=[requires_manage_iam],
+)
 async def list_permissions(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -189,7 +193,7 @@ async def list_permissions(
 @router.get(
     "/permissions/{permission_id}",
     response_model=PermissionRead,
-    dependencies=[_manage],
+    dependencies=[requires_manage_iam],
 )
 async def read_permission(
     permission_id: int, db: AsyncSession = Depends(get_db)
@@ -199,7 +203,9 @@ async def read_permission(
     return PermissionRead.model_validate(permission)
 
 
-@router.get("/policies", response_model=Page[PolicyRead], dependencies=[_manage])
+@router.get(
+    "/policies", response_model=Page[PolicyRead], dependencies=[requires_manage_iam]
+)
 async def list_policies(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -215,14 +221,20 @@ async def list_policies(
     )
 
 
-@router.get("/policies/{policy_id}", response_model=PolicyRead, dependencies=[_manage])
+@router.get(
+    "/policies/{policy_id}",
+    response_model=PolicyRead,
+    dependencies=[requires_manage_iam],
+)
 async def read_policy(policy_id: int, db: AsyncSession = Depends(get_db)) -> PolicyRead:
     """Return one policy with its permissions."""
     policy = await iam_service.get_policy(db, policy_id)
     return PolicyRead.model_validate(policy)
 
 
-@router.get("/groups", response_model=Page[GroupRead], dependencies=[_manage])
+@router.get(
+    "/groups", response_model=Page[GroupRead], dependencies=[requires_manage_iam]
+)
 async def list_groups(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -238,7 +250,9 @@ async def list_groups(
     )
 
 
-@router.get("/groups/{group_id}", response_model=GroupRead, dependencies=[_manage])
+@router.get(
+    "/groups/{group_id}", response_model=GroupRead, dependencies=[requires_manage_iam]
+)
 async def read_group(group_id: int, db: AsyncSession = Depends(get_db)) -> GroupRead:
     """Return one group."""
     group = await iam_service.get_group(db, group_id)
@@ -248,7 +262,7 @@ async def read_group(group_id: int, db: AsyncSession = Depends(get_db)) -> Group
 @router.get(
     "/users/{user_id}/permissions",
     response_model=EffectivePermissionsRead,
-    dependencies=[_manage],
+    dependencies=[requires_manage_iam],
 )
 async def read_user_permissions(
     user_id: uuid.UUID, db: AsyncSession = Depends(get_db)

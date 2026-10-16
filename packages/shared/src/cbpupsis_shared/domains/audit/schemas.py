@@ -32,6 +32,36 @@ class AuditEntryRead(BaseModel):
     @field_serializer("occurred_at")
     def serialize_occurred_at(self, value: datetime) -> str:
         """Store UTC instants, render the audit contract in UTC+8."""
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=UTC)
-        return value.astimezone(timezone(timedelta(hours=8))).isoformat()
+        return render_in_utc8(value)
+
+
+class SignInAttemptRead(BaseModel):
+    """One recorded sign-in attempt from any role's sign-in flow."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    attempted_id: str
+    user_id: uuid.UUID | None
+    ip_address: str | None
+    user_agent: str | None
+    success: bool
+    failure_reason: str | None
+    mfa_used: bool
+    created_at: datetime
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, value: datetime) -> str:
+        """Same rendering as :class:`AuditEntryRead`."""
+        return render_in_utc8(value)
+
+    @field_serializer("ip_address")
+    def serialize_ip_address(self, value: object) -> str | None:
+        return None if value is None else str(value)
+
+
+def render_in_utc8(value: datetime) -> str:
+    """Render a stored UTC instant as ISO 8601 in UTC+8; a naive value is UTC."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(timezone(timedelta(hours=8))).isoformat()

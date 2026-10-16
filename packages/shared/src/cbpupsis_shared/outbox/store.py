@@ -129,7 +129,12 @@ def start_attempt(message: OutboxMessage, *, now: datetime | None = None) -> Non
     """
     at = now or datetime.now(UTC)
     message.attempts += 1
-    message.available_at = at + _backoff(message.attempts)
+    # Exponential and capped: doubling without a ceiling turns the eighth retry
+    # into a wait measured in days, long after anyone still wants the message.
+    delay = settings.outbox_backoff_base_seconds * 2 ** max(message.attempts - 1, 0)
+    message.available_at = at + timedelta(
+        seconds=min(delay, settings.outbox_backoff_cap_seconds)
+    )
 
 
 def mark_dispatched(message: OutboxMessage, *, now: datetime | None = None) -> None:
@@ -247,17 +252,6 @@ async def pending_stats(db: AsyncSession) -> dict[str, Any]:
             oldest = oldest.replace(tzinfo=UTC)
         age = (datetime.now(UTC) - oldest).total_seconds()
     return {"pending": pending or 0, "oldest_pending_seconds": round(age, 1)}
-
-
-def _backoff(attempts: int) -> timedelta:
-    """Exponential backoff, capped.
-
-    Private, so it needs no ``SQL::`` block — it runs none. Capped because
-    doubling without a ceiling turns the eighth retry into a wait measured in
-    days, long after anyone would still want the message delivered.
-    """
-    seconds = settings.outbox_backoff_base_seconds * (2 ** max(attempts - 1, 0))
-    return timedelta(seconds=min(seconds, settings.outbox_backoff_cap_seconds))
 
 
 async def prune_dispatched(

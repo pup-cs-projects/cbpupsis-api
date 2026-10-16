@@ -15,20 +15,33 @@ in spam, and it makes the login endpoint report whether an address is registered
 *and* unverified. Instead, verification is enforced where it actually matters,
 by declaring :func:`require_verified_email` on the specific endpoints that
 should not run for an unproven address.
+
+**A temporary password closes every route but one.** An account still holding
+a system-issued password answers 403 ``PASSWORD_CHANGE_REQUIRED`` from
+:func:`get_current_user` and every role guard built on the same session check.
+Only :func:`get_password_changing_user`, declared by ``POST /auth/change-password``,
+lets it through. The logout routes take a refresh token, not a session, so they
+stay open without it.
 """
 
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
-from fastapi import Depends, Request
+from fastapi import Depends, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cbpupsis_core.config import settings
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.auth.constants import (
+    REFRESH_COOKIE_NAME,
+    ROLE_SUPERADMIN,
+)
 from cbpupsis_shared.domains.auth.exceptions import (
     AuthSessionExpiredError,
     InactiveUserError,
@@ -45,7 +58,7 @@ from cbpupsis_shared.domains.users import service as users_service
 # auto_error=False so a MISSING header reaches our own code instead of raising
 # Starlette's 403. A missing credential is 401 ("who are you?"), not 403 ("I
 # know who you are and you may not"); the default conflates the two.
-_bearer_scheme = HTTPBearer(auto_error=False)
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 @dataclass(frozen=True)
@@ -61,44 +74,81 @@ class CurrentUser:
     email: str
     role: str | None = None
     session_id: uuid.UUID | None = None
+    #: The verified access-token claims, for flows that must reissue the same
+    #: kind of session (a password change). Never used for authorization.
+    claims: Mapping[str, object] = field(default_factory=dict, compare=False)
 
 
 async def get_current_user(
     request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> CurrentUser:
-    """Resolve the current user from a verified access token.
+    """Resolve the current user from a verified access token and live session.
 
     The user row is loaded on every request rather than trusted from the token,
     so deactivating or deleting an account takes effect immediately instead of
-    when the token happens to expire.
+    when the token happens to expire. Every role's token names a server-side
+    session (``sid``) that must still be live and not idle past the timeout.
+    A pending temporary password answers 403 ``PASSWORD_CHANGE_REQUIRED``.
     """
+    return await _authenticate(request, credentials, db, allow_password_change=False)
+
+
+async def get_password_changing_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> CurrentUser:
+    """:func:`get_current_user`, still open while a temporary password is pending.
+
+    Declared only by the password change, the one route such an account may
+    call. Anything else that declared it would reopen the whole API to an
+    account that has not yet chosen its own password.
+    """
+    return await _authenticate(request, credentials, db, allow_password_change=True)
+
+
+async def _authenticate(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+    db: AsyncSession,
+    *,
+    allow_password_change: bool,
+) -> CurrentUser:
     db.info.pop("superadmin_audit", None)
     db.info.pop("audit_event_handler", None)
     if credentials is None:
         raise NotAuthenticatedError
     try:
         claims = decode_token(credentials.credentials, expected_type="access")
-    except InvalidAuthTokenError:
+    except InvalidAuthTokenError as invalid:
         # A signed but expired JWT can identify an idle session for cleanup,
         # never authorize a request or extend its activity window.
         stale = decode_token(
             credentials.credentials, expected_type="access", allow_expired=True
         )
-        if stale.get("role") == "superadmin":
-            await auth_service.check_superadmin_session(db, stale, touch=False)
+        if stale.get("role") == ROLE_SUPERADMIN:
+            await auth_service.check_superadmin_session(
+                db, stale, touch=False, allow_password_change=True
+            )
             raise AuthSessionExpiredError from None
-        raise
+        if stale.get("sid"):
+            # Raises AUTH_SESSION_EXPIRED (and deletes the row) if it went idle.
+            await auth_service.check_session(
+                db, stale, touch=False, allow_password_change=True
+            )
+        raise invalid from None
     user = await users_service.get_active_user(db, uuid.UUID(claims["sub"]))
     if user is None:
         raise InactiveUserError
 
     require_session_version(claims, user.session_version)
     role = claims.get("role")
-    sid = None
-    if role == "superadmin":
-        sid = await auth_service.check_superadmin_session(db, claims)
+    if role == ROLE_SUPERADMIN:
+        sid = await auth_service.check_superadmin_session(
+            db, claims, allow_password_change=allow_password_change
+        )
         request.state.superadmin_audit = audit_client.begin_superadmin_request(
             db, user.id, request.method, request.url.path
         )
@@ -106,13 +156,23 @@ async def get_current_user(
         request.state.audit_db = db
     elif await iam_service.is_user_in_group(db, user.id, SUPERADMIN_GROUP):
         raise SuperadminRoleRequiredError
+    else:
+        sid = await auth_service.check_session(
+            db, claims, allow_password_change=allow_password_change
+        )
 
     # Published for the rate limiter, which keys authenticated callers by
     # identity rather than by address so users behind one NAT do not consume
     # each other's allowance. Set only after the token is verified and the
     # account confirmed live, so the value is never attacker-controlled.
     request.state.user_id = str(user.id)
-    return CurrentUser(id=user.id, email=user.email, role=role, session_id=sid)
+    return CurrentUser(
+        id=user.id,
+        email=user.email,
+        role=str(role) if role is not None else None,
+        session_id=sid,
+        claims=claims,
+    )
 
 
 async def require_superadmin_session(
@@ -149,3 +209,40 @@ async def require_verified_email(
     if record.email_verified_at is None:
         raise UnverifiedEmailError("Email address not verified")
     return user
+
+
+def refresh_cookie_path(role: str) -> str:
+    """Scope the cookie to one role's auth routes.
+
+    Setting and clearing must name the same path, or the browser keeps the cookie.
+    """
+    return f"/api/v1/auth/{role}"
+
+
+def set_refresh_cookie(response: Response, refresh_token: str, *, role: str) -> None:
+    """Set the one refresh-token cookie shape every role uses.
+
+    Whether clients keep the refresh token in this cookie or in the response
+    body is an open decision (see the Sessions row of the CONVENTIONS gap
+    table); both are sent until it closes.
+    """
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=refresh_token,
+        max_age=settings.refresh_token_ttl_days * 24 * 3600,
+        path=refresh_cookie_path(role),
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
+
+
+def clear_refresh_cookie(response: Response, *, role: str) -> None:
+    """Delete the refresh-token cookie :func:`set_refresh_cookie` set."""
+    response.delete_cookie(
+        REFRESH_COOKIE_NAME,
+        path=refresh_cookie_path(role),
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )

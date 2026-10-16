@@ -25,3 +25,21 @@ AUDITED_EVENTS: tuple[str, ...] = (
     "user.deactivated",
     "user.reactivated",
 )
+
+
+#: Which payload key identifies the thing acted upon, per event. The audit row
+#: keeps a generic (target_type, target_id) pair so one index answers "what
+#: happened to this?" regardless of which domain emitted it.
+AUDIT_TARGETS: dict[str, tuple[str, str]] = {
+    "iam.policy_attached_to_group": ("group", "group_id"),
+    "iam.policy_detached_from_group": ("group", "group_id"),
+    "iam.user_added_to_group": ("user", "user_id"),
+    "iam.user_removed_from_group": ("user", "user_id"),
+    "iam.policy_attached_to_user": ("user", "user_id"),
+    "iam.policy_detached_from_user": ("user", "user_id"),
+    "iam.permission_created": ("permission", "permission_id"),
+    "iam.policy_created": ("policy", "policy_id"),
+    "iam.group_created": ("group", "group_id"),
+    "user.deactivated": ("user", "user_id"),
+    "user.reactivated": ("user", "user_id"),
+}

@@ -85,6 +85,17 @@ async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
 
 @pytest.fixture
+async def addressless_client(client: AsyncClient) -> AsyncGenerator[AsyncClient, None]:
+    """A client whose requests carry no usable address (no IP peer, no header).
+
+    Built on ``client`` so it shares that fixture's overrides and session.
+    """
+    transport = ASGITransport(app=app, client=("unix-socket", 0))
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+
+@pytest.fixture
 async def grant(db: AsyncSession):
     """Return a helper that grants a user one permission via a group.
 
@@ -115,10 +126,10 @@ async def grant(db: AsyncSession):
 
 @pytest.fixture
 def make_user(db: AsyncSession):
-    """Return a helper that registers a user through the auth service.
+    """Return a helper that creates a user through the auth service.
 
-    The normal creation path, not a hand-built ORM row — a fixture that inserted
-    directly would keep passing if ``register`` broke.
+    The console path, not a hand-built ORM row: a fixture that inserted
+    directly would keep passing if account creation broke.
 
     Lives here rather than in one domain's tests because every domain's
     repository tests need a user to hang rows off: items need an owner, IAM
@@ -126,11 +137,38 @@ def make_user(db: AsyncSession):
     """
 
     async def _make_user(email: str):
-        return await auth_service.register(
+        return await auth_service.create_console_account(
             db, email=email, password="a-long-enough-password"
         )
 
     return _make_user
+
+
+@pytest.fixture
+def console_account(db: AsyncSession):
+    """Return a helper that creates an unverified account, as signup once did.
+
+    Public registration is gone; tests that need a fresh, unverified account
+    with a verification link queued create it through the console path and get
+    back the fields the old signup response carried.
+    """
+
+    async def _console_account(
+        email: str,
+        password: str = "a-long-enough-password",
+        full_name: str | None = None,
+    ) -> dict[str, object]:
+        user = await auth_service.create_console_account(
+            db, email=email, password=password, full_name=full_name
+        )
+        return {
+            "id": str(user.id),
+            "email": user.email,
+            "full_name": user.full_name,
+            "email_verified_at": user.email_verified_at,
+        }
+
+    return _console_account
 
 
 @pytest.fixture
@@ -159,16 +197,30 @@ def drain_outbox(db: AsyncSession):
         async def _reset_email(event, *, message_id):
             await delivery.deliver_reset_email_on(db, event, message_id=message_id)
 
-        previous = dict(worker._HANDLERS)
-        worker._HANDLERS.clear()
+        async def _verification_email(event, *, message_id):
+            await delivery.deliver_verification_email_on(
+                db, event, message_id=message_id
+            )
+
+        async def _temporary_password_email(event, *, message_id):
+            await delivery.deliver_temporary_password_email_on(
+                db, event, message_id=message_id
+            )
+
+        previous = dict(worker.HANDLERS)
+        worker.HANDLERS.clear()
         worker.register_handler("auth.password_reset_email", _reset_email)
+        worker.register_handler("auth.verification_email", _verification_email)
+        worker.register_handler(
+            auth_service.TEMPORARY_PASSWORD_EVENT, _temporary_password_email
+        )
         for name in NOTIFICATION_TYPES:
             worker.register_handler(name, _handle)
         try:
             return await worker.process_batch(db)
         finally:
-            worker._HANDLERS.clear()
-            worker._HANDLERS.update(previous)
+            worker.HANDLERS.clear()
+            worker.HANDLERS.update(previous)
 
     return _drain
 
@@ -190,20 +242,12 @@ def sent_emails(monkeypatch) -> list[dict[str, str]]:
         captured.append({"to": to, "subject": subject, "body": body})
         return True
 
-    # Verification is inline; reset links and security notices are delivered
-    # by durable handlers. Patch each lookup site without auto-draining jobs.
-    monkeypatch.setattr("cbpupsis_shared.domains.auth.service.send_email", _capture)
+    # Every link and notice is delivered by a durable handler, so a test reads
+    # mail only after ``drain_outbox``. Patch each lookup site without
+    # auto-draining jobs.
     monkeypatch.setattr("cbpupsis_shared.domains.auth.delivery.send_email", _capture)
     monkeypatch.setattr(
         "cbpupsis_shared.domains.notifications.channels.send_email", _capture
-    )
-    monkeypatch.setattr(
-        "cbpupsis_api_student.domains.student_auth.service.send_email", _capture
-    )
-    monkeypatch.setattr(
-        "cbpupsis_api_faculty.domains.faculty_auth.service.send_email",
-        _capture,
-        raising=False,
     )
     return captured
 
@@ -215,32 +259,28 @@ def token_from_email(email: dict[str, str]) -> str:
 
 @pytest.fixture
 async def registered_user(client: AsyncClient, db: AsyncSession) -> dict[str, str]:
-    """Register a **verified** user and return their credentials plus id.
+    """Create a **verified** user and return their credentials plus id.
+
+    Created through the auth service's console path, with a password of the
+    test's choosing and no forced change: public registration is gone, and a
+    Superadmin-created account would hold a temporary password instead.
 
     The email is marked verified because login requires it: an unverified
     account is refused with 403, so a fixture that skipped this step would hand
-    every downstream test an account that cannot log in.
+    every downstream test an account that cannot log in. The mailed-token path
+    is exercised on its own in ``tests/domains/auth/test_email_flows.py``.
 
-    Verification is stamped directly through the users service rather than by
-    redeeming the mailed token, so this fixture does not depend on the
-    ``sent_emails`` capture and stays usable by tests that never opt into it.
-    The mailed-token path is exercised on its own in
-    ``tests/domains/auth/test_email_flows.py``.
-
-    Tests that specifically need an *unverified* account register one inline
-    rather than using this fixture.
+    Tests that specifically need an *unverified* account create one with
+    ``console_account`` rather than using this fixture.
     """
     payload = {
         "email": "user@example.com",
         "password": "correct-horse-battery-staple",
         "full_name": "Test User",
     }
-    response = await client.post("/api/v1/auth/register", json=payload)
-    assert response.status_code == 201, response.text
-
-    user_id = response.json()["id"]
-    await users_service.mark_email_verified(db, uuid.UUID(user_id))
-    return {**payload, "id": user_id}
+    user = await auth_service.create_console_account(db, **payload)
+    await users_service.mark_email_verified(db, user.id)
+    return {**payload, "id": str(user.id)}
 
 
 @pytest.fixture
@@ -267,8 +307,8 @@ async def superadmin_tokens(client, db, registered_user):
 
     from sqlalchemy import select
 
-    from cbpupsis_api_admin.domains.admin_auth.security import totp_at
     from cbpupsis_database.models.iam import Group
+    from cbpupsis_shared.domains.auth.security import totp_at
     from cbpupsis_shared.domains.iam.constants import SUPERADMIN_GROUP
 
     group = await db.scalar(select(Group).where(Group.name == SUPERADMIN_GROUP))
@@ -303,3 +343,41 @@ async def superadmin_tokens(client, db, registered_user):
 @pytest.fixture
 def superadmin_headers(superadmin_tokens):
     return {"Authorization": f"Bearer {superadmin_tokens['access_token']}"}
+
+
+def temporary_password_from(email: dict[str, str]) -> str:
+    """Extract the temporary password from a captured welcome email."""
+    return email["body"].split("temporary password:\n\n")[1].split("\n")[0].strip()
+
+
+@pytest.fixture
+async def role_groups(db: AsyncSession) -> None:
+    """Create the groups seed_iam gives each account role, if missing."""
+    from cbpupsis_shared.domains.iam.constants import (
+        ADMIN_GROUP,
+        FACULTY_GROUP,
+        STUDENT_GROUP,
+    )
+
+    existing = {group.name for group in (await iam_service.list_groups(db)).items}
+    for name in (STUDENT_GROUP, FACULTY_GROUP, ADMIN_GROUP):
+        if name not in existing:
+            await iam_service.create_group(db, name=name)
+
+
+@pytest.fixture
+async def active_program(db: AsyncSession):
+    """One active degree program; the curriculum domain has no write path yet."""
+    from decimal import Decimal
+
+    from cbpupsis_database.models.curriculum import Program
+
+    program = Program(
+        code="BSCS",
+        name="Bachelor of Science in Computer Science",
+        department="Computer Science",
+        total_units_required=Decimal("150.0"),
+    )
+    db.add(program)
+    await db.commit()
+    return program

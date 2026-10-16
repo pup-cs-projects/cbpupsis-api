@@ -24,16 +24,23 @@ Transactions belong to the service: nothing here commits.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
+from datetime import date, datetime
 
-from sqlalchemy import Select, func, select, update
+from sqlalchemy import func, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_database.models.users import AdminProfile, User
+from cbpupsis_database.models.users import (
+    AdminProfile,
+    FacultyProfile,
+    StudentProfile,
+    User,
+    UserProfile,
+)
 
-
-def _live() -> Select[tuple[User]]:
-    """Base query excluding soft-deleted rows, so no caller has to remember it."""
-    return select(User).where(User.deleted_at.is_(None))
+#: The base of every user lookup: soft-deleted rows excluded once, here, so no
+#: query can forget it. A ``Select`` is immutable, so sharing one is safe.
+LIVE_USERS = select(User).where(User.deleted_at.is_(None))
 
 
 async def get_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
@@ -52,7 +59,7 @@ async def get_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
         FROM users
         WHERE users.deleted_at IS NULL AND users.id = :id_1::UUID
     """
-    return await db.scalar(_live().where(User.id == user_id))
+    return await db.scalar(LIVE_USERS.where(User.id == user_id))
 
 
 async def get_active_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
@@ -73,7 +80,9 @@ async def get_active_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
         WHERE users.deleted_at IS NULL AND users.id = :id_1::UUID
           AND users.is_active IS true
     """
-    return await db.scalar(_live().where(User.id == user_id, User.is_active.is_(True)))
+    return await db.scalar(
+        LIVE_USERS.where(User.id == user_id, User.is_active.is_(True))
+    )
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
@@ -94,7 +103,7 @@ async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
         FROM users
         WHERE users.deleted_at IS NULL AND users.email = :email_1
     """
-    return await db.scalar(_live().where(User.email == email))
+    return await db.scalar(LIVE_USERS.where(User.email == email))
 
 
 def add_user(
@@ -102,27 +111,45 @@ def add_user(
     email: str,
     password_hash: str,
     full_name: str | None = None,
+    *,
+    user_id: uuid.UUID | None = None,
+    email_verified_at: datetime | None = None,
+    password_change_required: bool = False,
+    temporary_password_expires_at: datetime | None = None,
 ) -> User:
     """Stage a new user on the session and return it.
 
-    Synchronous because ``Session.add`` issues no SQL — the INSERT happens when
+    Synchronous because ``Session.add`` issues no SQL: the INSERT happens when
     the service commits, which is also where the unique-email integrity error
-    surfaces and gets translated into a 409.
+    surfaces and gets translated into a 409. ``user_id`` lets a caller stage
+    rows that reference the user before a flush would assign one.
 
     Emits no SQL here. On the service's commit::
 
         INSERT INTO users (email, password_hash, full_name, is_active,
-                           email_verified_at, display_name, bio, avatar_url,
-                           timezone, locale, phone_number,
+                           email_verified_at, password_change_required,
+                           temporary_password_expires_at, display_name, bio,
+                           avatar_url, timezone, locale, phone_number,
                            onboarding_completed_at, anonymized_at, id,
                            deleted_at)
         VALUES (:email, :password_hash, :full_name, :is_active,
-                :email_verified_at, :display_name, :bio, :avatar_url,
-                :timezone, :locale, :phone_number, :onboarding_completed_at,
-                :anonymized_at, :id::UUID, :deleted_at)
+                :email_verified_at, :password_change_required,
+                :temporary_password_expires_at, :display_name, :bio,
+                :avatar_url, :timezone, :locale, :phone_number,
+                :onboarding_completed_at, :anonymized_at, :id::UUID,
+                :deleted_at)
         RETURNING users.created_at, users.updated_at
     """
-    user = User(email=email, password_hash=password_hash, full_name=full_name)
+    user = User(
+        email=email,
+        password_hash=password_hash,
+        full_name=full_name,
+        email_verified_at=email_verified_at,
+        password_change_required=password_change_required,
+        temporary_password_expires_at=temporary_password_expires_at,
+    )
+    if user_id is not None:
+        user.id = user_id
     db.add(user)
     return user
 
@@ -209,7 +236,7 @@ async def list_users(
         ORDER BY users.created_at DESC, users.id DESC
         LIMIT :param_1 OFFSET :param_2
     """
-    query = _live()
+    query = LIVE_USERS
     if is_active is not None:
         query = query.where(User.is_active.is_(is_active))
     if is_verified is not None:
@@ -236,8 +263,7 @@ async def get_user_for_update(db: AsyncSession, user_id: uuid.UUID) -> User | No
         SELECT * FROM users WHERE id = :user_id AND deleted_at IS NULL FOR UPDATE
     """
     return await db.scalar(
-        _live()
-        .where(User.id == user_id)
+        LIVE_USERS.where(User.id == user_id)
         .with_for_update()
         .execution_options(populate_existing=True)
     )
@@ -251,23 +277,289 @@ async def get_user_by_email_for_update(db: AsyncSession, email: str) -> User | N
         SELECT * FROM users WHERE email = :email AND deleted_at IS NULL FOR UPDATE
     """
     return await db.scalar(
-        _live()
-        .where(User.email == email)
+        LIVE_USERS.where(User.email == email)
         .with_for_update()
         .execution_options(populate_existing=True)
     )
 
 
-async def clear_pending_mfa_challenge(db: AsyncSession, user_id: uuid.UUID) -> None:
-    """A password reset also invalidates an unfinished old-password challenge.
+async def get_student_by_number(
+    db: AsyncSession, student_number: str
+) -> tuple[User, UserProfile | None] | None:
+    """Return the live user holding a student number, with their profile.
 
     SQL::
 
-        UPDATE admin_profiles SET active_mfa_challenge_jti = NULL
-        WHERE user_id = :user_id
+        SELECT users.*, user_profiles.*
+        FROM users
+        JOIN student_profiles ON student_profiles.user_id = users.id
+        LEFT OUTER JOIN user_profiles ON user_profiles.user_id = users.id
+        WHERE users.deleted_at IS NULL
+          AND student_profiles.student_number = :student_number
     """
-    await db.execute(
-        update(AdminProfile)
-        .where(AdminProfile.user_id == user_id)
-        .values(active_mfa_challenge_jti=None)
+    row = (
+        await db.execute(
+            select(User, UserProfile)
+            .join(StudentProfile, StudentProfile.user_id == User.id)
+            .outerjoin(UserProfile, UserProfile.user_id == User.id)
+            .where(
+                User.deleted_at.is_(None),
+                StudentProfile.student_number == student_number,
+            )
+        )
+    ).first()
+    return None if row is None else (row[0], row[1])
+
+
+async def get_faculty_by_employee_id(
+    db: AsyncSession, employee_id: str
+) -> tuple[User, FacultyProfile] | None:
+    """Return the live user holding an employee id, with their faculty profile.
+
+    SQL::
+
+        SELECT users.*, faculty_profiles.*
+        FROM users
+        JOIN faculty_profiles ON faculty_profiles.user_id = users.id
+        WHERE users.deleted_at IS NULL
+          AND faculty_profiles.employee_id = :employee_id
+    """
+    row = (
+        await db.execute(
+            select(User, FacultyProfile)
+            .join(FacultyProfile, FacultyProfile.user_id == User.id)
+            .where(
+                User.deleted_at.is_(None),
+                FacultyProfile.employee_id == employee_id,
+            )
+        )
+    ).first()
+    return None if row is None else (row[0], row[1])
+
+
+async def get_faculty_profile(
+    db: AsyncSession, user_id: uuid.UUID
+) -> FacultyProfile | None:
+    """Return a user's faculty profile, or ``None``.
+
+    SQL::
+
+        SELECT * FROM faculty_profiles WHERE user_id = :user_id
+    """
+    return await db.get(FacultyProfile, user_id, populate_existing=True)
+
+
+async def exists_role_profile(db: AsyncSession, user_id: uuid.UUID) -> bool:
+    """Return whether a user holds a student or faculty profile.
+
+    SQL::
+
+        SELECT student_profiles.user_id FROM student_profiles
+        WHERE student_profiles.user_id = :user_id
+        UNION ALL
+        SELECT faculty_profiles.user_id FROM faculty_profiles
+        WHERE faculty_profiles.user_id = :user_id
+        LIMIT 1
+    """
+    statement = union_all(
+        select(StudentProfile.user_id).where(StudentProfile.user_id == user_id),
+        select(FacultyProfile.user_id).where(FacultyProfile.user_id == user_id),
+    ).limit(1)
+    return (await db.execute(statement)).first() is not None
+
+
+async def get_admin_profile(
+    db: AsyncSession, user_id: uuid.UUID
+) -> AdminProfile | None:
+    """Return a user's Admin position profile, or ``None``.
+
+    SQL::
+
+        SELECT * FROM admin_profiles WHERE user_id = :user_id
+    """
+    return await db.get(AdminProfile, user_id, populate_existing=True)
+
+
+def add_admin_profile(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    position: str,
+    department: str | None,
+    college: str | None,
+    employee_id: str | None = None,
+) -> AdminProfile:
+    """Stage an Admin position profile.
+
+    On commit::
+
+        INSERT INTO admin_profiles (user_id, employee_id, position, department,
+                                    college, is_active)
+        VALUES (:user_id, :employee_id, :position, :department, :college, true)
+    """
+    profile = AdminProfile(
+        user_id=user_id,
+        employee_id=employee_id,
+        position=position,
+        department=department,
+        college=college,
+        is_active=True,
     )
+    db.add(profile)
+    return profile
+
+
+def update_admin_profile(profile: AdminProfile, **fields: object) -> AdminProfile:
+    """Stage changes to a loaded Admin position profile.
+
+    On commit, using the supplied fields::
+
+        UPDATE admin_profiles SET position = :position, ... WHERE user_id = :id
+    """
+    for name, value in fields.items():
+        setattr(profile, name, value)
+    return profile
+
+
+def add_user_profile(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    first_name: str,
+    last_name: str,
+    birthdate: date | None,
+) -> UserProfile:
+    """Stage a user's personal-details profile.
+
+    On commit::
+
+        INSERT INTO user_profiles (user_id, first_name, last_name, birthdate,
+                                   profile_completed, email_notifications)
+        VALUES (:user_id, :first_name, :last_name, :birthdate, false, true)
+    """
+    profile = UserProfile(
+        user_id=user_id,
+        first_name=first_name,
+        last_name=last_name,
+        birthdate=birthdate,
+    )
+    db.add(profile)
+    return profile
+
+
+def add_student_profile(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    student_number: str,
+    program_id: uuid.UUID,
+    year_level: int,
+) -> StudentProfile:
+    """Stage a student profile.
+
+    On commit::
+
+        INSERT INTO student_profiles (user_id, student_number, program_id,
+                                      year_level, enrollment_status, ...)
+        VALUES (:user_id, :student_number, :program_id, :year_level,
+                'pending', ...)
+    """
+    profile = StudentProfile(
+        user_id=user_id,
+        student_number=student_number,
+        program_id=program_id,
+        year_level=year_level,
+    )
+    db.add(profile)
+    return profile
+
+
+def add_faculty_profile(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    employee_id: str,
+    department: str,
+    college: str | None,
+) -> FacultyProfile:
+    """Stage a faculty profile.
+
+    On commit::
+
+        INSERT INTO faculty_profiles (user_id, employee_id, department,
+                                      college, employment_type, is_active)
+        VALUES (:user_id, :employee_id, :department, :college, 'full_time',
+                true)
+    """
+    profile = FacultyProfile(
+        user_id=user_id,
+        employee_id=employee_id,
+        department=department,
+        college=college,
+    )
+    db.add(profile)
+    return profile
+
+
+async def list_taken_emails(db: AsyncSession, emails: Collection[str]) -> list[str]:
+    """Return which of ``emails`` some row already holds, deleted rows included.
+
+    Unlike every lookup above, soft-deleted rows count: the unique constraint
+    covers them, so an address one holds cannot go to a new account.
+
+    SQL::
+
+        SELECT users.email FROM users
+        WHERE users.email IN (__[POSTCOMPILE_email_1])
+    """
+    if not emails:
+        return []
+    return list(await db.scalars(select(User.email).where(User.email.in_(emails))))
+
+
+async def list_taken_student_numbers(
+    db: AsyncSession, numbers: Collection[str]
+) -> list[str]:
+    """Return which of ``numbers`` a student profile already holds.
+
+    SQL::
+
+        SELECT student_profiles.student_number FROM student_profiles
+        WHERE student_profiles.student_number IN (__[POSTCOMPILE_number_1])
+    """
+    if not numbers:
+        return []
+    column = StudentProfile.student_number
+    return list(await db.scalars(select(column).where(column.in_(numbers))))
+
+
+async def list_taken_faculty_employee_ids(
+    db: AsyncSession, employee_ids: Collection[str]
+) -> list[str]:
+    """Return which of ``employee_ids`` a faculty profile already holds.
+
+    SQL::
+
+        SELECT faculty_profiles.employee_id FROM faculty_profiles
+        WHERE faculty_profiles.employee_id IN (__[POSTCOMPILE_employee_id_1])
+    """
+    if not employee_ids:
+        return []
+    column = FacultyProfile.employee_id
+    return list(await db.scalars(select(column).where(column.in_(employee_ids))))
+
+
+async def list_taken_admin_employee_ids(
+    db: AsyncSession, employee_ids: Collection[str]
+) -> list[str]:
+    """Return which of ``employee_ids`` an Admin profile already holds.
+
+    SQL::
+
+        SELECT admin_profiles.employee_id FROM admin_profiles
+        WHERE admin_profiles.employee_id IN (__[POSTCOMPILE_employee_id_1])
+    """
+    if not employee_ids:
+        return []
+    column = AdminProfile.employee_id
+    return list(await db.scalars(select(column).where(column.in_(employee_ids))))

@@ -26,6 +26,11 @@ MANAGE_IAM = "ManageIAM"
 #: The group bootstrap_admin promotes into. Must exist in seed_iam's GROUPS.
 ADMIN_GROUP = "Admins"
 SUPERADMIN_GROUP = "Superadmins"
+#: Faculty accounts join this group; it carries their section-reading grant.
+FACULTY_GROUP = "Faculty"
+#: Student accounts join this group. It carries no policy yet: the student
+#: domains attach theirs as they are built.
+STUDENT_GROUP = "Students"
 
 SUPERADMIN_ACTIONS = frozenset(
     {
@@ -36,5 +41,8 @@ SUPERADMIN_ACTIONS = frozenset(
         "ReadAllAuditEntry",
         "ReadAllNotification",
         "ManageNotificationDelivery",
+        "ManageOverride",
+        "RequestBackupRestore",
+        "ApproveBackupRestore",
     }
 )

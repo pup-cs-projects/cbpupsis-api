@@ -71,6 +71,8 @@ def register_middleware(app: FastAPI) -> None:
         allow_methods=["*"],
         allow_headers=["*"],
         # Lets browser clients read the correlation id off the response, so a
-        # frontend bug report can cite the same id that appears in the logs.
-        expose_headers=["X-Request-ID"],
+        # frontend bug report can cite the same id that appears in the logs,
+        # and the wait a 429 or 423 asks for, which is not a CORS-safelisted
+        # header and is otherwise hidden from cross-origin scripts.
+        expose_headers=["X-Request-ID", "Retry-After"],
     )

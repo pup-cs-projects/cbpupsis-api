@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import (
@@ -19,21 +20,6 @@ from cbpupsis_shared.domains.auth.constants import (
     PASSWORD_MIN_LENGTH,
     RESET_PASSWORD_MIN_LENGTH,
 )
-from cbpupsis_shared.domains.users.constants import FULL_NAME_MAX_LENGTH
-
-
-class RegisterRequest(BaseModel):
-    """Payload for creating an account."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    email: EmailStr
-    # Length is the property that actually resists guessing; composition rules
-    # ("one symbol, one digit") mostly push users toward predictable patterns.
-    password: str = Field(
-        min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH
-    )
-    full_name: str | None = Field(default=None, max_length=FULL_NAME_MAX_LENGTH)
 
 
 class LoginRequest(BaseModel):
@@ -59,6 +45,37 @@ class TokenPair(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+
+
+class TotpEnrollment(BaseModel):
+    """A pending TOTP seed and the otpauth URI an authenticator app scans."""
+
+    secret: str
+    provisioning_uri: str
+
+
+class WebAuthnFactor(BaseModel):
+    """An enrolled hardware key, decrypted for verifying an assertion.
+
+    Internal to the sign-in flows; never returned by an endpoint.
+    """
+
+    credential_id: str
+    public_key: str
+    sign_count: int
+
+
+@dataclass(frozen=True)
+class Challenge[P]:
+    """A live, bound MFA challenge and the role profile it was checked against.
+
+    Internal to the role sign-in flows; never returned by an endpoint. A
+    dataclass, not a model, because ``profile`` is whatever the role loads.
+    """
+
+    claims: dict[str, Any]
+    user_id: uuid.UUID
+    profile: P
 
 
 class CurrentUserRead(BaseModel):

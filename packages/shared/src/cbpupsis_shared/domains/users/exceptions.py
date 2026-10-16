@@ -11,11 +11,20 @@ from collections.abc import Iterable
 
 from cbpupsis_core.exceptions import (
     AppError,
+    ConflictError,
     ForbiddenError,
     NotFoundError,
     UnauthorizedError,
     ValidationError,
 )
+
+#: One message per field a new account can collide on. Keyed by the column the
+#: client sent, so the response names the field without repeating its value.
+ALREADY_EXISTS_MESSAGES: dict[str | None, str] = {
+    "email": "Email already registered",
+    "institutional_id": "Institutional ID already registered",
+    None: "An account with these details already exists",
+}
 
 
 class UsersError(AppError):
@@ -90,3 +99,28 @@ class CannotAdministerSelfError(UsersError, ValidationError):
             "You cannot deactivate your own account through the admin endpoint. "
             "Use /users/me/deactivate if that is what you intend."
         )
+
+
+class UserAlreadyExistsError(UsersError, ConflictError):
+    """A new account collides with an existing one (HTTP 409).
+
+    ``field`` is ``email`` or ``institutional_id`` when a check found the
+    collision, and ``None`` when only the unique constraint did (a concurrent
+    create won the race).
+    """
+
+    code = "USER_ALREADY_EXISTS"
+
+    def __init__(self, field: str | None) -> None:
+        super().__init__(
+            ALREADY_EXISTS_MESSAGES[field], response_fields={"field": field}
+        )
+
+
+class UnknownProgramError(UsersError, ValidationError):
+    """A student account names no active program (HTTP 422)."""
+
+    code = "ACCOUNT_PROGRAM_UNKNOWN"
+
+    def __init__(self) -> None:
+        super().__init__("Unknown or inactive program code")

@@ -14,6 +14,9 @@ Tokens are escaped with ``safe=""`` so that ``/``, ``+`` and ``=`` are encoded
 too. ``token_urlsafe`` does not emit those today, but relying on that couples
 these templates to the generator's alphabet: if it ever changes, an unescaped
 character would silently truncate the token at the receiving end.
+
+Each role has its own portal, so every message that links somewhere takes the
+account's ``role`` and links to the portal ``settings.frontend_url_for`` names.
 """
 
 from __future__ import annotations
@@ -26,11 +29,13 @@ from cbpupsis_core.config import settings
 VERIFICATION_SUBJECT = "Verify your email address"
 PASSWORD_RESET_SUBJECT = "Reset your password"
 PASSWORD_CHANGED_SUBJECT = "Your password was changed"
+WELCOME_SUBJECT = "Your account is ready"
 
 
-def verification_email(token: str) -> tuple[str, str]:
+def verification_email(token: str, *, role: str | None) -> tuple[str, str]:
     """Return (subject, body) for an email-verification message."""
-    link = f"{settings.frontend_base_url}/verify-email?token={quote(token, safe='')}"
+    base = settings.frontend_url_for(role)
+    link = f"{base}/verify-email?token={quote(token, safe='')}"
     hours = settings.email_verification_ttl_hours
     body = (
         f"Welcome to {settings.app_name}.\n\n"
@@ -43,10 +48,11 @@ def verification_email(token: str) -> tuple[str, str]:
 
 
 def password_reset_email(
-    token: str, *, expires_at: datetime | None = None
+    token: str, *, role: str | None, expires_at: datetime | None = None
 ) -> tuple[str, str]:
     """Return (subject, body) for a password-reset message."""
-    link = f"{settings.frontend_base_url}/reset-password?token={quote(token, safe='')}"
+    base = settings.frontend_url_for(role)
+    link = f"{base}/reset-password?token={quote(token, safe='')}"
     minutes = settings.password_reset_ttl_minutes
     if expires_at is None:
         expiry = f"in {minutes} minutes"
@@ -78,3 +84,28 @@ def password_changed_email() -> tuple[str, str]:
         f"support immediately — someone else may have access to your account."
     )
     return PASSWORD_CHANGED_SUBJECT, body
+
+
+def welcome_email(
+    temporary_password: str, *, role: str | None, expires_at: datetime
+) -> tuple[str, str]:
+    """Return (subject, body) for a new account's temporary password.
+
+    The one message that carries a password. It names no identifier beyond
+    the address it is sent to, and the password stops working at the expiry
+    or as soon as the user sets their own.
+    """
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    expiry = expires_at.astimezone(timezone(timedelta(hours=8))).isoformat()
+    body = (
+        f"An account has been created for you on {settings.app_name}.\n\n"
+        f"Sign in at {settings.frontend_url_for(role)} with this temporary "
+        f"password:\n\n"
+        f"{temporary_password}\n\n"
+        f"You will be asked to set your own password right away. The "
+        f"temporary password stops working at {expiry}.\n\n"
+        f"If you were not expecting this account, contact your system "
+        f"administrator."
+    )
+    return WELCOME_SUBJECT, body

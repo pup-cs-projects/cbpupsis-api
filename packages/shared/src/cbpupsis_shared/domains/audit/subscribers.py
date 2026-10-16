@@ -6,17 +6,9 @@ audit service has no registration side effect.
 
 from __future__ import annotations
 
-import uuid
-
-from cbpupsis_core.events import Event
 from cbpupsis_shared import worker
 from cbpupsis_shared.domains.audit import service
 from cbpupsis_shared.domains.audit.constants import AUDITED_EVENTS
-
-
-async def _handle(event: Event, *, message_id: uuid.UUID) -> None:
-    """Adapter matching the worker's idempotent handler signature."""
-    await service.record_event(event, message_id=message_id)
 
 
 def register_audit_subscribers() -> None:
@@ -27,4 +19,4 @@ def register_audit_subscribers() -> None:
     not double every audit row.
     """
     for event_name in AUDITED_EVENTS:
-        worker.register_handler(event_name, _handle)
+        worker.register_handler(event_name, service.record_event)

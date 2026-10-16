@@ -265,7 +265,7 @@ class TestTheHandlerActuallyWrites:
     async def test_an_unmapped_event_records_without_a_target(
         self, db: AsyncSession
     ) -> None:
-        """An event absent from ``_TARGETS`` must still be recorded rather than
+        """An event absent from ``AUDIT_TARGETS`` must still be recorded rather than
         dropped — a trail that silently discards unfamiliar events is worse than
         one with an unfamiliar name in it."""
         await audit_service.record_event_on(

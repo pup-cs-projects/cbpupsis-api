@@ -20,7 +20,7 @@ from cbpupsis_shared.domains.users import service as users_service
 
 class TestUserService:
     async def test_get_by_id_returns_the_user(self, db: AsyncSession) -> None:
-        created = await auth_service.register(
+        created = await auth_service.create_console_account(
             db, email="a@example.com", password="a-long-enough-password"
         )
         assert (await users_service.get_by_id(db, created.id)).id == created.id
@@ -37,14 +37,14 @@ class TestUserService:
         assert await users_service.get_by_email(db, "nobody@example.com") is None
 
     async def test_update_profile(self, db: AsyncSession) -> None:
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="b@example.com", password="a-long-enough-password"
         )
         updated = await users_service.update_profile(db, user.id, full_name="Renamed")
         assert updated.full_name == "Renamed"
 
     async def test_deactivate_hides_from_active_lookup(self, db: AsyncSession) -> None:
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="c@example.com", password="a-long-enough-password"
         )
         assert await users_service.get_active_user(db, user.id) is not None
@@ -66,7 +66,7 @@ class TestUsersClient:
         from cbpupsis_database.models.users import User
         from cbpupsis_shared.domains.users.schemas import UserRead
 
-        created = await auth_service.register(
+        created = await auth_service.create_console_account(
             db, email="d@example.com", password="a-long-enough-password"
         )
         result = await users_client.get_user(db, created.id)
@@ -76,7 +76,7 @@ class TestUsersClient:
 
     async def test_user_exists_checks_liveness(self, db: AsyncSession) -> None:
         """The service-layer integrity check that replaces a cross-domain FK."""
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="e@example.com", password="a-long-enough-password"
         )
         assert await users_client.user_exists(db, user.id)
@@ -122,14 +122,33 @@ class TestUserEndpoints:
         )
         assert response.status_code == 422
 
-    async def test_reading_another_user_requires_permission(
+    async def test_reading_another_user_without_permission_answers_404(
         self, client: AsyncClient, db: AsyncSession, auth_headers: dict[str, str]
     ) -> None:
-        other = await auth_service.register(
+        """Someone else's record answers as if absent, never confirming the id."""
+        other = await auth_service.create_console_account(
             db, email="other@example.com", password="a-long-enough-password"
         )
         response = await client.get(f"/api/v1/users/{other.id}", headers=auth_headers)
-        assert response.status_code == 403
+        missing = await client.get(
+            f"/api/v1/users/{uuid.uuid4()}", headers=auth_headers
+        )
+        assert response.status_code == missing.status_code == 404
+        assert response.json().keys() == missing.json().keys()
+
+    async def test_superadmin_without_read_all_user_gets_404(
+        self,
+        client: AsyncClient,
+        db: AsyncSession,
+        superadmin_headers: dict[str, str],
+    ) -> None:
+        other = await auth_service.create_console_account(
+            db, email="other3@example.com", password="a-long-enough-password"
+        )
+        response = await client.get(
+            f"/api/v1/users/{other.id}", headers=superadmin_headers
+        )
+        assert response.status_code == 404
 
     async def test_reading_another_user_allowed_with_permission(
         self,
@@ -140,7 +159,7 @@ class TestUserEndpoints:
         grant,
     ) -> None:
         await grant(uuid.UUID(registered_user["id"]), "ReadAllUser")
-        other = await auth_service.register(
+        other = await auth_service.create_console_account(
             db, email="other2@example.com", password="a-long-enough-password"
         )
         response = await client.get(

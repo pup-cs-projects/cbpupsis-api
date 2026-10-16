@@ -74,8 +74,6 @@ class JsonFormatter(logging.Formatter):
                 if key not in self._RESERVED
             }
         )
-        # default=str so a UUID or Decimal in `extra` cannot raise inside the
-        # logger — a logging call must never be the thing that breaks a request.
         return json.dumps(payload, default=str)
 
 
@@ -114,19 +112,10 @@ def configure_logging() -> None:
             },
             "root": {"handlers": ["default"], "level": settings.log_level},
             "loggers": {
-                # Our middleware already logs each request with timing and a
-                # correlation id; uvicorn's access log would duplicate it.
                 "uvicorn.access": {"handlers": [], "propagate": False},
-                # INFO here logs every SQL statement — useful when debugging a
-                # query, far too noisy as a default.
                 "sqlalchemy.engine": {"level": "WARNING", "propagate": True},
-                # Database drivers log statements WITH their bound parameters at
-                # DEBUG, which puts password hashes and tokens into the log
-                # store. Pinned above DEBUG so a global log_level=DEBUG cannot
-                # turn that on by accident.
                 "aiosqlite": {"level": "INFO", "propagate": True},
                 "asyncpg": {"level": "INFO", "propagate": True},
-                # SDK wire diagnostics include the secret-bearing SES body.
                 "boto3": {"level": "WARNING", "propagate": True},
                 "botocore": {"level": "WARNING", "propagate": True},
             },

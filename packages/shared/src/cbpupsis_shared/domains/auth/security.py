@@ -12,6 +12,10 @@ Two deliberate choices here:
 Each token carries a ``jti`` (JWT ID). For refresh tokens that id is recorded in
 the database, which is what makes a single token revocable — see
 ``cbpupsis_shared.domains.auth.service``.
+
+The second-factor primitives every role shares live here too: MFA challenge
+tokens, AES-GCM protection of factor secrets, RFC 6238 TOTP, recovery codes, and
+the keyed lockout pseudonym for identifiers that match no account.
 """
 
 from __future__ import annotations
@@ -20,9 +24,11 @@ import base64
 import hashlib
 import hmac
 import secrets
+import struct
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
+from urllib.parse import quote
 
 import bcrypt
 import jwt
@@ -34,7 +40,12 @@ from cbpupsis_core.config import settings
 from cbpupsis_shared.domains.auth.constants import (
     BCRYPT_MAX_PASSWORD_BYTES,
     PASSWORD_MAX_LENGTH,
+    RECOVERY_CODE_BYTES,
+    RECOVERY_CODE_COUNT,
     RESET_PASSWORD_MIN_LENGTH,
+    TEMPORARY_PASSWORD_ALPHABETS,
+    TEMPORARY_PASSWORD_LENGTH,
+    TOTP_ISSUER,
 )
 from cbpupsis_shared.domains.auth.exceptions import (
     InvalidAuthTokenError,
@@ -44,7 +55,8 @@ from cbpupsis_shared.domains.auth.exceptions import (
 
 TokenType = Literal["access", "refresh"]
 
-_pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+#: Verifies hashes written before the move to bcrypt; never used to hash.
+legacy_argon2_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 
 def check_password_complexity(raw_password: str) -> list[str]:
@@ -75,6 +87,22 @@ def check_password_complexity(raw_password: str) -> list[str]:
     return unmet
 
 
+def generate_temporary_password() -> str:
+    """Return a random password that satisfies :func:`check_password_complexity`.
+
+    One character from each class, the rest from all of them, then shuffled, so
+    no position is predictable from the construction.
+    """
+    everything = "".join(TEMPORARY_PASSWORD_ALPHABETS)
+    chars = [secrets.choice(alphabet) for alphabet in TEMPORARY_PASSWORD_ALPHABETS]
+    chars += [
+        secrets.choice(everything)
+        for _ in range(TEMPORARY_PASSWORD_LENGTH - len(chars))
+    ]
+    secrets.SystemRandom().shuffle(chars)
+    return "".join(chars)
+
+
 def hash_password(raw_password: str) -> str:
     """Return a bcrypt digest; reject oversize inputs rather than truncating."""
     encoded = raw_password.encode("utf-8")
@@ -83,12 +111,6 @@ def hash_password(raw_password: str) -> str:
     return bcrypt.hashpw(
         encoded, bcrypt.gensalt(rounds=settings.bcrypt_rounds)
     ).decode()
-
-
-def hash_password_bcrypt(raw_password: str, rounds: int = 12) -> str:
-    """Return a bcrypt hash of ``raw_password`` at cost ``rounds`` (default 12)."""
-    salt = bcrypt.gensalt(rounds=rounds)
-    return bcrypt.hashpw(raw_password.encode("utf-8")[:72], salt).decode("utf-8")
 
 
 def verify_password(raw_password: str, password_hash: str) -> bool:
@@ -109,12 +131,12 @@ def verify_password(raw_password: str, password_hash: str) -> bool:
             return len(encoded) <= BCRYPT_MAX_PASSWORD_BYTES and bcrypt.checkpw(
                 encoded, password_hash.encode("ascii")
             )
-        return _pwd_context.verify(raw_password, password_hash)
+        return legacy_argon2_context.verify(raw_password, password_hash)
     except (UnknownHashError, ValueError, UnicodeError):
         return False
 
 
-def _encode(
+def encode_token(
     subject: uuid.UUID,
     token_type: TokenType,
     ttl: timedelta,
@@ -150,7 +172,7 @@ def create_access_token(
     user_id: uuid.UUID, *, claims: dict[str, Any] | None = None
 ) -> str:
     """Issue a short-lived access token for ``user_id``."""
-    token, _, _ = _encode(
+    token, _, _ = encode_token(
         user_id,
         "access",
         timedelta(minutes=settings.access_token_ttl_minutes),
@@ -166,7 +188,7 @@ def create_refresh_token(
 
     The caller persists the ``jti`` so the token can be revoked on rotation.
     """
-    return _encode(
+    return encode_token(
         user_id,
         "refresh",
         timedelta(days=settings.refresh_token_ttl_days),
@@ -237,24 +259,216 @@ def reset_address_hash(email: str) -> str:
     ).hexdigest()
 
 
-def _reset_delivery_key() -> bytes:
+#: Labels for each mailed token's delivery copy. ``reset-email`` is the label
+#: reset jobs were already encrypted under, so it must never change.
+RESET_EMAIL = "reset-email"
+VERIFICATION_EMAIL = "verification-email"
+TEMPORARY_PASSWORD_EMAIL = "temporary-password-email"
+
+
+def mailed_token_key(label: str) -> bytes:
+    """Derive the AES key for one kind of mailed token from the JWT secret."""
     return hmac.new(
         settings.jwt_secret.get_secret_value().encode(),
-        b"cbpupsis:reset-email:v1",
+        f"cbpupsis:{label}:v1".encode(),
         hashlib.sha256,
     ).digest()
 
 
-def encrypt_reset_token(raw_token: str, *, user_id: uuid.UUID, token_hash: str) -> str:
-    """Protect the delivery copy; the redemption ledger stores only its digest."""
+def encrypt_mailed_token(
+    raw_token: str, *, label: str, user_id: uuid.UUID, token_hash: str
+) -> str:
+    """Protect a token's delivery copy; the ledger stores only its digest.
+
+    Bound by ``label``, recipient, and digest, so a staged job cannot be
+    replayed for another purpose or person.
+    """
     nonce = secrets.token_bytes(12)
-    aad = f"reset-email:v1:{user_id}:{token_hash}".encode()
-    encrypted = AESGCM(_reset_delivery_key()).encrypt(nonce, raw_token.encode(), aad)
+    aad = f"{label}:v1:{user_id}:{token_hash}".encode()
+    encrypted = AESGCM(mailed_token_key(label)).encrypt(nonce, raw_token.encode(), aad)
     return base64.urlsafe_b64encode(nonce + encrypted).decode()
 
 
-def decrypt_reset_token(encrypted: str, *, user_id: uuid.UUID, token_hash: str) -> str:
-    """Decrypt only for the recipient and digest the sender staged."""
+def decrypt_mailed_token(
+    encrypted: str, *, label: str, user_id: uuid.UUID, token_hash: str
+) -> str:
+    """Decrypt only for the purpose, recipient, and digest the sender staged."""
     data = base64.urlsafe_b64decode(encrypted)
-    aad = f"reset-email:v1:{user_id}:{token_hash}".encode()
-    return AESGCM(_reset_delivery_key()).decrypt(data[:12], data[12:], aad).decode()
+    aad = f"{label}:v1:{user_id}:{token_hash}".encode()
+    return AESGCM(mailed_token_key(label)).decrypt(data[:12], data[12:], aad).decode()
+
+
+#: A valid bcrypt digest of a discarded random value. Verifying against it when
+#: no account matches makes "unknown identifier" cost the same as "wrong
+#: password", so response time does not reveal which accounts exist.
+DUMMY_PASSWORD_HASH = "$2b$12$j73fQt.SeW2YsA7T0E8zAem7i6oW4H8/bDn27ipKDdwQ86DZe.lEq"
+
+
+def encode_base64url(value: bytes) -> str:
+    """Base64url without padding, as WebAuthn and the MFA envelopes use."""
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+
+def decode_base64url(value: str) -> bytes:
+    """Reverse :func:`encode_base64url`, restoring the stripped padding."""
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def create_challenge_token(
+    user_id: uuid.UUID,
+    *,
+    role: str,
+    enrollment_required: bool,
+    session_version: int = 0,
+) -> tuple[str, str, str]:
+    """Issue a signed, short-lived MFA challenge that carries no API privilege.
+
+    Returns the token, a random WebAuthn challenge bound into it, and its ``jti``
+    (which the caller stores so only the latest challenge is accepted).
+    """
+    now = datetime.now(UTC)
+    challenge = encode_base64url(secrets.token_bytes(32))
+    jti = str(uuid.uuid4())
+    token = jwt.encode(
+        {
+            "sub": str(user_id),
+            "type": f"{role}_mfa_challenge",
+            "iat": now,
+            "exp": now + timedelta(minutes=settings.mfa_challenge_ttl_minutes),
+            "jti": jti,
+            "challenge": challenge,
+            "enrollment_required": enrollment_required,
+            "session_version": session_version,
+        },
+        settings.jwt_secret.get_secret_value(),
+        algorithm=settings.jwt_algorithm,
+    )
+    return token, challenge, jti
+
+
+def decode_challenge_token(token: str, *, role: str) -> dict[str, Any]:
+    """Validate a role's MFA challenge without ever accepting it as a session."""
+    try:
+        claims: dict[str, Any] = jwt.decode(
+            token,
+            settings.jwt_secret.get_secret_value(),
+            algorithms=[settings.jwt_algorithm],
+        )
+    except jwt.InvalidTokenError as exc:
+        raise InvalidAuthTokenError from exc
+    if claims.get("type") != f"{role}_mfa_challenge":
+        raise InvalidAuthTokenError
+    return claims
+
+
+def mfa_key() -> bytes:
+    """Derive the key that protects MFA factors and keys their digests.
+
+    The "admin-mfa" label predates the other roles; changing it would make
+    every stored Admin and Superadmin factor undecryptable.
+    """
+    configured = settings.mfa_encryption_key
+    material = (
+        configured.get_secret_value()
+        if configured is not None
+        else settings.jwt_secret.get_secret_value()
+    )
+    return hashlib.sha256(f"cbpupsis:admin-mfa:v1:{material}".encode()).digest()
+
+
+#: Associated data bound into every MFA envelope; changing it breaks decryption.
+MFA_AAD = b"cbpupsis-admin-mfa-v1"
+
+
+def encrypt_secret(secret: str) -> str:
+    """Encrypt factor material (TOTP seeds, WebAuthn ids and keys) with AES-GCM."""
+    nonce = secrets.token_bytes(12)
+    ciphertext = AESGCM(mfa_key()).encrypt(nonce, secret.encode("utf-8"), MFA_AAD)
+    return encode_base64url(nonce + ciphertext)
+
+
+def decrypt_secret(envelope: str) -> str:
+    """Authenticate and decrypt an MFA envelope."""
+    raw = decode_base64url(envelope)
+    return AESGCM(mfa_key()).decrypt(raw[:12], raw[12:], MFA_AAD).decode("utf-8")
+
+
+def credential_id_digest(credential_id: str) -> str:
+    """Return a stable keyed digest for cross-account credential uniqueness."""
+    return hmac.new(
+        mfa_key(), f"credential-id:{credential_id}".encode(), hashlib.sha256
+    ).hexdigest()
+
+
+def generate_totp_secret() -> str:
+    """Return a 160-bit RFC 6238 Base32 seed."""
+    return base64.b32encode(secrets.token_bytes(20)).rstrip(b"=").decode("ascii")
+
+
+def totp_provisioning_uri(secret: str, account_name: str) -> str:
+    """Build an otpauth URI accepted by Google Authenticator."""
+    label = quote(f"{TOTP_ISSUER}:{account_name}")
+    return (
+        f"otpauth://totp/{label}?secret={secret}&issuer={quote(TOTP_ISSUER)}"
+        "&algorithm=SHA1&digits=6&period=30"
+    )
+
+
+def totp_at(secret: str, counter: int) -> str:
+    """Return the six-digit code for one 30-second step."""
+    padding = "=" * (-len(secret) % 8)
+    key = base64.b32decode(secret + padding, casefold=True)
+    digest = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    value = struct.unpack(">I", digest[offset : offset + 4])[0] & 0x7FFFFFFF
+    return f"{value % 1_000_000:06d}"
+
+
+def matching_totp_counter(
+    secret: str, code: str, *, at: datetime | None = None
+) -> int | None:
+    """Return the matching 30-second step, allowing one step of clock skew."""
+    if len(code) != 6 or not code.isascii() or not code.isdigit():
+        return None
+    counter = int((at or datetime.now(UTC)).timestamp()) // 30
+    for skew in (-1, 0, 1):
+        candidate = counter + skew
+        if hmac.compare_digest(totp_at(secret, candidate), code):
+            return candidate
+    return None
+
+
+def generate_recovery_codes() -> list[str]:
+    """Return fresh single-use recovery codes, 80 random bits each.
+
+    Grouped ``XXXX-XXXX-XXXX-XXXX`` in Base32 so they can be read aloud and typed.
+    """
+    codes = []
+    for _ in range(RECOVERY_CODE_COUNT):
+        raw = base64.b32encode(secrets.token_bytes(RECOVERY_CODE_BYTES)).decode()
+        codes.append("-".join(raw[i : i + 4] for i in range(0, len(raw), 4)))
+    return codes
+
+
+def hash_recovery_code(code: str) -> str:
+    """Return the keyed digest stored for a recovery code.
+
+    Keyed (HMAC under the MFA key) rather than a bare hash, so a leaked table
+    cannot be brute-forced offline without the key as well.
+    """
+    normalized = code.strip().upper().replace("-", "").replace(" ", "")
+    return hmac.new(
+        mfa_key(), f"recovery-code:{normalized}".encode(), hashlib.sha256
+    ).hexdigest()
+
+
+def lockout_subject(identifier: str) -> uuid.UUID:
+    """Return the lockout key for an identifier that matches no account.
+
+    A keyed pseudonym, so unknown identifiers lock exactly like real accounts
+    (no enumeration through the lock) without storing the identifier itself.
+    """
+    digest = hmac.new(
+        mfa_key(), f"lockout:{identifier.strip().lower()}".encode(), hashlib.sha256
+    ).digest()
+    return uuid.UUID(bytes=digest[:16])

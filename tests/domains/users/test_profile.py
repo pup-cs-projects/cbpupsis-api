@@ -187,7 +187,7 @@ class TestOnboarding:
     async def test_service_raises_listing_what_is_missing(
         self, db: AsyncSession, sent_emails: list[dict[str, str]]
     ) -> None:
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="onboard@example.com", password="a-long-enough-password"
         )
         with pytest.raises(ValidationError) as excinfo:
@@ -255,7 +255,7 @@ class TestDeactivateAccount:
         self, db: AsyncSession, sent_emails: list[dict[str, str]]
     ) -> None:
         """Nothing is scrubbed, so the account comes back intact."""
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="revive@example.com", password="a-long-enough-password"
         )
         await users_service.deactivate_own_account(db, user.id)
@@ -268,7 +268,10 @@ class TestDeactivateAccount:
         # reactivation; stamp it so the assertion below tests what it claims to.
         await users_service.mark_email_verified(db, user.id)
         pair = await auth_service.login(
-            db, email="revive@example.com", password="a-long-enough-password"
+            db,
+            email="revive@example.com",
+            password="a-long-enough-password",
+            ip_address="127.0.0.1",
         )
         assert pair.access_token
 
@@ -385,7 +388,7 @@ class TestDeletionScrubsPII:
     async def test_pii_is_scrubbed_but_the_row_survives(
         self, db: AsyncSession, sent_emails: list[dict[str, str]]
     ) -> None:
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db,
             email="scrub@example.com",
             password="a-long-enough-password",
@@ -439,7 +442,7 @@ class TestDeletionScrubsPII:
         from cbpupsis_database.models.users import User
         from cbpupsis_shared.domains.auth.security import verify_password
 
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="hash@example.com", password="a-long-enough-password"
         )
         original_hash = user.password_hash
@@ -457,7 +460,7 @@ class TestDeletionScrubsPII:
         """The scrubbed hash is not a parseable digest, so a naive
         ``verify_password`` raises and the endpoint 500s. A 500 where every
         other address gives 401 is itself an oracle for deleted accounts."""
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="oracle@example.com", password="a-long-enough-password"
         )
         await users_service.delete_own_account(db, user.id, "a-long-enough-password")
@@ -484,7 +487,7 @@ class TestDeletionScrubsPII:
     async def test_deleted_user_is_gone_from_every_lookup(
         self, db: AsyncSession, sent_emails: list[dict[str, str]]
     ) -> None:
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="gone@example.com", password="a-long-enough-password"
         )
         await users_service.delete_own_account(db, user.id, "a-long-enough-password")
@@ -501,12 +504,12 @@ class TestDeletionScrubsPII:
     ) -> None:
         """The placeholder email is why: leaving the address in place would make
         the unique index reject the new signup."""
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="reuse@example.com", password="a-long-enough-password"
         )
         await users_service.delete_own_account(db, user.id, "a-long-enough-password")
 
-        fresh = await auth_service.register(
+        fresh = await auth_service.create_console_account(
             db, email="reuse@example.com", password="a-different-long-password"
         )
         assert fresh.id != user.id
@@ -515,10 +518,10 @@ class TestDeletionScrubsPII:
         self, db: AsyncSession, sent_emails: list[dict[str, str]]
     ) -> None:
         """The placeholder embeds the user id, so the unique index holds."""
-        first = await auth_service.register(
+        first = await auth_service.create_console_account(
             db, email="one@example.com", password="a-long-enough-password"
         )
-        second = await auth_service.register(
+        second = await auth_service.create_console_account(
             db, email="two@example.com", password="a-long-enough-password"
         )
         await users_service.delete_own_account(db, first.id, "a-long-enough-password")
@@ -535,7 +538,7 @@ class TestDeletionScrubsPII:
         self, db: AsyncSession, sent_emails: list[dict[str, str]]
     ) -> None:
         """Restoring one would hand back an account with no usable credential."""
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="norevive@example.com", password="a-long-enough-password"
         )
         await users_service.delete_own_account(db, user.id, "a-long-enough-password")
@@ -545,7 +548,7 @@ class TestDeletionScrubsPII:
     async def test_wrong_password_raises_and_changes_nothing(
         self, db: AsyncSession, sent_emails: list[dict[str, str]]
     ) -> None:
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="safe@example.com", password="a-long-enough-password"
         )
         with pytest.raises(UnauthorizedError):
@@ -559,7 +562,7 @@ class TestProfileService:
         self, db: AsyncSession, sent_emails: list[dict[str, str]]
     ) -> None:
         """The allow-list means a new column is not writable by accident."""
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="guard@example.com", password="a-long-enough-password"
         )
         with pytest.raises(ValueError, match="Not editable"):
@@ -568,7 +571,7 @@ class TestProfileService:
     async def test_update_profile_is_still_partial_at_the_service_layer(
         self, db: AsyncSession, sent_emails: list[dict[str, str]]
     ) -> None:
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="partial@example.com", password="a-long-enough-password"
         )
         await users_service.update_profile(db, user.id, display_name="Kept")

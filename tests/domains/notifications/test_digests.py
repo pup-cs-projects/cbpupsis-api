@@ -91,7 +91,14 @@ class TestStaging:
         staged = await stage_digests(db, window_start=start, window_end=end)
 
         assert staged == 1
-        messages = (await db.execute(select(OutboxMessage))).scalars().all()
+        # make_user's signup also queues a verification job; digests only.
+        messages = (
+            await db.scalars(
+                select(OutboxMessage).where(
+                    OutboxMessage.event_name == "notifications.digest"
+                )
+            )
+        ).all()
         assert [m.event_name for m in messages] == ["notifications.digest"]
 
     async def test_skips_a_user_whose_hour_has_not_arrived(
@@ -119,7 +126,14 @@ class TestStaging:
         second = await stage_digests(db, window_start=start, window_end=end)
 
         assert (first, second) == (1, 0)
-        messages = (await db.execute(select(OutboxMessage))).scalars().all()
+        # make_user's signup also queues a verification job; digests only.
+        messages = (
+            await db.scalars(
+                select(OutboxMessage).where(
+                    OutboxMessage.event_name == "notifications.digest"
+                )
+            )
+        ).all()
         assert len(messages) == 1
 
     async def test_a_later_period_stages_again(

@@ -87,7 +87,7 @@ it.
   then restore. A test that always passes is decoration, and it is the most
   common defect in a suite. Two traps, both seen in this repo:
   - **Sabotage the whole rule, not one spelling of it.** Removing
-    `dependencies=[_manage],` left five endpoints declaring the guard on a single
+    `dependencies=[requires_manage_iam],` left five endpoints declaring the guard on a single
     line; those tests passed and looked verified. They were not.
   - **Remove every level.** A rule enforced in both the router and the service
     stays green when you break only one, so the test proves less than it appears

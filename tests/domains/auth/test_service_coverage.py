@@ -21,21 +21,37 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cbpupsis_core.exceptions import UnauthorizedError
 from cbpupsis_shared.domains.auth import service as auth_service
 from cbpupsis_shared.domains.auth.exceptions import (
-    EmailAlreadyRegisteredError,
     IncorrectCurrentPasswordError,
     InvalidAuthTokenError,
     RefreshTokenReusedError,
     ResetTokenUsedError,
 )
+from cbpupsis_shared.domains.auth.security import decode_token
 from cbpupsis_shared.domains.users import service as users_service
+from cbpupsis_shared.domains.users.exceptions import UserAlreadyExistsError
 
 PASSWORD = "correct-horse-battery-staple"
 
 
 async def _verified_user(db: AsyncSession, email: str = "coverage@example.com"):
-    user = await auth_service.register(db, email=email, password=PASSWORD)
+    user = await auth_service.create_console_account(db, email=email, password=PASSWORD)
     await users_service.mark_email_verified(db, user.id)
     return user
+
+
+async def _change_password(db: AsyncSession, user, **passwords):
+    """Change a password from a live session, as the endpoint always does."""
+    pair = await auth_service.login(
+        db, email=user.email, password=PASSWORD, ip_address="127.0.0.1"
+    )
+    claims = decode_token(pair.access_token, "access")
+    return await auth_service.change_password(
+        db,
+        user.id,
+        session_id=uuid.UUID(claims["sid"]),
+        session_claims=claims,
+        **passwords,
+    )
 
 
 class TestRefreshFamilyRevocation:
@@ -48,7 +64,9 @@ class TestRefreshFamilyRevocation:
 
     async def test_reusing_a_rotated_token_is_refused(self, db: AsyncSession) -> None:
         user = await _verified_user(db)
-        first = await auth_service.login(db, email=user.email, password=PASSWORD)
+        first = await auth_service.login(
+            db, email=user.email, password=PASSWORD, ip_address="127.0.0.1"
+        )
         await auth_service.refresh(db, first.refresh_token)
 
         with pytest.raises(RefreshTokenReusedError):
@@ -62,7 +80,9 @@ class TestRefreshFamilyRevocation:
         possibly the attacker — carry on.
         """
         user = await _verified_user(db)
-        first = await auth_service.login(db, email=user.email, password=PASSWORD)
+        first = await auth_service.login(
+            db, email=user.email, password=PASSWORD, ip_address="127.0.0.1"
+        )
         second = await auth_service.refresh(db, first.refresh_token)
 
         with pytest.raises(RefreshTokenReusedError):
@@ -93,7 +113,9 @@ class TestRefreshFamilyRevocation:
         """The account is re-read on every rotation, so deactivation takes
         effect immediately rather than when the access token expires."""
         user = await _verified_user(db)
-        pair = await auth_service.login(db, email=user.email, password=PASSWORD)
+        pair = await auth_service.login(
+            db, email=user.email, password=PASSWORD, ip_address="127.0.0.1"
+        )
         await users_service.deactivate(db, user.id)
 
         with pytest.raises(UnauthorizedError):
@@ -108,7 +130,9 @@ class TestRefreshFamilyRevocation:
         retryable credential.
         """
         user = await _verified_user(db)
-        pair = await auth_service.login(db, email=user.email, password=PASSWORD)
+        pair = await auth_service.login(
+            db, email=user.email, password=PASSWORD, ip_address="127.0.0.1"
+        )
         await users_service.deactivate(db, user.id)
 
         with pytest.raises(UnauthorizedError):
@@ -126,7 +150,9 @@ class TestResetTokenConsumption:
         from tests.conftest import token_from_email
 
         user = await _verified_user(db)
-        pair = await auth_service.login(db, email=user.email, password=PASSWORD)
+        pair = await auth_service.login(
+            db, email=user.email, password=PASSWORD, ip_address="127.0.0.1"
+        )
 
         await auth_service.forgot_password(db, user.email)
         await drain_outbox()
@@ -134,12 +160,19 @@ class TestResetTokenConsumption:
         await auth_service.reset_password(db, token, "Brand-new-password-1!")
 
         # The new credential works.
-        await auth_service.login(db, email=user.email, password="Brand-new-password-1!")
+        await auth_service.login(
+            db,
+            email=user.email,
+            password="Brand-new-password-1!",
+            ip_address="127.0.0.1",
+        )
 
         # The old one does not, and neither does the session that predates it —
         # the point of the reset when recovering from a compromise.
         with pytest.raises(UnauthorizedError):
-            await auth_service.login(db, email=user.email, password=PASSWORD)
+            await auth_service.login(
+                db, email=user.email, password=PASSWORD, ip_address="127.0.0.1"
+            )
         with pytest.raises(UnauthorizedError):
             await auth_service.refresh(db, pair.refresh_token)
 
@@ -186,19 +219,21 @@ class TestChangePassword:
         user = await _verified_user(db)
 
         with pytest.raises(IncorrectCurrentPasswordError):
-            await auth_service.change_password(
-                db, user.id, current_password="wrong", new_password="new-password-here"
+            await _change_password(
+                db, user, current_password="wrong", new_password="new-password-here"
             )
 
     async def test_changing_ends_every_other_session(
         self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox
     ) -> None:
         user = await _verified_user(db)
-        old_session = await auth_service.login(db, email=user.email, password=PASSWORD)
+        old_session = await auth_service.login(
+            db, email=user.email, password=PASSWORD, ip_address="127.0.0.1"
+        )
 
-        fresh = await auth_service.change_password(
+        fresh = await _change_password(
             db,
-            user.id,
+            user,
             current_password=PASSWORD,
             new_password="Brand-new-password-1!",
         )
@@ -224,9 +259,9 @@ class TestChangePassword:
         user = await _verified_user(db)
         sent_emails.clear()
 
-        await auth_service.change_password(
+        await _change_password(
             db,
-            user.id,
+            user,
             current_password=PASSWORD,
             new_password="Brand-new-password-1!",
         )
@@ -248,9 +283,9 @@ class TestChangePassword:
         user = await _verified_user(db)
         sent_emails.clear()
 
-        await auth_service.change_password(
+        await _change_password(
             db,
-            user.id,
+            user,
             current_password=PASSWORD,
             new_password="Brand-new-password-1!",
         )
@@ -265,17 +300,23 @@ class TestRegistrationConflict:
     async def test_a_duplicate_email_is_rejected(self, db: AsyncSession) -> None:
         """Enforced by the unique constraint, not a prior SELECT — the branch
         that closes the check-then-insert race."""
-        await auth_service.register(db, email="dupe@example.com", password=PASSWORD)
+        await auth_service.create_console_account(
+            db, email="dupe@example.com", password=PASSWORD
+        )
 
-        with pytest.raises(EmailAlreadyRegisteredError):
-            await auth_service.register(db, email="dupe@example.com", password=PASSWORD)
+        with pytest.raises(UserAlreadyExistsError):
+            await auth_service.create_console_account(
+                db, email="dupe@example.com", password=PASSWORD
+            )
 
     async def test_the_conflict_is_case_insensitive(self, db: AsyncSession) -> None:
         """Stored lower-cased, so Foo@x.com and foo@x.com are one account."""
-        await auth_service.register(db, email="Mixed@Example.com", password=PASSWORD)
+        await auth_service.create_console_account(
+            db, email="Mixed@Example.com", password=PASSWORD
+        )
 
-        with pytest.raises(EmailAlreadyRegisteredError):
-            await auth_service.register(
+        with pytest.raises(UserAlreadyExistsError):
+            await auth_service.create_console_account(
                 db, email="mixed@example.com", password=PASSWORD
             )
 
@@ -283,7 +324,9 @@ class TestRegistrationConflict:
 class TestLogoutIsIdempotent:
     async def test_logging_out_twice_is_not_an_error(self, db: AsyncSession) -> None:
         user = await _verified_user(db)
-        pair = await auth_service.login(db, email=user.email, password=PASSWORD)
+        pair = await auth_service.login(
+            db, email=user.email, password=PASSWORD, ip_address="127.0.0.1"
+        )
 
         await auth_service.logout(db, pair.refresh_token)
         await auth_service.logout(db, pair.refresh_token)
@@ -296,7 +339,9 @@ class TestLogoutIsIdempotent:
 
     async def test_a_logged_out_token_cannot_refresh(self, db: AsyncSession) -> None:
         user = await _verified_user(db)
-        pair = await auth_service.login(db, email=user.email, password=PASSWORD)
+        pair = await auth_service.login(
+            db, email=user.email, password=PASSWORD, ip_address="127.0.0.1"
+        )
         await auth_service.logout(db, pair.refresh_token)
 
         with pytest.raises(UnauthorizedError):
@@ -324,12 +369,14 @@ class TestVerificationResend:
     async def test_sends_for_an_unverified_account(
         self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox
     ) -> None:
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="pending@example.com", password=PASSWORD
         )
+        await drain_outbox()
         sent_emails.clear()
 
         await auth_service.resend_verification(db, user.email)
+        await drain_outbox()
         assert len(sent_emails) == 1
 
     async def test_verifying_an_unknown_user_is_refused(
@@ -339,9 +386,10 @@ class TestVerificationResend:
         token, so deletion cannot be detected by watching this response."""
         from tests.conftest import token_from_email
 
-        user = await auth_service.register(
+        user = await auth_service.create_console_account(
             db, email="ghost@example.com", password=PASSWORD
         )
+        await drain_outbox()
         token = token_from_email(sent_emails[-1])
         await users_service.soft_delete(db, user.id)
 
@@ -352,8 +400,12 @@ class TestVerificationResend:
 class TestRevokeAll:
     async def test_revoking_ends_every_session(self, db: AsyncSession) -> None:
         user = await _verified_user(db)
-        first = await auth_service.login(db, email=user.email, password=PASSWORD)
-        second = await auth_service.login(db, email=user.email, password=PASSWORD)
+        first = await auth_service.login(
+            db, email=user.email, password=PASSWORD, ip_address="127.0.0.1"
+        )
+        second = await auth_service.login(
+            db, email=user.email, password=PASSWORD, ip_address="127.0.0.1"
+        )
 
         await auth_service.revoke_all_for_user(db, user.id)
 
@@ -380,7 +432,9 @@ class TestDefensiveBranches:
         await users_service.deactivate(db, user.id)
 
         with pytest.raises(UnauthorizedError):
-            await auth_service.login(db, email=user.email, password=PASSWORD)
+            await auth_service.login(
+                db, email=user.email, password=PASSWORD, ip_address="127.0.0.1"
+            )
 
     async def test_reset_is_refused_when_the_account_went_away(
         self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox

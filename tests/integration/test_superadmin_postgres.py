@@ -1,4 +1,4 @@
-"""AC-004.6: opt-in checks against a freshly migrated disposable PostgreSQL.
+"""AC-104.6: opt-in checks against a freshly migrated disposable PostgreSQL.
 
 SUPERADMIN_POSTGRES_URL must identify the restricted runtime login on localhost.
 No environment DATABASE_URL is ever used by these tests.
@@ -39,7 +39,7 @@ async def runtime_engine():
 
 
 async def test_runtime_role_gate(runtime_engine):
-    """AC-004.6: real login identity, memberships, partitions, grants, triggers."""
+    """AC-104.6: real login identity, memberships, partitions, grants, triggers."""
     role = urlsplit(RUNTIME_URL).username
     async with runtime_engine.connect() as connection, connection.begin():
         await connection.execute(text("SET TRANSACTION READ ONLY"))
@@ -51,7 +51,7 @@ async def test_runtime_role_gate(runtime_engine):
 )
 @pytest.mark.parametrize("operation", ["UPDATE", "DELETE", "TRUNCATE"])
 async def test_runtime_cannot_mutate_ledgers(runtime_engine, table, operation):
-    """AC-004.5: actual denied statements, including direct partition access."""
+    """AC-104.5: actual denied statements, including direct partition access."""
     statement = (
         f"UPDATE {table} SET id = id WHERE false"
         if operation == "UPDATE"
@@ -109,7 +109,7 @@ async def test_startup_engine_gate_is_fail_closed(runtime_engine):
     "grant_source", ["public", "noinherit", "partition", "schema_owner"]
 )
 async def test_gate_detects_effective_grant_bypasses(grant_source):
-    """AC-004.6: PUBLIC, SET ROLE and direct partition grants cannot bypass ACLs.
+    """AC-104.6: PUBLIC, SET ROLE and direct partition grants cannot bypass ACLs.
 
     All adversarial DDL and authorization changes roll back in one transaction.
     Neither rows nor grants survive the test.

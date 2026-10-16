@@ -50,7 +50,9 @@ ELEVATED_VERBS = ("ReadAll", "Moderate", "Manage")
 #: lose the meaning that makes the permission worth having. Add sparingly: a
 #: transition earns a permission only when it is granted separately from a plain
 #: update.
-TRANSITIONS: frozenset[str] = frozenset()
+TRANSITIONS: frozenset[str] = frozenset(
+    {"RequestBackupRestore", "ApproveBackupRestore"}
+)
 
 #: Words that mean one of the verbs above. Allowing a synonym is how a codebase
 #: ends up with two names for one capability.

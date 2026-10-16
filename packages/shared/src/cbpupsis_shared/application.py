@@ -111,50 +111,17 @@ def create_app(
     # can find it at request time. Assigning it is not optional — without it
     # every limited endpoint raises at runtime rather than at startup.
     app.state.limiter = limiter
-    app.state.rate_limit_observer = _audit_rate_limit_refusal
+    app.state.rate_limit_observer = audit_rate_limit_refusal
 
     register_middleware(app)
 
-    @app.middleware("http")
-    async def audit_privileged_read(request: Request, call_next):
-        try:
-            response = await call_next(request)
-            context = getattr(request.state, "superadmin_audit", None)
-            request_db = getattr(request.state, "audit_db", None)
-            if context is not None and not context["staged"]:
-                async with AsyncSession(bind=request_db.bind) as audit_db:
-                    audit_client.stage(
-                        audit_db,
-                        action="superadmin.request",
-                        actor_id=context["actor"],
-                        target_type="endpoint",
-                        target_id=context["path"],
-                        payload={
-                            "method": context["method"],
-                            "status": response.status_code,
-                            "outcome": "success"
-                            if response.status_code < 400
-                            else "refused",
-                        },
-                    )
-                    await audit_db.commit()
-        except Exception:
-            request_db = getattr(request.state, "audit_db", None)
-            if request_db is not None:
-                await request_db.rollback()
-            raise
-        finally:
-            request_db = getattr(request.state, "audit_db", None)
-            if request_db is not None:
-                request_db.info.pop("superadmin_audit", None)
-                request_db.info.pop("audit_event_handler", None)
-        return response
+    app.middleware("http")(audit_privileged_read)
 
     # Registered after the limiter is attached, since it installs the 429 handler.
     register_exception_handlers(app)
 
     unique_mounts = tuple(dict.fromkeys(mounts))
-    _reject_duplicate_routes(unique_mounts)
+    reject_duplicate_routes(unique_mounts)
 
     v1_router = APIRouter()
     for mount in unique_mounts:
@@ -162,7 +129,7 @@ def create_app(
     app.include_router(v1_router, prefix=API_V1_PREFIX)
 
     if settings.docs_enabled:
-        _mount_scalar(app, title)
+        mount_scalar_docs(app, title)
         for tool in development_tools:
             tool(app)
 
@@ -171,7 +138,48 @@ def create_app(
     return app
 
 
-def _reject_duplicate_routes(mounts: Iterable[RouterMount]) -> None:
+async def audit_privileged_read(request: Request, call_next):
+    """Guarantee one audit row per superadmin request, including reads.
+
+    A read commits nothing, so ``audit.service`` never stages its row. This
+    writes it in a separate session after the handler answers, then clears the
+    request's audit context from the session.
+    """
+    try:
+        response = await call_next(request)
+        context = getattr(request.state, "superadmin_audit", None)
+        request_db = getattr(request.state, "audit_db", None)
+        if context is not None and not context["staged"]:
+            async with AsyncSession(bind=request_db.bind) as audit_db:
+                audit_client.stage(
+                    audit_db,
+                    action="superadmin.request",
+                    actor_id=context["actor"],
+                    target_type="endpoint",
+                    target_id=context["path"],
+                    payload={
+                        "method": context["method"],
+                        "status": response.status_code,
+                        "outcome": "success"
+                        if response.status_code < 400
+                        else "refused",
+                    },
+                )
+                await audit_db.commit()
+    except Exception:
+        request_db = getattr(request.state, "audit_db", None)
+        if request_db is not None:
+            await request_db.rollback()
+        raise
+    finally:
+        request_db = getattr(request.state, "audit_db", None)
+        if request_db is not None:
+            request_db.info.pop("superadmin_audit", None)
+            request_db.info.pop("audit_event_handler", None)
+    return response
+
+
+def reject_duplicate_routes(mounts: Iterable[RouterMount]) -> None:
     """Reject ambiguous HTTP routes before FastAPI can select one by order.
 
     FastAPI permits two handlers for the same method and path, then dispatches
@@ -198,7 +206,7 @@ def _reject_duplicate_routes(mounts: Iterable[RouterMount]) -> None:
         raise ValueError("Duplicate HTTP route registrations: " + "; ".join(duplicates))
 
 
-def _mount_scalar(app: FastAPI, title: str) -> None:
+def mount_scalar_docs(app: FastAPI, title: str) -> None:
     """Mount the Scalar API reference, the primary docs UI.
 
     Called only inside the docs gate rather than returning 404 from the
@@ -234,7 +242,7 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "env": settings.environment}
 
 
-async def _check_database() -> None:
+async def ping_database() -> None:
     """Run the cheapest possible query that proves the database is reachable.
 
     Separate from the endpoint so the probe's failure handling can be tested
@@ -269,7 +277,7 @@ async def ready(response: Response) -> dict[str, str]:
     """
     try:
         async with asyncio.timeout(READINESS_TIMEOUT_SECONDS):
-            await _check_database()
+            await ping_database()
     except (TimeoutError, SQLAlchemyError) as exc:
         # Logged, not returned: the reason names infrastructure and an
         # unauthenticated probe endpoint is the wrong place to describe it.
@@ -279,7 +287,7 @@ async def ready(response: Response) -> dict[str, str]:
     return {"status": "ready", "env": settings.environment}
 
 
-async def _audit_rate_limit_refusal(request: Request) -> None:
+async def audit_rate_limit_refusal(request: Request) -> None:
     """A reset rejected before its handler still resolves with one audit row."""
     if request.url.path.endswith("/auth/forgot-password"):
         async with AsyncSessionLocal() as db:

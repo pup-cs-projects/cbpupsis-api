@@ -13,6 +13,7 @@ follow.
 
 from __future__ import annotations
 
+import logging
 import re
 
 import pytest
@@ -21,10 +22,11 @@ from httpx import AsyncClient
 from limits import parse
 from limits.storage import storage_from_string
 
-from cbpupsis_core.config import settings
+from cbpupsis_core.config import Settings, settings
 from cbpupsis_core.middleware import (
     UnknownRateLimitError,
     client_ip,
+    client_ip_or_none,
     limit_names,
     limiter,
     rate_limit,
@@ -106,6 +108,31 @@ class TestKeyFunction:
         """A limiter that raised here would turn a limited endpoint into a 500."""
         request = _fake_request(client_host=None)
         assert client_ip(request) == "unknown"
+
+    def test_stored_address_is_none_when_unknown_and_logged_without_pii(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A sign-in records NULL, never the limiter's "unknown" bucket name."""
+        request = _fake_request(
+            client_host="not-an-address", headers={"X-Forwarded-For": "junk"}
+        )
+        with caplog.at_level(logging.WARNING, logger="cbpupsis_core"):
+            assert client_ip_or_none(request) is None
+        assert client_ip(request) == "unknown"
+        [record] = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert record.getMessage() == (
+            "No usable client address on /api/v1/auth/login; recording NULL"
+        )
+
+    def test_stored_address_matches_client_ip_when_known(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        request = _fake_request(
+            client_host="10.0.0.1", headers={"X-Forwarded-For": "198.51.100.4"}
+        )
+        with caplog.at_level(logging.WARNING, logger="cbpupsis_core"):
+            assert client_ip_or_none(request) == "198.51.100.4"
+        assert not caplog.records
 
 
 class TestAuthenticatedCallersAreKeyedByIdentity:
@@ -211,30 +238,6 @@ class TestLimitsAreEnforced:
         assert body["request_id"] == refused.headers["X-Request-ID"]
         assert int(refused.headers["Retry-After"]) > 0
 
-    async def test_repeated_registration_is_eventually_refused(
-        self, client: AsyncClient, limited, sent_emails: list[dict[str, str]]
-    ) -> None:
-        limit = _amount("rate_limit_register")
-
-        for index in range(limit):
-            response = await client.post(
-                "/api/v1/auth/register",
-                json={
-                    "email": f"spam{index}@example.com",
-                    "password": "a-long-enough-password",
-                },
-            )
-            assert response.status_code == 201
-
-        refused = await client.post(
-            "/api/v1/auth/register",
-            json={
-                "email": "spam-too-many@example.com",
-                "password": "a-long-enough-password",
-            },
-        )
-        assert refused.status_code == 429
-
     async def test_a_separate_caller_is_not_affected(
         self, client: AsyncClient, limited, sent_emails: list[dict[str, str]]
     ) -> None:
@@ -333,10 +336,10 @@ class TestDisabledByDefault:
         lenient — a decorator that still needed request state would break every
         limited endpoint in the disabled configuration."""
         response = await client.post(
-            "/api/v1/auth/register",
-            json={"email": "normal@example.com", "password": "a-long-enough-password"},
+            "/api/v1/auth/login",
+            json={"email": "normal@example.com", "password": "not-the-password"},
         )
-        assert response.status_code == 201
+        assert response.status_code == 401
         assert (
             await client.post(
                 "/api/v1/auth/forgot-password", json={"email": "normal@example.com"}
@@ -394,19 +397,22 @@ class TestTheDecoratorFactory:
 
     def test_a_configured_name_resolves(self) -> None:
         """Every name a router passes today must exist on settings."""
-        for name in ("login", "register", "forgot_password", "resend_verification"):
+        for name in ("login", "forgot_password", "resend_verification"):
             assert rate_limit(name) is not None
 
     def test_the_named_decorators_match_the_factory(self) -> None:
-        """The four exported decorators are the factory applied to their own
+        """The three exported decorators are the factory applied to their own
         names — kept only for readability, so they must not drift into a
         second, differently-configured set."""
         assert set(limit_names()) >= {
             "forgot_password",
             "login",
-            "register",
             "resend_verification",
         }
+
+    def test_the_signup_limit_is_gone_with_signup(self) -> None:
+        """Public registration was removed, and its limit with it."""
+        assert "register" not in limit_names()
 
     def test_every_configured_limit_is_a_valid_expression(self) -> None:
         """A typo like "5/minutes" parses at request time, not at import, so
@@ -440,3 +446,34 @@ def _fake_request(
         "state": {} if user_id is None else {"user_id": user_id},
     }
     return Request(scope)
+
+
+class TestProductionStorage:
+    """Per-instance counters on Lambda multiply every caller's allowance."""
+
+    SECRET = "x" * 48
+
+    def test_production_refuses_in_memory_counters(self) -> None:
+        with pytest.raises(ValueError, match="shared storage in production"):
+            Settings(
+                environment="production",
+                jwt_secret=self.SECRET,
+                rate_limit_storage_uri="memory://",
+            )
+
+    def test_production_accepts_shared_storage(self) -> None:
+        configured = Settings(
+            environment="production",
+            jwt_secret=self.SECRET,
+            rate_limit_storage_uri="redis://redis:6379/0",
+        )
+        assert configured.rate_limit_storage_uri == "redis://redis:6379/0"
+
+    @pytest.mark.parametrize("environment", ["development", "staging"])
+    def test_other_environments_keep_memory(self, environment: str) -> None:
+        configured = Settings(
+            environment=environment,
+            jwt_secret=self.SECRET,
+            rate_limit_storage_uri="memory://",
+        )
+        assert configured.rate_limit_storage_uri == "memory://"

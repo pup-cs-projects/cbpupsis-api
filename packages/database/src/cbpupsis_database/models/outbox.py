@@ -61,7 +61,7 @@ class OutboxStatus(StrEnum):
 #: uses, and for the same reason: the test suite runs on SQLite, which has no
 #: JSONB, and without this every outbox test fails on a type the dialect cannot
 #: compile.
-_JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
+JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
 
 
 class OutboxMessage(UUIDMixin, Base):
@@ -91,7 +91,7 @@ class OutboxMessage(UUIDMixin, Base):
     #: The event payload verbatim. It stays here and is never sent through
     #: ``NOTIFY``, whose payload is capped at 8000 bytes — exceeding it raises
     #: inside the committing transaction and would roll back the business write.
-    payload: Mapped[dict[str, Any]] = mapped_column(_JSON_TYPE, default=dict)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, default=dict)
 
     #: ``pending`` | ``dispatched`` | ``failed``. A string, not a database enum:
     #: adding a state must not require a migration coordinated with a deploy.

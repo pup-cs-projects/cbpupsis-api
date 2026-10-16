@@ -117,7 +117,7 @@ class TestListenerDegradesGracefully:
 
             async def _ping() -> None:
                 await asyncio.sleep(0.01)
-                listener._on_notify()
+                listener.on_notify()
 
             # Held, not fire-and-forget: asyncio keeps only a weak reference,
             # so an unreferenced task can be collected before it runs.
@@ -137,7 +137,7 @@ class TestListenerDegradesGracefully:
 
         async with WakeupListener() as listener:
             listener._event = asyncio.Event()
-            listener._on_notify()  # arrives while "busy"
+            listener.on_notify()  # arrives while "busy"
 
             assert await listener.wait(timeout=0.05) is True
 
@@ -150,7 +150,7 @@ class TestListenerDegradesGracefully:
 
         async with WakeupListener() as listener:
             listener._event = asyncio.Event()
-            listener._on_notify()
+            listener.on_notify()
 
             assert await listener.wait(timeout=0.05) is True
             assert await listener.wait(timeout=0.05) is False

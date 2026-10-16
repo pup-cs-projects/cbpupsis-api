@@ -125,16 +125,26 @@ class TestRequestCorrelation:
 class TestSecretsAreNotLogged:
     """The failure mode that outlives the request by years."""
 
-    async def test_password_never_appears_in_logs_on_register(
-        self, client: AsyncClient, caplog
+    async def test_passwords_never_appear_in_logs_on_password_change(
+        self,
+        client: AsyncClient,
+        registered_user: dict[str, str],
+        auth_headers: dict[str, str],
+        caplog,
     ) -> None:
-        password = "super-secret-password-value"
+        """The one request body that carries two passwords at once."""
+        new_password = "super-secret-password-value"
         with caplog.at_level(logging.DEBUG):
             await client.post(
-                "/api/v1/auth/register",
-                json={"email": "leak@example.com", "password": password},
+                "/api/v1/auth/change-password",
+                headers=auth_headers,
+                json={
+                    "current_password": registered_user["password"],
+                    "new_password": new_password,
+                },
             )
-        assert password not in caplog.text
+        assert new_password not in caplog.text
+        assert registered_user["password"] not in caplog.text
 
     async def test_password_never_appears_in_logs_on_failed_login(
         self, client: AsyncClient, registered_user: dict[str, str], caplog
@@ -167,18 +177,19 @@ class TestSecretsAreNotLogged:
         assert token not in caplog.text
 
     async def test_password_hash_never_appears_in_logs(
-        self, client: AsyncClient, caplog
+        self, client: AsyncClient, registered_user: dict[str, str], caplog
     ) -> None:
-        """Argon2 hashes are expensive to crack, not impossible — and they are
-        never something a log store needs."""
+        """Hashes are expensive to crack, not impossible, and they are never
+        something a log store needs. A sign-in reads the stored one."""
         with caplog.at_level(logging.DEBUG):
             await client.post(
-                "/api/v1/auth/register",
+                "/api/v1/auth/login",
                 json={
-                    "email": "hash@example.com",
-                    "password": "a-long-enough-password",
+                    "email": registered_user["email"],
+                    "password": registered_user["password"],
                 },
             )
+        assert "$2b$" not in caplog.text
         assert "$argon2" not in caplog.text
 
     def test_settings_repr_does_not_expose_the_jwt_secret(self) -> None:

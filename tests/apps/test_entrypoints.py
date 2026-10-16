@@ -27,8 +27,9 @@ APPS: dict[str, FastAPI] = {
 
 #: The router prefixes under /api/v1 each app serves.
 EXPECTED_PREFIXES: dict[str, set[str]] = {
-    "student": {"auth", "student-auth", "users", "notifications", "items"},
-    "faculty": {"faculty-auth", "users", "notifications"},
+    # Role sign-ins live under /auth/<role>, so they share the "auth" prefix.
+    "student": {"auth", "users", "notifications", "items"},
+    "faculty": {"auth", "users", "notifications", "sections"},
     "admin": {"auth", "users", "notifications", "admin", "superadmin", "iam", "audit"},
 }
 

@@ -108,7 +108,10 @@ migrations once before any app starts. Each app has its own API reference:
 
 Stop with `make down` (or `docker compose -f docker/docker-compose.yml down`).
 
-To become an admin locally, register through `POST /api/v1/auth/register` on any app, then
+There is no public signup, so the first account comes from the console. To become an
+admin locally, create a verified account with
+`make create-user EMAIL=you@example.com VERIFIED=1` (it prints a generated password once;
+without make: `docker compose -f docker/docker-compose.yml run --rm api-admin python -m scripts.create_user you@example.com --verified`), then
 run `make create-admin EMAIL=you@example.com` (or
 `docker compose -f docker/docker-compose.yml run --rm api-admin python -m scripts.bootstrap_admin you@example.com`).
 
@@ -201,7 +204,7 @@ moves the failure to your PR.
 | Workflow | When | What |
 |---|---|---|
 | `ci.yml` | every push to `main` or `dev`, and every PR | pre-commit hooks; `pytest` with coverage; `pip-audit` for vulnerable dependencies |
-| `e2e.yml` | every push to `main` or `dev`, and every PR | starts Docker, Postgres, and the API, seeds accounts, runs the Bruno suite |
+| `e2e.yml` | manual only (Actions tab), paused until the Bruno collection stops using the removed `/auth/register` | starts Docker, Postgres, and the API, seeds accounts, runs the Bruno suite |
 | `pr-conventions.yml` | every PR | Conventional Commits title; branch name; PR targets `dev` |
 
 The org is on the GitHub Free plan, so these checks cannot be made required. **The team rule is

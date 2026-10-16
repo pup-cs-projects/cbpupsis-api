@@ -17,7 +17,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_database.models.audit import AuditEntry
+from cbpupsis_database.models.audit import AuditEntry, AuthAuditLog
 
 
 def add_entry(
@@ -114,6 +114,67 @@ async def list_entries(
     total = await db.scalar(select(func.count()).select_from(query.subquery()))
     result = await db.execute(
         query.order_by(AuditEntry.occurred_at.desc(), AuditEntry.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(result.scalars().all()), total or 0
+
+
+def add_sign_in_attempt(
+    db: AsyncSession,
+    *,
+    attempted_id: str,
+    user_id: uuid.UUID | None,
+    ip_address: str | None,
+    user_agent: str | None,
+    success: bool,
+    failure_reason: str | None,
+    mfa_used: bool,
+    occurred_at: datetime,
+) -> AuthAuditLog:
+    """Stage one sign-in attempt on the append-only ledger.
+
+    On the service's commit::
+
+        INSERT INTO auth_audit_logs (id, user_id, attempted_id, ip_address,
+                                     user_agent, success, failure_reason,
+                                     is_suspicious, mfa_used, created_at)
+        VALUES (:id, :user_id, :attempted_id, :ip_address, :user_agent,
+                :success, :failure_reason, false, :mfa_used, :occurred_at)
+    """
+    entry = AuthAuditLog(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        attempted_id=attempted_id,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        success=success,
+        failure_reason=failure_reason,
+        is_suspicious=False,
+        mfa_used=mfa_used,
+        created_at=occurred_at,
+    )
+    db.add(entry)
+    return entry
+
+
+async def list_sign_in_attempts(
+    db: AsyncSession, limit: int, offset: int
+) -> tuple[list[AuthAuditLog], int]:
+    """Return one page of sign-in attempts, newest first, and the total count.
+
+    SQL::
+
+        SELECT count(*) FROM auth_audit_logs;
+
+        SELECT * FROM auth_audit_logs
+        ORDER BY auth_audit_logs.created_at DESC, auth_audit_logs.id DESC
+        LIMIT :limit OFFSET :offset
+    """
+    total = await db.scalar(select(func.count()).select_from(AuthAuditLog))
+    result = await db.execute(
+        select(AuthAuditLog)
+        .order_by(AuthAuditLog.created_at.desc(), AuthAuditLog.id.desc())
         .limit(limit)
         .offset(offset)
     )

@@ -28,7 +28,12 @@ from cbpupsis_database.models.iam import (
     PolicyPermission,
 )
 from cbpupsis_database.session import AsyncSessionLocal
-from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
+from cbpupsis_shared.domains.iam.constants import (
+    ADMIN_GROUP,
+    FACULTY_GROUP,
+    STUDENT_GROUP,
+    SUPERADMIN_GROUP,
+)
 
 # --------------------------------------------------------------------------- #
 # Declarative seed data. Edit these three structures to change the baseline.
@@ -75,6 +80,13 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ManageNotificationDelivery", "Inspect and retry failed notification deliveries"),
     # Administering a resource itself, rather than its records.
     ("ManageIAM", "Manage permissions, policies, and groups"),
+    ("ManageOverride", "Apply a justified Superadmin override to another account"),
+    # Real transitions: requesting and approving a restore are separate grants,
+    # because the dual-custody rule needs two different people to hold them.
+    ("RequestBackupRestore", "Request that a database backup be restored"),
+    ("ApproveBackupRestore", "Approve another Superadmin's restore request"),
+    # Own records: a faculty member's assigned course sections and rosters.
+    ("ReadCourseSection", "View the course sections assigned to you"),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -87,13 +99,23 @@ POLICIES: dict[str, list[str]] = {
     "AuditReader": ["ReadAllAuditEntry"],
     "NotificationModerator": ["ReadAllNotification"],
     "NotificationAdmin": ["ReadAllNotification", "ManageNotificationDelivery"],
+    "OverrideAdmin": ["ManageOverride"],
+    "BackupAdmin": ["RequestBackupRestore", "ApproveBackupRestore"],
+    "CourseSectionReader": ["ReadCourseSection"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
 #: because their handlers already exist, but attaching them to the Admin role
 #: would cross the product boundary for issue #91.
 RESERVED_POLICIES: frozenset[str] = frozenset(
-    {"UserAdmin", "IAMAdmin", "AuditReader", "NotificationAdmin"}
+    {
+        "UserAdmin",
+        "IAMAdmin",
+        "AuditReader",
+        "NotificationAdmin",
+        "OverrideAdmin",
+        "BackupAdmin",
+    }
 )
 
 #: Groups and the policies attached to each. name -> [policy names]
@@ -110,6 +132,9 @@ GROUPS: dict[str, list[str]] = {
     # by those domains. User administration, IAM, and audit reading belong to
     # the separate Superadmin story and must not leak through this seed.
     ADMIN_GROUP: [],
+    FACULTY_GROUP: ["CourseSectionReader"],
+    # Superadmin-created student accounts join this group.
+    STUDENT_GROUP: [],
     SUPERADMIN_GROUP: list(POLICIES),
 }
 

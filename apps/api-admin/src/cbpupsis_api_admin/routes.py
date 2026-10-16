@@ -21,6 +21,9 @@ from cbpupsis_api_admin.domains.admin_auth.router import (
 from cbpupsis_api_admin.domains.superadmin_ops.router import (
     router as superadmin_ops_router,
 )
+from cbpupsis_api_admin.domains.user_import.router import (
+    router as user_import_router,
+)
 from cbpupsis_shared.application import RouterMount
 from cbpupsis_shared.routes import AUDIT, COMMON_MOUNTS, IAM
 
@@ -36,6 +39,9 @@ MOUNTS: tuple[RouterMount, ...] = (
     RouterMount(superadmin_auth_router, "/auth/superadmin", "superadmin-auth"),
     RouterMount(superadmin_protected_router, "/superadmin", "superadmin"),
     RouterMount(superadmin_ops_router, "/superadmin", "superadmin"),
+    # Beside the shared users router, at the same prefix: only this app parses
+    # multipart uploads.
+    RouterMount(user_import_router, "/users", "users"),
 )
 
 # SQLAdmin bypasses service-layer MFA, justification, and immutable audit staging.

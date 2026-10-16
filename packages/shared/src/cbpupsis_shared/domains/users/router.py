@@ -10,6 +10,10 @@ Note the two kinds of protection in use here, which are not interchangeable:
 - ``/{user_id}`` needs authorization, because the id is caller-supplied. It
   demands the ``ReadAllUser`` permission *or* self-ownership; a permission check
   alone would let any authenticated user read every profile.
+
+Account creation and temporary-password reissue take a Superadmin session. The
+CSV import is served by the admin app (``cbpupsis_api_admin.domains.user_import``),
+the only image that parses multipart uploads.
 """
 
 from __future__ import annotations
@@ -27,11 +31,11 @@ from cbpupsis_shared.domains.auth.dependencies import (
     get_current_user,
     require_superadmin_session,
 )
-from cbpupsis_shared.domains.auth.schemas import RegisterRequest
 from cbpupsis_shared.domains.iam.dependencies import require_permission
 from cbpupsis_shared.domains.users import service as users_service
 from cbpupsis_shared.domains.users.constants import MANAGE_USER, READ_ALL_USER
 from cbpupsis_shared.domains.users.schemas import (
+    AccountCreate,
     DeleteAccountRequest,
     UserRead,
     UserUpdate,
@@ -42,18 +46,36 @@ router = APIRouter()
 
 @router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 async def create_user(
-    data: RegisterRequest,
+    data: AccountCreate,
     user: CurrentUser = Depends(require_superadmin_session),
     db: AsyncSession = Depends(get_db),
 ) -> UserRead:
-    record = await auth_client.create_user(
-        db,
-        actor_id=user.id,
-        email=data.email,
-        password=data.password,
-        full_name=data.full_name,
-    )
+    """Create one account. Superadmin only.
+
+    The account is verified on creation and is mailed a temporary password,
+    which it must replace at first sign-in. 409 ``USER_ALREADY_EXISTS`` for a
+    taken email or institutional id; 422 for fields the role requires, or an
+    unknown program.
+    """
+    record = await auth_client.create_account(db, actor_id=user.id, account=data)
     return UserRead.model_validate(record)
+
+
+@router.post(
+    "/{user_id}/reissue-temporary-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def reissue_temporary_password(
+    user_id: uuid.UUID,
+    user: CurrentUser = Depends(require_superadmin_session),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Mail a new temporary password and end every session. Superadmin only.
+
+    The way out of an expired or lost temporary password. 404 for a missing or
+    inactive account.
+    """
+    await auth_client.reissue_temporary_password(db, actor_id=user.id, user_id=user_id)
 
 
 @router.get("/me", response_model=UserRead)

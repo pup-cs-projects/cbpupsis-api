@@ -10,6 +10,7 @@ Only this domain reads or writes this table; other domains go through
 
 from __future__ import annotations
 
+import enum
 import uuid
 from datetime import date, datetime
 
@@ -37,6 +38,19 @@ AVATAR_URL_MAX_LENGTH = 2048
 TIMEZONE_MAX_LENGTH = 64
 LOCALE_MAX_LENGTH = 35
 PHONE_NUMBER_MAX_LENGTH = 20
+PROFILE_NAME_MAX_LENGTH = 100
+INSTITUTIONAL_ID_MAX_LENGTH = 30
+DEPARTMENT_MAX_LENGTH = 100
+COLLEGE_MAX_LENGTH = 100
+
+
+class AdminPosition(enum.StrEnum):
+    """The data-reach position carried by the single Admin role."""
+
+    chairperson = "chairperson"
+    dean = "dean"
+    finance = "finance"
+    registrar = "registrar"
 
 
 class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
@@ -74,6 +88,19 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     #: ``cbpupsis_shared.domains.auth.dependencies`` for why, and use
     #: ``require_verified_email`` to gate the endpoints that genuinely need it.
     email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+
+    # --- Temporary password ---
+    #: Set when a Superadmin issues a system-generated password; cleared when the
+    #: user sets their own. While set, every session answers 403 except the
+    #: password change itself.
+    password_change_required: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    #: When the issued temporary password stops working for sign-in. NULL once
+    #: the user has chosen their own password.
+    temporary_password_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
 
@@ -127,9 +154,11 @@ class UserProfile(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    first_name: Mapped[str] = mapped_column(String(100))
-    middle_name: Mapped[str | None] = mapped_column(String(100), default=None)
-    last_name: Mapped[str] = mapped_column(String(100))
+    first_name: Mapped[str] = mapped_column(String(PROFILE_NAME_MAX_LENGTH))
+    middle_name: Mapped[str | None] = mapped_column(
+        String(PROFILE_NAME_MAX_LENGTH), default=None
+    )
+    last_name: Mapped[str] = mapped_column(String(PROFILE_NAME_MAX_LENGTH))
     birthdate: Mapped[date | None] = mapped_column(Date, default=None)
     gender: Mapped[str | None] = mapped_column(String(20), default=None)
     civil_status: Mapped[str | None] = mapped_column(String(30), default=None)
@@ -159,16 +188,17 @@ class AdminProfile(Base):
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     employee_id: Mapped[str | None] = mapped_column(
-        String(30), unique=True, default=None
+        String(INSTITUTIONAL_ID_MAX_LENGTH), unique=True, default=None
     )
     position: Mapped[str] = mapped_column(String(50))
-    department: Mapped[str | None] = mapped_column(String(100), default=None)
-    college: Mapped[str | None] = mapped_column(String(100), default=None)
+    department: Mapped[str | None] = mapped_column(
+        String(DEPARTMENT_MAX_LENGTH), default=None
+    )
+    college: Mapped[str | None] = mapped_column(
+        String(COLLEGE_MAX_LENGTH), default=None
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true"
-    )
-    active_mfa_challenge_jti: Mapped[str | None] = mapped_column(
-        String(36), default=None
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -184,10 +214,12 @@ class FacultyProfile(Base):
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     employee_id: Mapped[str | None] = mapped_column(
-        String(30), unique=True, default=None
+        String(INSTITUTIONAL_ID_MAX_LENGTH), unique=True, default=None
     )
-    college: Mapped[str | None] = mapped_column(String(100), default=None)
-    department: Mapped[str] = mapped_column(String(100))
+    college: Mapped[str | None] = mapped_column(
+        String(COLLEGE_MAX_LENGTH), default=None
+    )
+    department: Mapped[str] = mapped_column(String(DEPARTMENT_MAX_LENGTH))
     academic_rank: Mapped[str | None] = mapped_column(String(50), default=None)
     employment_type: Mapped[str] = mapped_column(
         String(30), default="full_time", server_default="full_time"
@@ -207,7 +239,9 @@ class StudentProfile(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    student_number: Mapped[str] = mapped_column(String(30), unique=True)
+    student_number: Mapped[str] = mapped_column(
+        String(INSTITUTIONAL_ID_MAX_LENGTH), unique=True
+    )
     program_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("programs.id", ondelete="RESTRICT")
     )

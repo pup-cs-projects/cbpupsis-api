@@ -19,28 +19,11 @@ from sqlalchemy.orm import Session
 
 from cbpupsis_core.events import Event
 from cbpupsis_core.pagination import Page
-from cbpupsis_database.models.audit import AuditEntry
+from cbpupsis_database.models.audit import AuditEntry, AuthAuditLog
 from cbpupsis_database.session import AsyncSessionLocal
 from cbpupsis_shared.domains.audit import repository
-from cbpupsis_shared.domains.audit.constants import AUDITED_EVENTS
+from cbpupsis_shared.domains.audit.constants import AUDIT_TARGETS, AUDITED_EVENTS
 from cbpupsis_shared.outbox import add_receipt, already_delivered
-
-#: Which payload key identifies the thing acted upon, per event. The audit row
-#: keeps a generic (target_type, target_id) pair so one index answers "what
-#: happened to this?" regardless of which domain emitted it.
-_TARGETS: dict[str, tuple[str, str]] = {
-    "iam.policy_attached_to_group": ("group", "group_id"),
-    "iam.policy_detached_from_group": ("group", "group_id"),
-    "iam.user_added_to_group": ("user", "user_id"),
-    "iam.user_removed_from_group": ("user", "user_id"),
-    "iam.policy_attached_to_user": ("user", "user_id"),
-    "iam.policy_detached_from_user": ("user", "user_id"),
-    "iam.permission_created": ("permission", "permission_id"),
-    "iam.policy_created": ("policy", "policy_id"),
-    "iam.group_created": ("group", "group_id"),
-    "user.deactivated": ("user", "user_id"),
-    "user.reactivated": ("user", "user_id"),
-}
 
 
 async def record_event(event: Event, *, message_id: uuid.UUID) -> None:
@@ -83,11 +66,11 @@ async def record_event_on(
     if message_id is not None and await already_delivered(db, message_id, "audit"):
         return None
 
-    target_type, target_key = _TARGETS.get(event.name, (None, None))
+    target_type, target_key = AUDIT_TARGETS.get(event.name, (None, None))
     target_id = event.payload.get(target_key) if target_key else None
 
     actor = event.payload.get("actor_id")
-    prior_state, new_state = _event_states(event)
+    prior_state, new_state = prior_and_new_state(event)
 
     entry = repository.add_entry(
         db,
@@ -143,8 +126,14 @@ async def record(
     return entry
 
 
-def _event_states(event: Event) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """Return explicit snapshots, with safe defaults for existing IAM events."""
+def prior_and_new_state(
+    event: Event,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Return the event's before and after snapshots for the audit row.
+
+    Explicit ``prior_state``/``new_state`` in the payload win; otherwise IAM
+    attach, detach, and create events get safe defaults from their name.
+    """
     prior = event.payload.get("prior_state")
     new = event.payload.get("new_state")
     if isinstance(prior, dict) or isinstance(new, dict):
@@ -200,8 +189,8 @@ def capture_event(db, event: Event) -> None:
     context = db.info.get("superadmin_audit")
     if context is None or event.name not in AUDITED_EVENTS:
         return
-    target_type, key = _TARGETS[event.name]
-    prior, new = _event_states(event)
+    target_type, key = AUDIT_TARGETS[event.name]
+    prior, new = prior_and_new_state(event)
     stage(
         db,
         action=event.name,
@@ -218,13 +207,14 @@ def capture_event(db, event: Event) -> None:
 def begin_superadmin_request(
     db: AsyncSession, actor_id: uuid.UUID, method: str, path: str
 ) -> dict:
+    """Mark ``db`` as serving a superadmin request so its commit stages an audit."""
     context = {"actor": actor_id, "method": method, "path": path, "staged": False}
     db.info["superadmin_audit"] = context
     return context
 
 
 @sa_event.listens_for(Session, "before_commit")
-def _audit_before_commit(session: Session) -> None:
+def stage_superadmin_audit_before_commit(session: Session) -> None:
     """Even legacy service commits must include their privileged audit row."""
     context = session.info.get("superadmin_audit")
     if context is not None and not context["staged"]:
@@ -284,3 +274,41 @@ def stage_record(
         target_id=str(actor_id) if actor_id else None,
         payload=payload,
     )
+
+
+def stage_sign_in_attempt(
+    db: AsyncSession,
+    *,
+    attempted_id: str,
+    user_id: uuid.UUID | None,
+    ip_address: str | None,
+    user_agent: str | None,
+    success: bool,
+    failure_reason: str | None = None,
+    mfa_used: bool = False,
+) -> None:
+    """Append one credential-free sign-in attempt in the caller's transaction.
+
+    The attempted identifier is recorded, never the password or code, and the
+    row commits with the caller's lockout bookkeeping so neither can be lost
+    without the other.
+    """
+    repository.add_sign_in_attempt(
+        db,
+        attempted_id=attempted_id[:50],
+        user_id=user_id,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        success=success,
+        failure_reason=failure_reason,
+        mfa_used=mfa_used,
+        occurred_at=datetime.now(UTC),
+    )
+
+
+async def list_sign_in_attempts(
+    db: AsyncSession, limit: int = 50, offset: int = 0
+) -> Page[AuthAuditLog]:
+    """Return a page of sign-in attempts, newest first."""
+    rows, total = await repository.list_sign_in_attempts(db, limit=limit, offset=offset)
+    return Page(items=rows, total=total, limit=limit, offset=offset)

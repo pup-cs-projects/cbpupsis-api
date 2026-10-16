@@ -22,11 +22,63 @@ Management permissions alone never substitute for completed Superadmin MFA.
    At 15 continuous idle minutes the server deletes the session and revokes its
    refresh capability (`401 AUTH_SESSION_EXPIRED`). Activity cannot revive it.
 
-Public `/auth/register` remains available without privileged role assignment.
-Superadmin-only `POST /users` accepts email, password, optional full_name and returns
-`201 UserRead`, or `409` for duplicate email. Verification remains required. Assign
-roles separately through IAM. Conflicting Admin/Superadmin membership returns
-`409 AUTH_ROLE_CONFLICT`; role changes revoke sessions.
+Conflicting Admin/Superadmin membership returns `409 AUTH_ROLE_CONFLICT`; role
+changes revoke sessions.
+
+## Account creation (FR19, UC-ADM-002)
+
+There is no public registration: `POST /auth/register` is gone (404). Only a
+Superadmin session creates accounts, one at a time or from a CSV file. Every
+created account is verified on creation, joins its role's IAM group, gets its
+profile rows, and is mailed a system-generated temporary password. The response
+never contains the password, and it is stored only as a bcrypt digest; the copy
+in the outbox job is encrypted like a reset link.
+
+| Endpoint | Notes |
+|---|---|
+| `POST /users` | One account, JSON body with the CSV fields below. `201 UserRead`. `409 USER_ALREADY_EXISTS` (`field`: `email` or `institutional_id`), `422` for a field the role requires or an invalid value, `422 ACCOUNT_PROGRAM_UNKNOWN`. |
+| `POST /users/import` | Admin app only (the image that parses multipart). Multipart field `file`. All rows or none: `201 {"created": n, "user_ids": [...]}`, or `422 USER_IMPORT_INVALID` with `errors: [{row, column, rule}]` listing every problem, or `413 USER_IMPORT_TOO_LARGE`. |
+| `POST /users/{id}/reissue-temporary-password` | New temporary password and expiry, a new email, every session revoked, lockout cleared. `204`; `404` for a missing or inactive account. |
+
+**The temporary password is forced and expiring.** The user signs in with it
+through their role's normal sign-in (student, faculty, Admin, or
+`/auth/login`), MFA included. Until they change it, every authenticated route
+answers `403 PASSWORD_CHANGE_REQUIRED`, except `POST /auth/change-password` and
+the logout routes. Changing it clears the state; the new password may not be
+the temporary one. After `TEMPORARY_PASSWORD_TTL_DAYS` (default 7) a sign-in
+with it answers `401 AUTH_TEMPORARY_PASSWORD_EXPIRED`, only once the password
+itself checked out, and a Superadmin must reissue.
+
+### CSV import format
+
+UTF-8 (a leading byte-order mark is fine), comma-separated, with a header row
+naming all ten columns in any order. Row numbers in errors count the header as
+row 1. Blank lines are skipped. Limits: `USER_IMPORT_MAX_ROWS` data rows (default
+500) and `USER_IMPORT_MAX_BYTES` (default 2 MiB). The row limit is set by hashing:
+each row costs one bcrypt hash, about 37 ms on 8 threads at 12 rounds, so 500 rows
+is roughly 20 seconds inside one request.
+
+```
+first_name,surname,email,role,institutional_id,birthdate,department,college,program,year_level
+Ana,Reyes,ana@example.com,student,2024-00001-MN-0,2005-02-14,,,BSCS,1
+Ben,Cruz,ben@example.com,faculty,2015-00042-MN-1,,Computer Science,CCIS,,
+Dan,Lim,dan@example.com,admin_finance,,,,,,
+```
+
+| `role` | Required beyond `first_name`, `surname`, `email` | Profile |
+|---|---|---|
+| `student` | `institutional_id` (student number), `birthdate` (`YYYY-MM-DD`), `program` (an active program code, any case), `year_level` (1 to 6) | student profile; group `Students` |
+| `faculty` | `institutional_id` (employee id), `department`; `college` optional | faculty profile; group `Faculty` |
+| `admin_registrar`, `admin_finance` | none | Admin profile, institution-wide (no department or college kept); group `Admins` |
+| `admin_chairperson` | `department` | Admin profile scoped to the department |
+| `admin_dean` | `college` | Admin profile scoped to the college |
+
+Institutional ids follow `YYYY-NNNNN-XX-N`. An email is unique across all
+accounts (case-insensitive); an institutional id is unique within its profile
+table, so a chairperson's Admin account may share the employee id of their
+faculty account. A row that duplicates another row, or an existing account,
+refuses the file. Errors name the row, the column, and the rule, never the
+value: the file is personal data under RA 10173.
 
 `POST /superadmin/overrides/users.deactivate_admin` accepts `target_id` and
 `justification`. Ordinary suspension cannot target an Admin. Missing/blank reasons
@@ -162,9 +214,11 @@ PERMISSION ──> POLICY ──> GROUP ──> USER
 ```
 
 ```bash
-# 1. Register the first user through the API, then break the chicken-and-egg:
-#    every IAM endpoint needs ManageIAM, which only an IAM endpoint can grant.
-uv run python -m scripts.bootstrap_admin admin@example.com
+# 1. Create the first account from the console (there is no public signup),
+#    then break the chicken-and-egg: every IAM endpoint needs ManageIAM, which
+#    only an IAM endpoint can grant.
+uv run python -m scripts.create_user admin@example.com --verified
+uv run python -m scripts.bootstrap_superadmin admin@example.com
 ```
 
 From there everything is API calls, as that admin:
@@ -270,7 +324,7 @@ packages/                    # the shared kernel; every app depends on it
     application.py           #   create_app(): middleware, handlers, docs gate, probes
     routes.py                #   where each shared router is mounted, declared once
     domains/                 #   cross-role domains: schemas, repository, service, router
-      auth/                  #     register/login/refresh/logout, argon2, JWT
+      auth/                  #     accounts/login/refresh/logout, bcrypt, JWT
       users/                 #     identity and profile
       iam/                   #     RBAC: permissions, policies, groups (served by admin)
       audit/                 #     the administrative trail (served by admin)
@@ -395,13 +449,12 @@ column. The authorization half is untouched either way.
 
 | Endpoint | Notes |
 |---|---|
-| `POST /auth/register` | Creates the account and mails a verification link. Rate limited. |
 | `POST /auth/login` | Creates a non-admin session; admin accounts must use `/auth/admin/login`. |
 | `POST /auth/verify-email` | Consumes a single-use token. |
 | `POST /auth/resend-verification` | Always 204; invalidates any earlier token. Rate limited. |
 | `POST /auth/forgot-password` | Always 202 with the same body, registered or not. Queues a reset email and records the request. |
 | `POST /auth/reset-password` | Atomically changes the password, spends the token, ends access/refresh sessions, clears lockout, and records completion. Returns `sessionsRevoked`. |
-| `POST /auth/change-password` | Needs the current password; returns a fresh pair. |
+| `POST /auth/change-password` | Needs the current password; returns a fresh pair. The one route open while a temporary password is pending; clears it. |
 | `POST /auth/admin/login` | Verifies admin credentials and returns an MFA challenge, never a session. |
 | `POST /auth/admin/mfa/verify` | Completes an admin challenge with TOTP or WebAuthn and sets the secure admin cookie. |
 | `POST /auth/admin/mfa/totp/enroll` | Starts Google Authenticator-compatible TOTP enrollment and returns an `otpauth://` URI. |
@@ -415,6 +468,8 @@ column. The authorization half is untouched either way.
 | `POST /users/me/complete-onboarding` | 422 listing whatever is still missing. |
 | `POST /users/me/deactivate` | Reversible; revokes all refresh tokens. |
 | `DELETE /users/me` | Needs the password; soft-deletes and scrubs PII. |
+| `POST /users`, `POST /users/import` | Superadmin only; see Account creation above. |
+| `POST /users/{id}/reissue-temporary-password` | Superadmin only; new temporary password, every session revoked. |
 | `GET /users` | Paginated, `ReadAllUser`. Tri-state `is_active` / `is_verified` filters. |
 | `POST /users/{id}/deactivate` | `ManageUser`. Revokes their sessions. 422 on yourself. |
 | `POST /users/{id}/reactivate` | `ManageUser`. 422 on a deleted (scrubbed) account. |
@@ -457,6 +512,33 @@ addresses and across API instances. A 429 carries `RATE_LIMIT_EXCEEDED` and
 request allowance is exhausted. A successful reset spends all outstanding reset
 links and increments the account's session version; earlier access and refresh
 tokens then return 401 `AUTH_SESSION_EXPIRED`, including Admin sessions.
+
+`POST /change-password` needs a bearer access token from the caller's own role
+sign-in (the `access_token` of the pair it returned; there is no special
+limited token) and accepts `{"current_password":"...","new_password":"..."}`
+(`new_password` 12 to 128 characters). Success returns 200 with a new token
+pair carrying the same role, MFA, and Admin scope claims. Every other session
+and refresh token of the account is revoked, outstanding reset links are spent,
+and a password-changed notice is mailed, so the client must replace both
+tokens with the returned ones. A wrong current password returns 401 with
+`Current password is incorrect` (no `code`); reusing the temporary password
+returns 422 `AUTH_PASSWORD_TOO_WEAK`; an expired temporary password returns
+401 `AUTH_TEMPORARY_PASSWORD_EXPIRED`; an ended session returns 401
+`AUTH_SESSION_EXPIRED`.
+
+A sign-in with a temporary password still succeeds and returns the role's
+normal session. The first protected call with that access token answers 403
+`PASSWORD_CHANGE_REQUIRED`; the client then sends the same access token to
+`POST /change-password`, which is the one route that accepts it.
+
+**Links open the portal of the account's role.** The reset link, the
+verification link, and the temporary-password email point at
+`FRONTEND_BASE_URL_STUDENT`, `_FACULTY`, `_ADMIN`, or `_SUPERADMIN`, chosen by
+the account's live IAM group (Superadmins, then Admins, then Faculty, then
+Students, when an account is in several). A role left unset uses
+`FRONTEND_BASE_URL` when that is set, otherwise its dev port (3000, 3001, 3002,
+3003). An account in none of those groups uses `FRONTEND_BASE_URL`. Each portal
+serves `/reset-password?token=` and `/verify-email?token=`.
 
 Run the existing outbox worker (`python -m cbpupsis_shared.worker`) alongside the
 API. Reset delivery retries with the configured exponential backoff and uses a
@@ -555,7 +637,6 @@ the decorators) so they can be retuned without a code change:
 | `POST /auth/resend-verification` | 3/hour | sends mail to an address the caller names |
 | `POST /auth/forgot-password` | 3/hour/address, 60/minute/IP | shared address allowance prevents inbox flooding |
 | `POST /auth/login`, `POST /auth/admin/login` | 10/minute | credential stuffing |
-| `POST /auth/register` | 5/hour | signup spam |
 
 Callers are keyed by **user id when authenticated, client IP otherwise**, so
 several users behind one office NAT do not consume each other's allowance. Behind
@@ -564,7 +645,9 @@ Docker CMD runs uvicorn with `--proxy-headers --forwarded-allow-ips "*"`.
 
 Refusals return **429** in the standard error envelope with a `Retry-After`
 header, rather than slowapi's default body, which is a different shape and leaks
-the configured limit.
+the configured limit. CORS lists `Retry-After` (and `X-Request-ID`) in
+`Access-Control-Expose-Headers`, so a browser client on another origin can read
+it.
 
 **Limiting a new endpoint is two steps** — a settings field and a decorator:
 

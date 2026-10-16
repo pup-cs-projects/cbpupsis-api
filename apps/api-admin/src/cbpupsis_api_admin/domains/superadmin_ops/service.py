@@ -10,16 +10,18 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_api_admin.domains.superadmin_ops import repository
+from cbpupsis_api_admin.domains.superadmin_ops.exceptions import (
+    BackupNotFoundError,
+    DualAuthSameActorError,
+    OverrideJustificationRequiredError,
+    RestoreAlreadyRequestedError,
+    RestoreNotPendingError,
+    UnknownOverrideRuleError,
+)
 from cbpupsis_api_admin.domains.superadmin_ops.schemas import (
     OverrideRequest,
     OverrideResult,
     RestoreRequestRead,
-)
-from cbpupsis_core.exceptions import (
-    ConflictError,
-    ForbiddenError,
-    NotFoundError,
-    ValidationError,
 )
 from cbpupsis_database.models.superadmin_ops import SystemBackup
 from cbpupsis_shared.domains.audit import client as audit_client
@@ -33,6 +35,7 @@ OVERRIDE_RULES = MappingProxyType(
 
 
 async def _audit_and_commit(db: AsyncSession, **entry: Any) -> None:
+    """Stage the audit row and commit with the change, or roll both back."""
     try:
         audit_client.stage(db, **entry)
         await db.commit()
@@ -46,12 +49,10 @@ async def execute_override(
 ) -> OverrideResult:
     operation = OVERRIDE_RULES.get(rule_id)
     if operation is None:
-        raise NotFoundError("Unknown override rule")
+        raise UnknownOverrideRuleError
     justification = (data.justification or "").strip()
     if not justification:
-        raise ValidationError(
-            "Override justification is required", code="OVERRIDE_JUSTIFICATION_REQUIRED"
-        )
+        raise OverrideJustificationRequiredError
     await auth_client.require_superadmin_actor(db, actor_id)
     prior, new = await operation(db, actor_id=actor_id, user_id=data.target_id)
     await _audit_and_commit(
@@ -99,14 +100,17 @@ async def request_restore(
     await auth_client.require_superadmin_actor(db, actor_id)
     backup = await repository.lock_backup(db, backup_id)
     if backup is None:
-        raise NotFoundError("Backup not found")
+        raise BackupNotFoundError
     if backup.restore_status is not None:
-        raise ConflictError("A restore request already exists")
+        raise RestoreAlreadyRequestedError
     prior = _snapshot(backup)
-    backup.requested_restore_by = actor_id
-    backup.approved_restore_by = None
-    backup.restore_status = "pending"
-    backup.restore_requested_at = datetime.now(UTC)
+    repository.update_backup(
+        backup,
+        requested_restore_by=actor_id,
+        approved_restore_by=None,
+        restore_status="pending",
+        restore_requested_at=datetime.now(UTC),
+    )
     result = _read(backup)
     await _audit_and_commit(
         db,
@@ -127,19 +131,17 @@ async def approve_restore(
     await auth_client.require_superadmin_actor(db, actor_id)
     backup = await repository.lock_backup(db, backup_id)
     if backup is None:
-        raise NotFoundError("Backup not found")
+        raise BackupNotFoundError
     if backup.restore_status != "pending" or backup.requested_restore_by is None:
-        raise ConflictError("Restore request is not pending")
+        raise RestoreNotPendingError
     if backup.requested_restore_by == actor_id:
-        raise ForbiddenError(
-            "A different Superadmin must approve the restore",
-            code="DUAL_AUTH_SAME_ACTOR",
-        )
+        raise DualAuthSameActorError
     await auth_client.require_superadmin_actor(db, backup.requested_restore_by)
     prior = _snapshot(backup)
-    backup.approved_restore_by = actor_id
     # Approval is authorization, never a claim that a restore has executed.
-    backup.restore_status = "approved"
+    repository.update_backup(
+        backup, approved_restore_by=actor_id, restore_status="approved"
+    )
     result = _read(backup)
     await _audit_and_commit(
         db,

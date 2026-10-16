@@ -1,87 +1,48 @@
-"""Pydantic schemas for the student authentication flow."""
+"""DTOs for student sign-in (US-101)."""
 
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
-from typing import Any
+from datetime import date
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from cbpupsis_api_student.domains.student_auth.constants import (
-    ACCESS_TOKEN_EXPIRE_SECONDS,
-    LOCKOUT_DURATION_SECONDS,
-)
-
-
-class StudentLoginCredentials(BaseModel):
-    """Internal credentials assembled by the student-auth repository."""
-
-    user_id: uuid.UUID
-    email: str
-    password_hash: str
-    is_active: bool
-    anonymized_at: datetime | None = None
-    birthdate: date | None = None
+from cbpupsis_shared.domains.auth.constants import PASSWORD_MAX_LENGTH
+from cbpupsis_shared.domains.auth.schemas import TokenPair
 
 
 class StudentLoginRequest(BaseModel):
-    """Payload submitted for student authentication."""
+    """Student number, birthdate, and password.
 
-    model_config = ConfigDict(extra="ignore")
+    The student number's format is checked by the service, not here, so a
+    malformed number answers ``AUTH_ID_FORMAT_INVALID`` like the other sign-in
+    rules rather than a generic schema error.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     student_number: str = Field(
-        ...,
-        description="Institutional student identifier in YYYY-NNNNN-XX-N format.",
+        max_length=50,
+        description="Institutional student number, YYYY-NNNNN-XX-N.",
         examples=["2021-00123-MN-0"],
     )
     birthdate: date | None = Field(
-        default=None,
-        description="Birthdate matching Registrar master record (YYYY-MM-DD).",
-        examples=["2003-05-14"],
+        default=None, description="Birthdate on the Registrar record (YYYY-MM-DD)."
     )
-    password: str = Field(
-        ...,
-        description="Student account password.",
-    )
+    password: str = Field(max_length=PASSWORD_MAX_LENGTH)
 
 
-class StudentLoginResponseData(BaseModel):
-    """Data object inside the login response envelope."""
+class StudentTokenPair(TokenPair):
+    """A student session's tokens. The refresh token is also set as a cookie."""
 
-    access_token: str
-    expires_in: int = ACCESS_TOKEN_EXPIRE_SECONDS
-    token_type: str = "bearer"
-    role: str = "student"
-    refresh_token: str | None = None
+    role: Literal["student"] = "student"
+    expires_in: int
 
 
-class SuccessEnvelope[T](BaseModel):
-    """Standard success response envelope."""
+class StudentSessionRead(BaseModel):
+    """The signed-in student, as returned by ``/auth/student/me``."""
 
-    status: str = "success"
-    data: T
-
-
-class StudentLoginResponse(BaseModel):
-    """Response envelope with nested data and root-level token fields."""
-
-    status: str = "success"
-    data: StudentLoginResponseData
-    access_token: str
-    token_type: str = "bearer"
-    role: str = "student"
-    refresh_token: str | None = None
-
-
-class LockoutData(BaseModel):
-    retry_after_seconds: int = LOCKOUT_DURATION_SECONDS
-
-
-class ErrorEnvelope(BaseModel):
-    """Standard error response envelope matching Issue #89."""
-
-    status: str = "error"
-    code: str
-    message: str
-    data: dict[str, Any] | None = None
+    id: uuid.UUID
+    email: EmailStr
+    role: Literal["student"] = "student"
