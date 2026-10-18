@@ -66,6 +66,7 @@ paths. No `make` on Windows? `CONTRIBUTING.md` lists the plain commands.
 | Apply migrations | `make migrate` |
 | Create a migration | `make migrate-create MSG="add enrollments table"` |
 | Seed permissions and groups | `make seed` |
+| Seed degree programs (needed to create students) | `make seed-programs` |
 | Run the HTTP suite | `make seed-e2e && make e2e` |
 | List every target | `make help` |
 
