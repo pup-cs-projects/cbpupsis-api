@@ -30,7 +30,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from fastapi import Depends, Request, Response
+from fastapi import Body, Cookie, Depends, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +50,7 @@ from cbpupsis_shared.domains.auth.exceptions import (
     SuperadminRoleRequiredError,
     UnverifiedEmailError,
 )
+from cbpupsis_shared.domains.auth.schemas import RefreshRequest
 from cbpupsis_shared.domains.auth.security import decode_token, require_session_version
 from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.iam.constants import SUPERADMIN_GROUP
@@ -246,3 +247,21 @@ def clear_refresh_cookie(response: Response, *, role: str) -> None:
         httponly=True,
         samesite="lax",
     )
+
+
+async def refresh_credentials(
+    data: RefreshRequest | None = Body(default=None),
+    cookie_token: str | None = Cookie(default=None, alias=REFRESH_COOKIE_NAME),
+) -> RefreshRequest:
+    """The refresh token a refresh call presents: from the body, else from the cookie.
+
+    The cookie is what lets a web client restore its session after a page reload
+    without keeping any token in script-readable storage: the browser sends it, and
+    script never sees it. The body still wins when both are present, so existing
+    clients are unchanged.
+    """
+    if data is not None:
+        return data
+    if cookie_token:
+        return RefreshRequest(refresh_token=cookie_token)
+    raise NotAuthenticatedError()
