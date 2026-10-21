@@ -62,10 +62,7 @@ async def login_student(
         ip_address=ip_address,
         device_info=device_info,
         reject=reject,
-        failure=IdentifierSignInFailedError(
-            STUDENT_SIGN_IN_FAILED_MESSAGE,
-            code="AUTH_INVALID_CREDENTIALS",
-        ),
+        failure=IdentifierSignInFailedError(STUDENT_SIGN_IN_FAILED_MESSAGE),
     )
     pair = await auth_client.complete_sign_in(
         db,
