@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
 from cbpupsis_core.config import settings
+from cbpupsis_core.logging import request_log_path
 from cbpupsis_core.middleware import retry_after_seconds
 
 logger = logging.getLogger(__name__)
@@ -167,7 +168,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             "request.rate_limited",
             extra={
                 "method": request.method,
-                "path": request.url.path,
+                "path": request_log_path(request),
                 "limit": str(exc.limit.limit),
             },
         )
@@ -222,7 +223,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.exception(
             "Unhandled error on %s %s (request_id=%s)",
             request.method,
-            request.url.path,
+            request_log_path(request),
             request_id_of(request),
             exc_info=exc,
         )

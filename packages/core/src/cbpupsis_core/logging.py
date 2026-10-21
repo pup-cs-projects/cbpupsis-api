@@ -21,6 +21,8 @@ import logging
 from logging.config import dictConfig
 from typing import Any
 
+from fastapi import Request
+
 from cbpupsis_core.config import settings
 
 #: The current request's correlation id. A ContextVar rather than a global
@@ -29,6 +31,11 @@ from cbpupsis_core.config import settings
 request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
     "request_id", default="-"
 )
+
+
+def request_log_path(request: Request) -> str:
+    """Log route templates, never student numbers or arbitrary URL identifiers."""
+    return getattr(request.scope.get("route"), "path", "<unmatched>")
 
 
 class CorrelationFilter(logging.Filter):

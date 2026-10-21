@@ -11,6 +11,8 @@ dependencies = [
     "pydantic",
     "sqlalchemy[asyncio]",
     "uvicorn[standard]",
+    "reportlab>=4.4.0,<5",
+    "icalendar>=6.3.0,<8",
 ]
 
 [tool.uv.sources]

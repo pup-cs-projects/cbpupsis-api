@@ -1017,6 +1017,272 @@
         }
       }
     },
+    "/api/v1/student/schedule": {
+      "get": {
+        "tags": [
+          "student-schedule"
+        ],
+        "summary": "Read Schedule",
+        "operationId": "read_schedule_api_v1_student_schedule_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Semester"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "default": "",
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/student/schedule/export": {
+      "get": {
+        "tags": [
+          "student-schedule"
+        ],
+        "summary": "Export Schedule",
+        "operationId": "export_schedule_api_v1_student_schedule_export_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "pdf",
+                "ics"
+              ],
+              "type": "string",
+              "title": "Format"
+            }
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Semester"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/pdf": {},
+              "text/calendar": {}
+            }
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE; retry without a partial file"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/students/{student_number}/schedule": {
+      "get": {
+        "tags": [
+          "student-schedule"
+        ],
+        "summary": "Read Identified Schedule",
+        "operationId": "read_identified_schedule_api_v1_students__student_number__schedule_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "student_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Student Number"
+            }
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Semester"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "default": "",
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/faculty/login": {
       "post": {
         "tags": [
@@ -5435,6 +5701,257 @@
         ],
         "title": "RosterEntryRead",
         "description": "One enrolled student on a roster."
+      },
+      "ScheduleCourse": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "section": {
+            "type": "string",
+            "title": "Section"
+          },
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "facultyName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Facultyname"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units"
+          },
+          "lectureHours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Lecturehours"
+          },
+          "labHours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Labhours"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "meetings": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduleMeeting"
+            },
+            "type": "array",
+            "title": "Meetings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "section",
+          "sectionId",
+          "room",
+          "facultyName",
+          "units",
+          "lectureHours",
+          "labHours",
+          "status",
+          "meetings"
+        ],
+        "title": "ScheduleCourse"
+      },
+      "ScheduleMeeting": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "dayOfWeek": {
+            "type": "integer",
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Dayofweek",
+            "description": "Monday=0, Sunday=6"
+          },
+          "startTime": {
+            "type": "string",
+            "format": "time",
+            "title": "Starttime"
+          },
+          "endTime": {
+            "type": "string",
+            "format": "time",
+            "title": "Endtime"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "lecture",
+              "laboratory"
+            ],
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "dayOfWeek",
+          "startTime",
+          "endTime",
+          "room",
+          "type"
+        ],
+        "title": "ScheduleMeeting"
+      },
+      "ScheduleRead": {
+        "properties": {
+          "studentName": {
+            "type": "string",
+            "title": "Studentname"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "term": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleTerm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduleCourse"
+            },
+            "type": "array",
+            "title": "Courses"
+          },
+          "totalCredits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Totalcredits",
+            "default": "0"
+          },
+          "totalLectureHours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Totallecturehours",
+            "default": "0"
+          },
+          "totalLabHours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Totallabhours",
+            "default": "0"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "notEnrolled",
+              "noMatches",
+              "termUnavailable"
+            ],
+            "title": "State"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "studentName",
+          "studentNumber",
+          "term",
+          "state"
+        ],
+        "title": "ScheduleRead"
+      },
+      "ScheduleTerm": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "year": {
+            "type": "string",
+            "title": "Year"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date",
+            "title": "Startdate"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date",
+            "title": "Enddate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "year",
+          "semester",
+          "startDate",
+          "endDate"
+        ],
+        "title": "ScheduleTerm"
       },
       "SignInAttemptRead": {
         "properties": {

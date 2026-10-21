@@ -10,7 +10,7 @@ Add the row in the same commit as the code that raises it.
 
 | | |
 |---|---|
-| **Last updated** | 2026-10-16 |
+| **Last updated** | 2026-10-20 |
 | **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications` in `packages/shared`; `items` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The student, faculty, and sections domains raise the shared `auth` classes and add none of their own; `curriculum` raises none. |
 
 ## The envelope
@@ -117,6 +117,7 @@ Every table has the same columns. A blank **Code** means the error carries no
 | 403 | `PASSWORD_CHANGE_REQUIRED` | Change your temporary password to continue. | **Every authenticated route, for every role,** while the account holds a Superadmin-issued temporary password, except `POST /auth/change-password` (which clears it) and the logout routes. Refresh still rotates; the tokens it mints get this 403 too. | `auth/service/sessions.py` |
 | 403 | `email_not_verified` | Verify your email address to continue. Check your inbox, or request a new verification link. | Email sign-in or refresh with a correct password, but the address is unverified. **Only reachable after the password check passes**; see below. | `auth/service/sessions.py` |
 | 404 | `RESOURCE_NOT_FOUND` | Resource not found. | The record is absent or outside the caller's reach: an Admin position's scope, or a course section not assigned to the faculty member. Identical for both cases. | `auth/exceptions.py` |
+| 503 | `SERVICE_UNAVAILABLE` | The schedule is temporarily unavailable. Please retry shortly. | Student schedule/export data is invalid or exceeds its generation bounds, or document generation/database access fails or exceeds the ten-second export deadline. No partial attachment; `Retry-After: 30` and private/no-store. | `schedule/exceptions.py` in `apps/api-student` |
 | 400 | `INVALID_EMAIL_ADDRESS` | Enter a valid email address. | A reset request contains a malformed email. | `auth/service/passwords.py` |
 | 410 | `AUTH_RESET_TOKEN_EXPIRED` | The password reset link has expired; request a new one | A reset token older than its TTL was submitted. | `auth/service/passwords.py` |
 | 410 | `AUTH_RESET_TOKEN_USED` | The password reset link has already been used; request a new one | An already-redeemed reset token was submitted. | `auth/service/passwords.py` |

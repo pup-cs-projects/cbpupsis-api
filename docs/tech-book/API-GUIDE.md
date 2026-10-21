@@ -921,6 +921,10 @@ each build creates its own.
 
 ## Conventions worth keeping
 
+Student schedule reads and exports follow the
+[US-STU-003 contract](STUDENT-SCHEDULE.md), including weekly contact-hour totals,
+camelCase fields, private documents, and durable calendar revisions.
+
 - Money is `Numeric`/`Decimal`, never `float`.
 - Timestamps are timezone-aware, stored UTC.
 - Soft-delete important data via `deleted_at`; services filter it out so callers

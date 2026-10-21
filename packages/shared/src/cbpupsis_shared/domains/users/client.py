@@ -22,6 +22,7 @@ from cbpupsis_shared.domains.users.schemas import (
     AccountCreate,
     AdminProfileRead,
     FacultyProfileRead,
+    ScheduleIdentity,
     UserRead,
 )
 from cbpupsis_shared.domains.users.service import AccountProblem, SignInSubject
@@ -43,9 +44,23 @@ __all__ = [
     "lock_active_user",
     "lock_role_subject",
     "save_admin_profile",
+    "schedule_identity",
+    "schedule_names",
     "stage_admin_deactivation_override",
     "user_exists",
 ]
+
+
+async def schedule_identity(
+    db: AsyncSession, user_id: uuid.UUID
+) -> ScheduleIdentity | None:
+    return await service.schedule_identity(db, user_id)
+
+
+async def schedule_names(
+    db: AsyncSession, ids: list[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    return await service.schedule_names(db, ids)
 
 
 async def get_user(db: AsyncSession, user_id: uuid.UUID) -> UserRead:

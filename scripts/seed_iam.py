@@ -87,6 +87,7 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ApproveBackupRestore", "Approve another Superadmin's restore request"),
     # Own records: a faculty member's assigned course sections and rosters.
     ("ReadCourseSection", "View the course sections assigned to you"),
+    ("ReadSchedule", "Read and export your own student course schedule"),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -102,6 +103,7 @@ POLICIES: dict[str, list[str]] = {
     "OverrideAdmin": ["ManageOverride"],
     "BackupAdmin": ["RequestBackupRestore", "ApproveBackupRestore"],
     "CourseSectionReader": ["ReadCourseSection"],
+    "ScheduleReader": ["ReadSchedule"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
@@ -134,7 +136,7 @@ GROUPS: dict[str, list[str]] = {
     ADMIN_GROUP: [],
     FACULTY_GROUP: ["CourseSectionReader"],
     # Superadmin-created student accounts join this group.
-    STUDENT_GROUP: [],
+    STUDENT_GROUP: ["ScheduleReader"],
     SUPERADMIN_GROUP: list(POLICIES),
 }
 
