@@ -1017,13 +1017,13 @@
         }
       }
     },
-    "/api/v1/student/schedule": {
+    "/api/v1/students/me/schedule": {
       "get": {
         "tags": [
           "student-schedule"
         ],
         "summary": "Read Schedule",
-        "operationId": "read_schedule_api_v1_student_schedule_get",
+        "operationId": "read_schedule_api_v1_students_me_schedule_get",
         "security": [
           {
             "HTTPBearer": []
@@ -1102,13 +1102,189 @@
         }
       }
     },
-    "/api/v1/student/schedule/export": {
+    "/api/v1/student/schedule": {
+      "get": {
+        "tags": [
+          "student-schedule"
+        ],
+        "summary": "Read Schedule (Compatibility Alias)",
+        "description": "Use GET /api/v1/students/me/schedule for new clients.",
+        "operationId": "read_schedule_api_v1_student_schedule_get",
+        "deprecated": true,
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Semester"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "default": "",
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/students/me/schedule/export": {
       "get": {
         "tags": [
           "student-schedule"
         ],
         "summary": "Export Schedule",
+        "operationId": "export_schedule_api_v1_students_me_schedule_export_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "pdf",
+                "ics"
+              ],
+              "type": "string",
+              "title": "Format"
+            }
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Semester"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/pdf": {},
+              "text/calendar": {}
+            }
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE; retry without a partial file"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/student/schedule/export": {
+      "get": {
+        "tags": [
+          "student-schedule"
+        ],
+        "summary": "Export Schedule (Compatibility Alias)",
+        "description": "Use GET /api/v1/students/me/schedule/export for new clients.",
         "operationId": "export_schedule_api_v1_student_schedule_export_get",
+        "deprecated": true,
         "security": [
           {
             "HTTPBearer": []

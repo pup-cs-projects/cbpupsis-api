@@ -86,6 +86,21 @@ def test_the_composed_app_registers_each_operation_once() -> None:
     assert not [op_id for op_id, n in counts.items() if n > 1]
 
 
+@pytest.mark.parametrize("app", [student_app, main.app], ids=["student", "composed"])
+def test_schedule_self_routes_and_compatibility_alias_contract(app: FastAPI) -> None:
+    paths = app.openapi()["paths"]
+    for suffix in ("", "/export"):
+        canonical = paths[f"/api/v1/students/me/schedule{suffix}"]["get"]
+        compatibility = paths[f"/api/v1/student/schedule{suffix}"]["get"]
+        assert not canonical.get("deprecated", False)
+        assert compatibility["deprecated"] is True
+        assert compatibility["responses"] == canonical["responses"]
+        assert compatibility["parameters"] == canonical["parameters"]
+        assert compatibility["security"] == canonical["security"]
+        assert canonical["security"] == [{"HTTPBearer": []}]
+    assert "/api/v1/students/{student_number}/schedule" in paths
+
+
 def test_no_app_mounts_the_service_bypassing_admin_panel() -> None:
     """Even a development panel must not bypass MFA, overrides, and auditing."""
 

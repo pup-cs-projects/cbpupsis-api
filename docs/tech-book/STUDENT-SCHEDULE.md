@@ -6,10 +6,16 @@ The Student API owns these authenticated GET routes beneath `/api/v1`:
 
 | Route | Purpose |
 |---|---|
-| `/student/schedule` | Caller-owned course list, meetings, and totals |
-| `/student/schedule/export?format=pdf` | Complete printable schedule |
-| `/student/schedule/export?format=ics` | Complete recurring calendar |
+| `/students/me/schedule` | Caller-owned course list, meetings, and totals |
+| `/students/me/schedule/export?format=pdf` | Complete printable schedule |
+| `/students/me/schedule/export?format=ics` | Complete recurring calendar |
 | `/students/{student_number}/schedule` | Explicit self-identity check; foreign and absent identifiers are identical 404 `RESOURCE_NOT_FOUND` |
+
+The parent-story `/students/me/...` routes are canonical for clients and QA.
+The original #96 URLs, `/student/schedule` and `/student/schedule/export`, remain
+working compatibility aliases to the same handlers (not redirects). OpenAPI marks
+them deprecated; new clients should use the canonical URLs. No removal date is set.
+The literal `me` is resolved from the session, never as a student number.
 
 A live student session and `ReadSchedule` are required. Run the idempotent IAM
 seed after deploying: Students receive `ScheduleReader`. No new read-all grant
@@ -22,8 +28,8 @@ explanatory empty response, never an ownership 404. Read responses accept `q`
 (maximum 200 characters), matching code, title, or faculty name case-insensitively.
 Whitespace-only `q` restores the complete list. Exports always ignore view filters.
 
-The response is camelCase, following #96 rather than the parent story's older
-example URLs and snake_case fields:
+The response remains camelCase, following #96 rather than the parent story's
+snake_case field examples. The route alignment does not change the JSON shape:
 
 - `studentName`, `studentNumber`, and `term` (`id`, `year`, `semester`,
   `startDate`, `endDate`), or null when the term is unavailable.

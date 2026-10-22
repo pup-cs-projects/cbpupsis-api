@@ -26,7 +26,13 @@ from cbpupsis_shared.domains.auth.security import hash_password
 from main import app
 from tests.domains.schedule.helpers import NUMBER, PASSWORD, seed_schedule
 
-URL = "/api/v1/student/schedule"
+URL = "/api/v1/students/me/schedule"
+COMPAT_URL = "/api/v1/student/schedule"
+GUARDED_PATHS = [
+    path
+    for base in (URL, COMPAT_URL)
+    for path in (base, f"{base}/export?format=pdf", f"{base}/export?format=ics")
+]
 
 
 @pytest.fixture(scope="session")
@@ -54,6 +60,63 @@ async def setup(db, client, grant, password_hash):
 def events(response):
     assert response.status_code == 200, response.text
     return Calendar.from_ical(response.content).walk("VEVENT")
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {},
+        {"year": "2026-2027", "semester": "first", "q": "CS001"},
+        {"year": "2025-2026", "semester": "first"},
+        {"q": "no match"},
+        {"q": "  "},
+    ],
+)
+async def test_compatibility_read_matches_canonical_self_route(client, setup, params):
+    canonical = await client.get(URL, params=params, headers=setup.headers)
+    compatibility = await client.get(COMPAT_URL, params=params, headers=setup.headers)
+    assert canonical.status_code == compatibility.status_code == 200
+    assert canonical.json() == compatibility.json()
+    assert compatibility.headers["cache-control"] == "private, no-store"
+    assert "location" not in compatibility.headers
+
+
+@pytest.mark.parametrize("format", ["pdf", "ics"])
+async def test_compatibility_exports_share_complete_content_and_revisions(
+    client, setup, format
+):
+    params = {
+        "format": format,
+        "year": "2026-2027",
+        "semester": "first",
+        "q": "no match",
+    }
+    canonical = await client.get(f"{URL}/export", params=params, headers=setup.headers)
+    compatibility = await client.get(
+        f"{COMPAT_URL}/export", params=params, headers=setup.headers
+    )
+    assert canonical.status_code == compatibility.status_code == 200
+    for header in ("content-type", "content-disposition", "cache-control"):
+        assert compatibility.headers[header] == canonical.headers[header]
+    assert "location" not in compatibility.headers
+    if format == "pdf":
+        texts = [
+            "\n".join(
+                page.extract_text()
+                for page in PdfReader(BytesIO(response.content)).pages
+            )
+            for response in (canonical, compatibility)
+        ]
+        assert texts[0] == texts[1]
+        assert "CS001" in texts[1] and "CS002" in texts[1]
+    else:
+        revisions = [
+            {str(event["uid"]): int(event["sequence"]) for event in events(response)}
+            for response in (canonical, compatibility)
+        ]
+        assert revisions[0] == revisions[1]
+        assert len(revisions[1]) == 4
+        assert set(revisions[1].values()) == {1}
 
 
 async def test_ac_103_1_fields_and_ac_103_4_computed_totals(client, setup):
@@ -269,9 +332,7 @@ async def test_ac_103_8_drop_readd_stable_uids_monotonic_sequence_and_tombstones
     )
 
 
-@pytest.mark.parametrize(
-    "path", [URL, f"{URL}/export?format=pdf", f"{URL}/export?format=ics"]
-)
+@pytest.mark.parametrize("path", GUARDED_PATHS)
 async def test_no_session_returns_401(client, path):
     response = await client.get(path)
     assert response.status_code == 401
@@ -279,9 +340,7 @@ async def test_no_session_returns_401(client, path):
     assert not response.content.startswith(b"%PDF")
 
 
-@pytest.mark.parametrize(
-    "path", [URL, f"{URL}/export?format=pdf", f"{URL}/export?format=ics"]
-)
+@pytest.mark.parametrize("path", GUARDED_PATHS)
 async def test_requires_permission_and_student_role(client, setup, path):
     for user in (
         CurrentUser(id=setup.faculty_id, email="faculty@example.com", role="faculty"),
@@ -291,9 +350,7 @@ async def test_requires_permission_and_student_role(client, setup, path):
         assert (await client.get(path)).status_code == 403
 
 
-@pytest.mark.parametrize(
-    "path", [URL, f"{URL}/export?format=pdf", f"{URL}/export?format=ics"]
-)
+@pytest.mark.parametrize("path", GUARDED_PATHS)
 async def test_live_student_without_read_schedule_is_denied(client, setup, db, path):
     await db.execute(delete(PolicyPermission))
     await db.commit()

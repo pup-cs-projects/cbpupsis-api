@@ -924,6 +924,8 @@ each build creates its own.
 Student schedule reads and exports follow the
 [US-STU-003 contract](STUDENT-SCHEDULE.md), including weekly contact-hour totals,
 camelCase fields, private documents, and durable calendar revisions.
+Use `/api/v1/students/me/schedule` and `/api/v1/students/me/schedule/export`;
+the original `/api/v1/student/schedule` URLs remain deprecated compatibility aliases.
 
 - Money is `Numeric`/`Decimal`, never `float`.
 - Timestamps are timezone-aware, stored UTC.

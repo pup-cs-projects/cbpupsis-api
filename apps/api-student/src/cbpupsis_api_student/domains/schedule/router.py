@@ -31,7 +31,14 @@ Student = Annotated[CurrentUser, Depends(require_student_session)]
 Database = Annotated[AsyncSession, Depends(get_db)]
 
 
-@router.get("/student/schedule", response_model=ScheduleRead)
+@router.get(
+    "/student/schedule",
+    response_model=ScheduleRead,
+    deprecated=True,
+    summary="Read Schedule (Compatibility Alias)",
+    description="Use GET /api/v1/students/me/schedule for new clients.",
+)
+@router.get("/students/me/schedule", response_model=ScheduleRead)
 async def read_schedule(
     response: Response,
     user: Student,
@@ -48,6 +55,17 @@ async def read_schedule(
 
 @router.get(
     "/student/schedule/export",
+    deprecated=True,
+    summary="Export Schedule (Compatibility Alias)",
+    description="Use GET /api/v1/students/me/schedule/export for new clients.",
+    response_class=Response,
+    responses={
+        200: {"content": {"application/pdf": {}, "text/calendar": {}}},
+        503: {"description": "SERVICE_UNAVAILABLE; retry without a partial file"},
+    },
+)
+@router.get(
+    "/students/me/schedule/export",
     response_class=Response,
     responses={
         200: {"content": {"application/pdf": {}, "text/calendar": {}}},
