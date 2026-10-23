@@ -12,9 +12,9 @@ The Student API owns these authenticated GET routes beneath `/api/v1`:
 | `/students/{student_number}/schedule` | Explicit self-identity check; foreign and absent identifiers are identical 404 `RESOURCE_NOT_FOUND` |
 
 The parent-story `/students/me/...` routes are canonical for clients and QA.
-The original #96 URLs, `/student/schedule` and `/student/schedule/export`, remain
-working compatibility aliases to the same handlers (not redirects). OpenAPI marks
-them deprecated; new clients should use the canonical URLs. No removal date is set.
+The earlier draft's deprecated `/student/schedule` and `/student/schedule/export`
+aliases have been removed, not merely hidden from Scalar. They return 404; update
+clients and QA requests to the canonical URLs before publishing this revision.
 The literal `me` is resolved from the session, never as a student number.
 
 A live student session and `ReadSchedule` are required. Run the idempotent IAM
@@ -49,10 +49,10 @@ no `status`/`data` success wrapper is added.
 
 ### Migrating from the earlier draft
 
-This is a breaking JSON property-name change on all three schedule read URLs,
-including the deprecated `/student/schedule` alias. Those aliases preserve URLs,
-not the former camelCase response shape. Update clients and QA assertions before
-publishing this revision; there is no dual-spelling response.
+This is a breaking JSON property-name change on the canonical self and ownership
+read URLs. Update clients and QA assertions before publishing this revision;
+there is no dual-spelling response. The earlier deprecated singular `/student/`
+schedule routes are removed; migrate those URLs to `/students/me/` as well.
 
 | Earlier draft property | Current property |
 | --- | --- |

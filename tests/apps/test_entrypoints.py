@@ -38,7 +38,7 @@ APPS: dict[str, FastAPI] = {
 #: The router prefixes under /api/v1 each app serves.
 EXPECTED_PREFIXES: dict[str, set[str]] = {
     # Role sign-ins live under /auth/<role>, so they share the "auth" prefix.
-    "student": {"auth", "users", "notifications", "items", "student", "students"},
+    "student": {"auth", "users", "notifications", "items", "students"},
     "faculty": {"auth", "users", "notifications", "sections"},
     "admin": {"auth", "users", "notifications", "admin", "superadmin", "iam", "audit"},
 }
@@ -87,18 +87,56 @@ def test_the_composed_app_registers_each_operation_once() -> None:
 
 
 @pytest.mark.parametrize("app", [student_app, main.app], ids=["student", "composed"])
-def test_schedule_self_routes_and_compatibility_alias_contract(app: FastAPI) -> None:
+def test_schedule_self_routes_and_removed_alias_contract(app: FastAPI) -> None:
     paths = app.openapi()["paths"]
     for suffix in ("", "/export"):
         canonical = paths[f"/api/v1/students/me/schedule{suffix}"]["get"]
-        compatibility = paths[f"/api/v1/student/schedule{suffix}"]["get"]
+        assert f"/api/v1/student/schedule{suffix}" not in paths
         assert not canonical.get("deprecated", False)
-        assert compatibility["deprecated"] is True
-        assert compatibility["responses"] == canonical["responses"]
-        assert compatibility["parameters"] == canonical["parameters"]
-        assert compatibility["security"] == canonical["security"]
         assert canonical["security"] == [{"HTTPBearer": []}]
     assert "/api/v1/students/{student_number}/schedule" in paths
+
+
+@pytest.mark.parametrize("app", [student_app, main.app], ids=["student", "composed"])
+def test_schedule_openapi_documents_selectors_filters_and_downloads(
+    app: FastAPI,
+) -> None:
+    schema = app.openapi()
+    paths = schema["paths"]
+    base = "/api/v1/students/me/schedule"
+    for path in (base, f"{base}/export", "/api/v1/students/{student_number}/schedule"):
+        operation = paths[path]["get"]
+        assert len(operation["description"]) > 600
+        assert "ReadSchedule" in operation["description"]
+        assert {"200", "401", "403", "404", "422", "503"} <= operation[
+            "responses"
+        ].keys()
+        parameters = {
+            parameter["name"]: parameter for parameter in operation["parameters"]
+        }
+        for name in ("year", "semester"):
+            assert "both" in parameters[name]["description"]
+            assert parameters[name]["schema"]["examples"]
+        assert "private, no-store" in operation["description"]
+    read_parameters = {p["name"]: p for p in paths[base]["get"]["parameters"]}
+    assert "faculty" in read_parameters["q"]["description"]
+    assert "notEnrolled" in paths[base]["get"]["description"]
+    export = paths[f"{base}/export"]["get"]
+    assert "q" not in {p["name"] for p in export["parameters"]}
+    for media_type in ("application/pdf", "text/calendar"):
+        assert export["responses"]["200"]["content"][media_type]["schema"] == {
+            "type": "string",
+            "format": "binary",
+        }
+    assert "Content-Disposition" in export["responses"]["200"]["headers"]
+    assert (
+        export["responses"]["503"]["headers"]["Retry-After"]["schema"]["example"] == 30
+    )
+    for model in ("ScheduleRead", "ScheduleCourse", "ScheduleMeeting", "ScheduleTerm"):
+        assert all(
+            field.get("description")
+            for field in schema["components"]["schemas"][model]["properties"].values()
+        )
 
 
 @pytest.mark.parametrize("app", [student_app, main.app], ids=["student", "composed"])

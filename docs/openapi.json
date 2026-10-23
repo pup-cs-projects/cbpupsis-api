@@ -1022,7 +1022,8 @@
         "tags": [
           "student-schedule"
         ],
-        "summary": "Read Schedule",
+        "summary": "Read My Course Schedule",
+        "description": "Read the signed-in student's officially enrolled courses, meeting times and weekly\ncontact-hour totals (US-STU-003).\n\n**Authentication:** a live student bearer session and `ReadSchedule` permission\nare required. Only the caller's records are accessible; this is not a staff or\nread-all endpoint. Downloading a Certificate of Registration is not required.\n\n**Term selection:** omit both `year` and `semester` for the current academic term,\nor supply both, for example `year=2026-2027&semester=first`. Historical configured\nterms are supported. Supplying just one selector or blank selectors returns 422.\n\n**Filtering:** `q` searches course code, title and faculty name case-insensitively.\nFor example, `q=CS001` narrows the rows and their totals. Clear `q` to restore the\nfull list; searching does not modify enrollment.\n\n**Response:** a direct snake_case JSON object, without a `status`/`data` wrapper.\nEach course includes its section, rooms, faculty, credit units, enrollment status,\nseparate lecture/lab hours and every meeting. Contact hours are weekly durations\ncalculated from meetings, not credit conversions or term-wide totals. Decimal\nquantities serialize as strings. Totals sum only the returned courses.\n\n**Empty states still return 200:** `notEnrolled` means no official enrollment for\nthe selected term; `noMatches` means the filter matched no enrolled courses;\n`termUnavailable` means the requested/current term configuration is unavailable.\nThese responses include an explanatory `message`, empty `courses` and zero totals.\nNonempty results have `state=ready`. Pending and dropped courses are excluded;\ncommitted enrollment changes are reflected on subsequent reads.\n\nResponses are private and use `Cache-Control: private, no-store`.",
         "operationId": "read_schedule_api_v1_students_me_schedule_get",
         "security": [
           {
@@ -1045,8 +1046,13 @@
                   "type": "null"
                 }
               ],
+              "description": "Stored academic-year string, not a calendar-year integer. Supply with semester, or omit both to use the current academic term.",
+              "examples": [
+                "2026-2027"
+              ],
               "title": "Year"
-            }
+            },
+            "description": "Stored academic-year string, not a calendar-year integer. Supply with semester, or omit both to use the current academic term."
           },
           {
             "name": "semester",
@@ -1063,8 +1069,13 @@
                   "type": "null"
                 }
               ],
+              "description": "Semester identifier as stored for the academic term. Supply with year, or omit both for the current term; a single selector is rejected.",
+              "examples": [
+                "first"
+              ],
               "title": "Semester"
-            }
+            },
+            "description": "Semester identifier as stored for the academic term. Supply with year, or omit both for the current term; a single selector is rejected."
           },
           {
             "name": "q",
@@ -1073,14 +1084,21 @@
             "schema": {
               "type": "string",
               "maxLength": 200,
+              "description": "Case-insensitive substring search across course code, course title and faculty name. Blank or whitespace-only values restore all courses. Only returned rows and totals are filtered; enrollment is never changed.",
+              "examples": [
+                "CS001",
+                "Algorithms",
+                "Synthetic Faculty"
+              ],
               "default": "",
               "title": "Q"
-            }
+            },
+            "description": "Case-insensitive substring search across course code, course title and faculty name. Blank or whitespace-only values restore all courses. Only returned rows and totals are filtered; enrollment is never changed."
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Caller-owned courses and totals, or explained empty state.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1089,99 +1107,26 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/student/schedule": {
-      "get": {
-        "tags": [
-          "student-schedule"
-        ],
-        "summary": "Read Schedule (Compatibility Alias)",
-        "description": "Use GET /api/v1/students/me/schedule for new clients.",
-        "operationId": "read_schedule_api_v1_student_schedule_get",
-        "deprecated": true,
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "year",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 20
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Year"
-            }
+          "401": {
+            "description": "Missing, invalid, expired or inactive student bearer session."
           },
-          {
-            "name": "semester",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 30
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Semester"
-            }
+          "403": {
+            "description": "The caller is not a student or lacks ReadSchedule permission."
           },
-          {
-            "name": "q",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 200,
-              "default": "",
-              "title": "Q"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScheduleRead"
-                }
-              }
-            }
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: no accessible student identity. Foreign and nonexistent student numbers receive indistinguishable ownership errors."
           },
           "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
+            "description": "Invalid query parameters: supply year and semester together with nonblank values, respect field lengths and use a supported export format."
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE: schedule data or generation unavailable.",
+            "headers": {
+              "Retry-After": {
+                "description": "Wait 30 seconds before retrying.",
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "type": "integer",
+                  "example": 30
                 }
               }
             }
@@ -1194,7 +1139,8 @@
         "tags": [
           "student-schedule"
         ],
-        "summary": "Export Schedule",
+        "summary": "Export My Course Schedule",
+        "description": "Download the signed-in student's complete officially enrolled schedule as a PDF\nor iCalendar attachment (US-STU-003). Requires a live student bearer session and\n`ReadSchedule` permission, just like the schedule read endpoint.\n\n**Choose a format:** `format=pdf` produces a university-headed printable document\nwith student identity, term, every course/meeting, credit units, separate weekly\nlecture/lab hours and totals. `format=ics` produces an iCalendar file with one\nrecurring event series per meeting slot, preserving separate lecture/lab times.\n\n**Select a term:** omit both `year` and `semester` for the current term, or supply\nboth, for example `year=2026-2027&semester=first`. Historical configured terms are\nsupported. The export always includes the complete selected term; the read\nendpoint's `q` filter does not restrict downloads and is not an export parameter.\nNo enrollment produces an empty schedule document/calendar. Missing term\nconfiguration produces an explanatory PDF or an empty calendar, not an ownership\n404.\n\n**Calendar behavior:** meeting times use Asia/Manila, weekly recurrences end at\nthe term boundary, and configured academic holidays are excluded. Stable opaque\nUIDs and durable SEQUENCE revisions support unchanged re-exports, updates and\ncancellation records for removed meetings. Import/re-import behavior depends on\nthe calendar client: downloading a file is not Google authorization or automatic\nsynchronization.\n\n**Download and failures:** 200 returns the file bytes, not JSON, with attachment\nfilename `course-schedule.pdf` or `course-schedule.ics`. The entire file is\nbuffered before responding. Generation has a ten-second deadline; failures\nreturn 503 `SERVICE_UNAVAILABLE` with `Retry-After: 30`, never a partial attachment.\nResponses are private and use `Cache-Control: private, no-store`.",
         "operationId": "export_schedule_api_v1_students_me_schedule_export_get",
         "security": [
           {
@@ -1212,97 +1158,14 @@
                 "ics"
               ],
               "type": "string",
-              "title": "Format"
-            }
-          },
-          {
-            "name": "year",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 20
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Year"
-            }
-          },
-          {
-            "name": "semester",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 30
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Semester"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/pdf": {},
-              "text/calendar": {}
-            }
-          },
-          "503": {
-            "description": "SERVICE_UNAVAILABLE; retry without a partial file"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/student/schedule/export": {
-      "get": {
-        "tags": [
-          "student-schedule"
-        ],
-        "summary": "Export Schedule (Compatibility Alias)",
-        "description": "Use GET /api/v1/students/me/schedule/export for new clients.",
-        "operationId": "export_schedule_api_v1_student_schedule_export_get",
-        "deprecated": true,
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "format",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "enum": [
+              "description": "Required download format: pdf for printing, ics for calendar import.",
+              "examples": [
                 "pdf",
                 "ics"
               ],
-              "type": "string",
               "title": "Format"
-            }
+            },
+            "description": "Required download format: pdf for printing, ics for calendar import."
           },
           {
             "name": "year",
@@ -1319,8 +1182,13 @@
                   "type": "null"
                 }
               ],
+              "description": "Stored academic-year string, not a calendar-year integer. Supply with semester, or omit both to use the current academic term.",
+              "examples": [
+                "2026-2027"
+              ],
               "title": "Year"
-            }
+            },
+            "description": "Stored academic-year string, not a calendar-year integer. Supply with semester, or omit both to use the current academic term."
           },
           {
             "name": "semester",
@@ -1337,27 +1205,68 @@
                   "type": "null"
                 }
               ],
+              "description": "Semester identifier as stored for the academic term. Supply with year, or omit both for the current term; a single selector is rejected.",
+              "examples": [
+                "first"
+              ],
               "title": "Semester"
-            }
+            },
+            "description": "Semester identifier as stored for the academic term. Supply with year, or omit both for the current term; a single selector is rejected."
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Complete schedule file attachment in the requested format.",
             "content": {
-              "application/pdf": {},
-              "text/calendar": {}
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "text/calendar": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Content-Disposition": {
+                "description": "Attachment named course-schedule.pdf or course-schedule.ics.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Private document; must not be stored in caches.",
+                "schema": {
+                  "type": "string",
+                  "example": "private, no-store"
+                }
+              }
             }
           },
-          "503": {
-            "description": "SERVICE_UNAVAILABLE; retry without a partial file"
+          "401": {
+            "description": "Missing, invalid, expired or inactive student bearer session."
+          },
+          "403": {
+            "description": "The caller is not a student or lacks ReadSchedule permission."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: no accessible student identity. Foreign and nonexistent student numbers receive indistinguishable ownership errors."
           },
           "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
+            "description": "Invalid query parameters: supply year and semester together with nonblank values, respect field lengths and use a supported export format."
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE: schedule data or generation unavailable.",
+            "headers": {
+              "Retry-After": {
+                "description": "Wait 30 seconds before retrying.",
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "type": "integer",
+                  "example": 30
                 }
               }
             }
@@ -1370,7 +1279,8 @@
         "tags": [
           "student-schedule"
         ],
-        "summary": "Read Identified Schedule",
+        "summary": "Read My Schedule by Student Number",
+        "description": "Read the signed-in student's officially enrolled courses, meeting times and weekly\ncontact-hour totals (US-STU-003).\n\n**Authentication:** a live student bearer session and `ReadSchedule` permission\nare required. Only the caller's records are accessible; this is not a staff or\nread-all endpoint. Downloading a Certificate of Registration is not required.\n\n**Term selection:** omit both `year` and `semester` for the current academic term,\nor supply both, for example `year=2026-2027&semester=first`. Historical configured\nterms are supported. Supplying just one selector or blank selectors returns 422.\n\n**Filtering:** `q` searches course code, title and faculty name case-insensitively.\nFor example, `q=CS001` narrows the rows and their totals. Clear `q` to restore the\nfull list; searching does not modify enrollment.\n\n**Response:** a direct snake_case JSON object, without a `status`/`data` wrapper.\nEach course includes its section, rooms, faculty, credit units, enrollment status,\nseparate lecture/lab hours and every meeting. Contact hours are weekly durations\ncalculated from meetings, not credit conversions or term-wide totals. Decimal\nquantities serialize as strings. Totals sum only the returned courses.\n\n**Empty states still return 200:** `notEnrolled` means no official enrollment for\nthe selected term; `noMatches` means the filter matched no enrolled courses;\n`termUnavailable` means the requested/current term configuration is unavailable.\nThese responses include an explanatory `message`, empty `courses` and zero totals.\nNonempty results have `state=ready`. Pending and dropped courses are excluded;\ncommitted enrollment changes are reflected on subsequent reads.\n\nResponses are private and use `Cache-Control: private, no-store`.\n\n\n**Explicit ownership check:** `student_number` must exactly match the signed-in\nstudent's institutional number. A different student's number and a nonexistent\nnumber both return the same 404 `RESOURCE_NOT_FOUND`; this endpoint cannot look\nup other students. Prefer `/api/v1/students/me/schedule` when the client does not\nneed to send an explicit identifier. Term selectors, filtering and totals behave\nidentically to that self route.",
         "operationId": "read_identified_schedule_api_v1_students__student_number__schedule_get",
         "security": [
           {
@@ -1384,8 +1294,13 @@
             "required": true,
             "schema": {
               "type": "string",
+              "description": "Your own institutional student number; must match the bearer session.",
+              "examples": [
+                "2021-00123-MN-0"
+              ],
               "title": "Student Number"
-            }
+            },
+            "description": "Your own institutional student number; must match the bearer session."
           },
           {
             "name": "year",
@@ -1402,8 +1317,13 @@
                   "type": "null"
                 }
               ],
+              "description": "Stored academic-year string, not a calendar-year integer. Supply with semester, or omit both to use the current academic term.",
+              "examples": [
+                "2026-2027"
+              ],
               "title": "Year"
-            }
+            },
+            "description": "Stored academic-year string, not a calendar-year integer. Supply with semester, or omit both to use the current academic term."
           },
           {
             "name": "semester",
@@ -1420,8 +1340,13 @@
                   "type": "null"
                 }
               ],
+              "description": "Semester identifier as stored for the academic term. Supply with year, or omit both for the current term; a single selector is rejected.",
+              "examples": [
+                "first"
+              ],
               "title": "Semester"
-            }
+            },
+            "description": "Semester identifier as stored for the academic term. Supply with year, or omit both for the current term; a single selector is rejected."
           },
           {
             "name": "q",
@@ -1430,14 +1355,21 @@
             "schema": {
               "type": "string",
               "maxLength": 200,
+              "description": "Case-insensitive substring search across course code, course title and faculty name. Blank or whitespace-only values restore all courses. Only returned rows and totals are filtered; enrollment is never changed.",
+              "examples": [
+                "CS001",
+                "Algorithms",
+                "Synthetic Faculty"
+              ],
               "default": "",
               "title": "Q"
-            }
+            },
+            "description": "Case-insensitive substring search across course code, course title and faculty name. Blank or whitespace-only values restore all courses. Only returned rows and totals are filtered; enrollment is never changed."
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "The caller's schedule after verifying the supplied number.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1446,12 +1378,26 @@
               }
             }
           },
+          "401": {
+            "description": "Missing, invalid, expired or inactive student bearer session."
+          },
+          "403": {
+            "description": "The caller is not a student or lacks ReadSchedule permission."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: no accessible student identity. Foreign and nonexistent student numbers receive indistinguishable ownership errors."
+          },
           "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
+            "description": "Invalid query parameters: supply year and semester together with nonblank values, respect field lengths and use a supported export format."
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE: schedule data or generation unavailable.",
+            "headers": {
+              "Retry-After": {
+                "description": "Wait 30 seconds before retrying.",
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "type": "integer",
+                  "example": 30
                 }
               }
             }
@@ -5882,20 +5828,33 @@
         "properties": {
           "code": {
             "type": "string",
-            "title": "Code"
+            "title": "Code",
+            "description": "Course code; searchable using q.",
+            "examples": [
+              "CS001"
+            ]
           },
           "title": {
             "type": "string",
-            "title": "Title"
+            "title": "Title",
+            "description": "Course title; searchable using q.",
+            "examples": [
+              "Algorithms"
+            ]
           },
           "section": {
             "type": "string",
-            "title": "Section"
+            "title": "Section",
+            "description": "Enrolled section name.",
+            "examples": [
+              "BSCS 1-1"
+            ]
           },
           "section_id": {
             "type": "string",
             "format": "uuid",
-            "title": "Section Id"
+            "title": "Section Id",
+            "description": "Enrolled section identifier."
           },
           "room": {
             "anyOf": [
@@ -5906,7 +5865,8 @@
                 "type": "null"
               }
             ],
-            "title": "Room"
+            "title": "Room",
+            "description": "Distinct meeting rooms joined by commas, or null."
           },
           "faculty_name": {
             "anyOf": [
@@ -5917,33 +5877,42 @@
                 "type": "null"
               }
             ],
-            "title": "Faculty Name"
+            "title": "Faculty Name",
+            "description": "Assigned faculty name; searchable using q; null if unassigned."
           },
           "units": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Units"
+            "title": "Units",
+            "description": "Credit units, serialized as a decimal string; not contact hours."
           },
           "lecture_hours": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Lecture Hours"
+            "title": "Lecture Hours",
+            "description": "Weekly lecture hours from meeting durations, as a decimal string."
           },
           "lab_hours": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Lab Hours"
+            "title": "Lab Hours",
+            "description": "Weekly lab hours from meeting durations, as a decimal string."
           },
           "status": {
             "type": "string",
-            "title": "Status"
+            "title": "Status",
+            "description": "Official enrollment status; only enrolled courses are included.",
+            "examples": [
+              "enrolled"
+            ]
           },
           "meetings": {
             "items": {
               "$ref": "#/components/schemas/ScheduleMeeting"
             },
             "type": "array",
-            "title": "Meetings"
+            "title": "Meetings",
+            "description": "All weekly meeting slots, preserving individual times and rooms."
           }
         },
         "type": "object",
@@ -5960,14 +5929,16 @@
           "status",
           "meetings"
         ],
-        "title": "ScheduleCourse"
+        "title": "ScheduleCourse",
+        "description": "An officially enrolled course and its section's complete weekly timetable."
       },
       "ScheduleMeeting": {
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid",
-            "title": "Id"
+            "title": "Id",
+            "description": "Distinct meeting identifier within the section."
           },
           "day_of_week": {
             "type": "integer",
@@ -5979,12 +5950,20 @@
           "start_time": {
             "type": "string",
             "format": "time",
-            "title": "Start Time"
+            "title": "Start Time",
+            "description": "Meeting start time in Asia/Manila.",
+            "examples": [
+              "08:00:00"
+            ]
           },
           "end_time": {
             "type": "string",
             "format": "time",
-            "title": "End Time"
+            "title": "End Time",
+            "description": "Meeting end time in Asia/Manila.",
+            "examples": [
+              "10:00:00"
+            ]
           },
           "room": {
             "anyOf": [
@@ -5995,7 +5974,11 @@
                 "type": "null"
               }
             ],
-            "title": "Room"
+            "title": "Room",
+            "description": "Meeting-specific room, or null if unassigned.",
+            "examples": [
+              "R101"
+            ]
           },
           "type": {
             "type": "string",
@@ -6003,7 +5986,8 @@
               "lecture",
               "laboratory"
             ],
-            "title": "Type"
+            "title": "Type",
+            "description": "Contact-hour category for this meeting."
           }
         },
         "type": "object",
@@ -6015,17 +5999,23 @@
           "room",
           "type"
         ],
-        "title": "ScheduleMeeting"
+        "title": "ScheduleMeeting",
+        "description": "One weekly lecture or laboratory meeting, using Asia/Manila local times."
       },
       "ScheduleRead": {
         "properties": {
           "student_name": {
             "type": "string",
-            "title": "Student Name"
+            "title": "Student Name",
+            "description": "Signed-in student's full name."
           },
           "student_number": {
             "type": "string",
-            "title": "Student Number"
+            "title": "Student Number",
+            "description": "Signed-in student's institutional number.",
+            "examples": [
+              "2021-00123-MN-0"
+            ]
           },
           "term": {
             "anyOf": [
@@ -6035,31 +6025,36 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Selected term, or null when configuration is unavailable."
           },
           "courses": {
             "items": {
               "$ref": "#/components/schemas/ScheduleCourse"
             },
             "type": "array",
-            "title": "Courses"
+            "title": "Courses",
+            "description": "Officially enrolled courses matching q; empty for empty states."
           },
           "total_credits": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Credits",
+            "description": "Sum of returned course credit units, as a decimal string.",
             "default": "0"
           },
           "total_lecture_hours": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Lecture Hours",
+            "description": "Sum of returned weekly lecture hours, as a decimal string.",
             "default": "0"
           },
           "total_lab_hours": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Lab Hours",
+            "description": "Sum of returned weekly laboratory hours, as a decimal string.",
             "default": "0"
           },
           "state": {
@@ -6070,7 +6065,8 @@
               "noMatches",
               "termUnavailable"
             ],
-            "title": "State"
+            "title": "State",
+            "description": "ready: courses returned; notEnrolled: no official enrollment; noMatches: filter matched none; termUnavailable: missing/ambiguous term configuration."
           },
           "message": {
             "anyOf": [
@@ -6081,7 +6077,8 @@
                 "type": "null"
               }
             ],
-            "title": "Message"
+            "title": "Message",
+            "description": "Human-readable explanation for an empty result; null when ready."
           }
         },
         "type": "object",
@@ -6091,32 +6088,44 @@
           "term",
           "state"
         ],
-        "title": "ScheduleRead"
+        "title": "ScheduleRead",
+        "description": "Direct snake_case schedule response; no status/data success envelope."
       },
       "ScheduleTerm": {
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid",
-            "title": "Id"
+            "title": "Id",
+            "description": "Academic term identifier."
           },
           "year": {
             "type": "string",
-            "title": "Year"
+            "title": "Year",
+            "description": "Stored academic-year string.",
+            "examples": [
+              "2026-2027"
+            ]
           },
           "semester": {
             "type": "string",
-            "title": "Semester"
+            "title": "Semester",
+            "description": "Stored semester identifier.",
+            "examples": [
+              "first"
+            ]
           },
           "start_date": {
             "type": "string",
             "format": "date",
-            "title": "Start Date"
+            "title": "Start Date",
+            "description": "Inclusive term start date."
           },
           "end_date": {
             "type": "string",
             "format": "date",
-            "title": "End Date"
+            "title": "End Date",
+            "description": "Inclusive term end date and recurrence boundary."
           }
         },
         "type": "object",
@@ -6127,7 +6136,8 @@
           "start_date",
           "end_date"
         ],
-        "title": "ScheduleTerm"
+        "title": "ScheduleTerm",
+        "description": "Configured academic term selected for this schedule."
       },
       "SignInAttemptRead": {
         "properties": {
