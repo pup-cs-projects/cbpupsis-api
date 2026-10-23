@@ -782,9 +782,9 @@
         "tags": [
           "student-dashboard"
         ],
-        "summary": "Get Dashboard",
-        "description": "Return single aggregate dashboard for the authenticated student.",
-        "operationId": "get_dashboard_api_v1_student_dashboard_get",
+        "summary": "Get Student Dashboard",
+        "description": "Return single aggregate dashboard for the authenticated student (US-101).",
+        "operationId": "get_student_dashboard",
         "security": [
           {
             "HTTPBearer": []
@@ -887,9 +887,9 @@
         "tags": [
           "student-dashboard"
         ],
-        "summary": "Get My Dashboard",
-        "description": "Alias for /dashboard serving caller's landing view.",
-        "operationId": "get_my_dashboard_api_v1_student_me_dashboard_get",
+        "summary": "Get My Student Dashboard",
+        "description": "Alias for /dashboard serving caller's landing view (US-101).",
+        "operationId": "get_my_student_dashboard",
         "security": [
           {
             "HTTPBearer": []
@@ -909,8 +909,10 @@
                   "type": "null"
                 }
               ],
+              "description": "Target semester name",
               "title": "Semester"
-            }
+            },
+            "description": "Target semester name"
           },
           {
             "name": "year",
@@ -925,8 +927,10 @@
                   "type": "null"
                 }
               ],
+              "description": "Target academic year (YYYY-YYYY)",
               "title": "Year"
-            }
+            },
+            "description": "Target academic year (YYYY-YYYY)"
           },
           {
             "name": "announcementLimit",
@@ -989,8 +993,8 @@
           "student-dashboard"
         ],
         "summary": "Get Student Dashboard By Id",
-        "description": "Return dashboard by student ID with strict ownership enforcement.\n\nReturns 404 on mismatch to prevent probing.",
-        "operationId": "get_student_dashboard_by_id_api_v1_student__student_id__dashboard_get",
+        "description": "Return dashboard by student ID with strict ownership enforcement.\n\nEnforces BR-AUTH-005 anti-probing rules.",
+        "operationId": "get_student_dashboard_by_id",
         "security": [
           {
             "HTTPBearer": []
@@ -1019,8 +1023,10 @@
                   "type": "null"
                 }
               ],
+              "description": "Target semester name",
               "title": "Semester"
-            }
+            },
+            "description": "Target semester name"
           },
           {
             "name": "year",
@@ -1035,8 +1041,10 @@
                   "type": "null"
                 }
               ],
+              "description": "Target academic year (YYYY-YYYY)",
               "title": "Year"
-            }
+            },
+            "description": "Target academic year (YYYY-YYYY)"
           },
           {
             "name": "announcementLimit",
