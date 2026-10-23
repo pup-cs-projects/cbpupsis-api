@@ -10,6 +10,8 @@ import os
 import secrets
 import subprocess
 import sys
+import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -20,10 +22,12 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from cbpupsis_api_student.domains.google_calendar import repository as google_repository
 from cbpupsis_api_student.domains.schedule import service
 from cbpupsis_api_student.domains.schedule.exceptions import ScheduleUnavailableError
 from cbpupsis_database.models.schedule import ScheduleExportState
 from cbpupsis_database.models.sections import SectionSchedule
+from cbpupsis_database.runtime import EXPECTED_HEAD
 from cbpupsis_database.session import to_asyncpg_url
 from cbpupsis_shared.domains.auth.security import hash_password
 from tests.domains.schedule.helpers import PASSWORD, seed_schedule
@@ -119,8 +123,76 @@ async def test_ac_103_8_concurrent_exports_and_runtime_grants(migrated_url, seed
             assert (await db.scalar(select(ScheduleExportState))).sequence == 1
             assert (
                 await db.scalar(text("SELECT version_num FROM alembic_version"))
-                == "d096_schedule_export"
+                == EXPECTED_HEAD
             )
+    finally:
+        await engine.dispose()
+
+
+async def test_google_migration_grants_and_concurrent_worker_leases(migrated_url):
+    engine = create_async_engine(to_asyncpg_url(migrated_url[1]), poolclass=NullPool)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    student = uuid.uuid4()
+    session = uuid.uuid4()
+    try:
+        async with factory() as db:
+            await google_repository.ensure_account(db, student)
+            await google_repository.save_account(
+                db,
+                student,
+                {
+                    "refresh_cipher": "synthetic-cipher",
+                    "next_sync_at": datetime.now(UTC),
+                },
+            )
+            await google_repository.replace_state(
+                db,
+                student,
+                session_id=session,
+                state_hash="a" * 64,
+                payload_cipher="synthetic-state-cipher",
+                expires_at=datetime.now(UTC) + timedelta(minutes=10),
+            )
+            await db.commit()
+
+        async def consume():
+            async with factory() as db:
+                cipher = await google_repository.consume_state(
+                    db, student, session, "a" * 64, datetime.now(UTC)
+                )
+                await db.commit()
+                return cipher
+
+        consumed = await asyncio.gather(*(consume() for _ in range(8)))
+        assert consumed.count("synthetic-state-cipher") == 1
+        assert consumed.count(None) == 7
+
+        async def claim():
+            async with factory() as db:
+                return await google_repository.claim_due(db, datetime.now(UTC))
+
+        claims = [
+            claim
+            for claim in await asyncio.gather(*(claim() for _ in range(8)))
+            if claim
+        ]
+        assert len(claims) == 1 and claims[0][0] == student
+        old_lease = claims[0][1]
+        async with factory() as db:
+            await google_repository.save_account(
+                db, student, {"lease_until": datetime.now(UTC) - timedelta(seconds=1)}
+            )
+            await db.commit()
+        assert (await claim())[1] != old_lease
+        async with factory() as db:
+            assert not await google_repository.save_account(
+                db,
+                student,
+                {"last_error": "stale"},
+                lease=old_lease,
+                now=datetime.now(UTC),
+            )
+            await db.rollback()
     finally:
         await engine.dispose()
 

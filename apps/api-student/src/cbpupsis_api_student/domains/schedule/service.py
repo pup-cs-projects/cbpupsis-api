@@ -200,6 +200,26 @@ async def read_schedule(
     return await _compose(db, student_id, identity, term, q)
 
 
+async def calendar_snapshot(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    year: str | None = None,
+    semester: str | None = None,
+):
+    """Return an unfiltered coherent timetable for a calendar integration."""
+    try:
+        schedule = await read_schedule(
+            db, student_id=student_id, year=year, semester=semester
+        )
+        if schedule.term is None:
+            raise ScheduleUnavailableError
+        holidays = await academics.holidays(db, schedule.term.id)
+        return schedule.term, exports.calendar_events(schedule, student_id, holidays)
+    finally:
+        await db.rollback()
+
+
 async def export_schedule(
     db: AsyncSession,
     *,

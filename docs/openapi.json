@@ -1405,6 +1405,274 @@
         }
       }
     },
+    "/api/v1/students/me/schedule/google-calendar": {
+      "get": {
+        "tags": [
+          "google-calendar"
+        ],
+        "summary": "Read Connection",
+        "description": "Read this student's optional Google Calendar connection and sync status.\n\nRequires a live student session and ReadSchedule. Responses are private,\nsnake_case objects without Google credentials, account identity or calendar\nIDs. Disconnected connections expose no targets, even when private mappings\nare retained for reconnect. A queued request is not proof of Google delivery;\ninspect last_error and last_sync_at. Disabled integrations report enabled=false.",
+        "operationId": "read_connection_api_v1_students_me_schedule_google_calendar_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid term selectors or GOOGLE_CALENDAR_INVALID_STATE"
+          },
+          "401": {
+            "description": "A live student session is required"
+          },
+          "403": {
+            "description": "Student role or ReadSchedule permission is required"
+          },
+          "409": {
+            "description": "GOOGLE_CALENDAR_CONFLICT; inspect connection status"
+          },
+          "503": {
+            "description": "GOOGLE_CALENDAR_UNAVAILABLE; retry after 30 seconds"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "google-calendar"
+        ],
+        "summary": "Disconnect Calendar",
+        "description": "Stop local synchronization and queue Google authorization revocation.\n\nRequires a live student session, even when ReadSchedule has been withdrawn.\nReturns 202 immediately: connected becomes false and disconnecting remains\ntrue until the worker erases the pending revocation credential. Existing\nGoogle calendars/events are retained. Private, non-credential mappings remain\nfor same-account reconnect but are hidden from disconnected responses. An\nalready in-flight provider request may finish; fresh consent is required to\nreconnect. Repeating disconnect does not delete calendars or start a new grant.",
+        "operationId": "disconnect_calendar_api_v1_students_me_schedule_google_calendar_delete",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid term selectors or GOOGLE_CALENDAR_INVALID_STATE"
+          },
+          "401": {
+            "description": "A live student session is required"
+          },
+          "403": {
+            "description": "Student role or ReadSchedule permission is required"
+          },
+          "409": {
+            "description": "GOOGLE_CALENDAR_CONFLICT; inspect connection status"
+          },
+          "503": {
+            "description": "GOOGLE_CALENDAR_UNAVAILABLE; retry after 30 seconds"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/students/me/schedule/google-calendar/authorization": {
+      "post": {
+        "tags": [
+          "google-calendar"
+        ],
+        "summary": "Begin Authorization",
+        "description": "Begin Google consent without replacing the SIS student login.\n\nSend {} for the current configured term, or provide both year and semester.\nOpen authorization_url in a browser. The single-use attempt expires after\nten minutes and is bound to this SIS session using state, PKCE and OIDC nonce.\nGoogle redirects to the configured frontend URI, not the backend POST route.\nAlready connected or revoking connections return 409; use /sync to add terms.",
+        "operationId": "begin_authorization_api_v1_students_me_schedule_google_calendar_authorization_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermSelection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid term selectors or GOOGLE_CALENDAR_INVALID_STATE"
+          },
+          "401": {
+            "description": "A live student session is required"
+          },
+          "403": {
+            "description": "Student role or ReadSchedule permission is required"
+          },
+          "409": {
+            "description": "GOOGLE_CALENDAR_CONFLICT; inspect connection status"
+          },
+          "503": {
+            "description": "GOOGLE_CALENDAR_UNAVAILABLE; retry after 30 seconds"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/students/me/schedule/google-calendar/callback": {
+      "post": {
+        "tags": [
+          "google-calendar"
+        ],
+        "summary": "Complete Authorization",
+        "description": "Complete browser consent using the same live SIS session.\n\nThe frontend forwards the returned code/state as private JSON. Expired,\nreplayed, superseded or foreign-session attempts return 400. Verified consent\nsaves encrypted refresh credentials and queues initial synchronization; 200\ndoes not mean events have arrived. Reconnecting the same verified Google\naccount reuses retained app-created mappings and reconciles managed fields.\nA different Google account never receives the previous account's mappings.",
+        "operationId": "complete_authorization_api_v1_students_me_schedule_google_calendar_callback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthCallback"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid term selectors or GOOGLE_CALENDAR_INVALID_STATE"
+          },
+          "401": {
+            "description": "A live student session is required"
+          },
+          "403": {
+            "description": "Student role or ReadSchedule permission is required"
+          },
+          "409": {
+            "description": "GOOGLE_CALENDAR_CONFLICT; inspect connection status"
+          },
+          "503": {
+            "description": "GOOGLE_CALENDAR_UNAVAILABLE; retry after 30 seconds"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/students/me/schedule/google-calendar/sync": {
+      "post": {
+        "tags": [
+          "google-calendar"
+        ],
+        "summary": "Request Synchronization",
+        "description": "Queue reconciliation of a student's selected academic term.\n\nSend {} for the current term or both selectors for another configured term.\nUp to ten terms may be pinned. Returns 202 with status before background work\ncompletes; poll GET for errors/completion. Forces repair of missing or edited\nmanaged series, never imports Google changes into SIS. Requires a connection;\ndisconnected/revoking or currently leased jobs return 409. No primary calendar\naccess, student-number input or immediate-delivery guarantee is provided.",
+        "operationId": "request_synchronization_api_v1_students_me_schedule_google_calendar_sync_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermSelection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid term selectors or GOOGLE_CALENDAR_INVALID_STATE"
+          },
+          "401": {
+            "description": "A live student session is required"
+          },
+          "403": {
+            "description": "Student role or ReadSchedule permission is required"
+          },
+          "409": {
+            "description": "GOOGLE_CALENDAR_CONFLICT; inspect connection status"
+          },
+          "503": {
+            "description": "GOOGLE_CALENDAR_UNAVAILABLE; retry after 30 seconds"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/auth/faculty/login": {
       "post": {
         "tags": [
@@ -4331,6 +4599,27 @@
         "title": "AuditEntryRead",
         "description": "One recorded administrative change, as returned by the API."
       },
+      "AuthorizationRead": {
+        "properties": {
+          "authorization_url": {
+            "type": "string",
+            "title": "Authorization Url",
+            "description": "Open in a browser; contains private state and must not be logged."
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "description": "Attempt lifetime, in seconds.",
+            "default": 600
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "authorization_url"
+        ],
+        "title": "AuthorizationRead"
+      },
       "Body_import_users_api_v1_users_import_post": {
         "properties": {
           "file": {
@@ -4345,6 +4634,31 @@
           "file"
         ],
         "title": "Body_import_users_api_v1_users_import_post"
+      },
+      "CalendarTargetRead": {
+        "properties": {
+          "year": {
+            "type": "string",
+            "title": "Year"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          },
+          "provisioned": {
+            "type": "boolean",
+            "title": "Provisioned",
+            "description": "A calendar was assigned, not proof of sync."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "year",
+          "semester",
+          "provisioned"
+        ],
+        "title": "CalendarTargetRead"
       },
       "ChallengeRequest": {
         "properties": {
@@ -4391,6 +4705,75 @@
         ],
         "title": "Channel",
         "description": "Where a notification can be delivered.\n\nA ``StrEnum`` so it compares equal to the strings stored in preference rows\nand delivery receipts, without those columns needing a database enum that\nwould make adding a channel a migration."
+      },
+      "ConnectionRead": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "connected": {
+            "type": "boolean",
+            "title": "Connected",
+            "description": "Usable refresh grant is saved.",
+            "default": false
+          },
+          "disconnecting": {
+            "type": "boolean",
+            "title": "Disconnecting",
+            "description": "Google token revocation is still pending.",
+            "default": false
+          },
+          "last_sync_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync At"
+          },
+          "next_sync_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Sync At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarTargetRead"
+            },
+            "type": "array",
+            "title": "Targets",
+            "description": "Pinned terms; empty after disconnect, with no Google IDs exposed."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "ConnectionRead"
       },
       "CourseSectionRead": {
         "properties": {
@@ -5190,6 +5573,35 @@
         ],
         "title": "NotificationRead",
         "description": "One notification as returned by the API."
+      },
+      "OAuthCallback": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 32,
+            "format": "password",
+            "title": "State",
+            "description": "Single-use state from this session's browser consent redirect.",
+            "writeOnly": true
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "format": "password",
+            "title": "Code",
+            "description": "Short-lived Google authorization code; never log or persist it.",
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "code"
+        ],
+        "title": "OAuthCallback"
       },
       "OverrideRequest": {
         "properties": {
@@ -6425,6 +6837,48 @@
           "refresh_token"
         ],
         "title": "SuperadminTokenPair"
+      },
+      "TermSelection": {
+        "properties": {
+          "year": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year",
+            "description": "Stored academic year; pair with semester or omit both.",
+            "examples": [
+              "2026-2027"
+            ]
+          },
+          "semester": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 30,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semester",
+            "description": "Stored semester identifier, not a numeric position.",
+            "examples": [
+              "first"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TermSelection",
+        "description": "Omit both selectors for the current term; otherwise supply both, not blanks."
       },
       "TokenPair": {
         "properties": {

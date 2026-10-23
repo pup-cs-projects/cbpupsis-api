@@ -102,7 +102,9 @@ retry within the same deadline. No approved add/drop API is introduced here.
 Standard ICS import behavior varies by calendar application: a file alone cannot
 force a client to honor updates or cancellations. A real-client import/re-import
 test is a release gate, not replaced by parser tests. Automated recurring-update
-delivery or subscription feeds are outside this issue.
+delivery is now available as an explicitly approved, optional
+[Google Calendar extension](GOOGLE-CALENDAR.md), disabled until configured. The
+original file-import contract remains unchanged; no subscription feed is added.
 
 ## Rollout and verification
 

@@ -201,11 +201,22 @@ def register_exception_handlers(app: FastAPI) -> None:
         # jsonable_encoder because error context can hold values json cannot
         # serialise directly (Decimal from a numeric constraint, bytes from a
         # malformed body).
+        redact = getattr(request.state, "redact_validation_errors", False)
+        errors = exc.errors()
+        if redact:
+            errors = [
+                {
+                    key: value
+                    for key, value in error.items()
+                    if key not in {"input", "ctx", "url"}
+                }
+                for error in errors
+            ]
         content: dict[str, object] = {
-            "detail": jsonable_encoder(exc.errors()),
+            "detail": jsonable_encoder(errors),
             "request_id": request_id_of(request),
         }
-        if settings.debug:
+        if settings.debug and not redact:
             content["body"] = jsonable_encoder(exc.body)
         return JSONResponse(
             status_code=422,  # UNPROCESSABLE_CONTENT; the constant was renamed

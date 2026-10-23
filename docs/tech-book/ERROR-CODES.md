@@ -254,6 +254,20 @@ them must move to the rows above.
 | 409 "Email already registered" (no code) on `POST /users` | 409 `USER_ALREADY_EXISTS` with `field` |
 | `POST /users` body `{email, password, full_name}` | The account fields (`first_name`, `surname`, `email`, `role`, and the role's fields); the system generates the password |
 
+## Optional Google Calendar integration
+
+| Status | Code | Client action |
+| --- | --- | --- |
+| 400 | `GOOGLE_CALENDAR_INVALID_STATE` | Start authorization again; state expired, was replayed, or belongs to another student/session. |
+| 409 | `GOOGLE_CALENDAR_CONFLICT` | Inspect connection status; connect first, wait for active sync/revocation, or respect the ten-term limit. |
+| 503 | `GOOGLE_CALENDAR_UNAVAILABLE` | Integration is disabled/misconfigured or Google authorization failed; retry after 30 seconds, or contact the operator. No provider payload or credential is returned. |
+
+Google endpoints redact validation inputs. Background `last_error` is a sanitized
+status, not a new HTTP error envelope: see [the integration guide](GOOGLE-CALENDAR.md).
+`reconnectRequired`, `permissionDenied`, `calendarMissing`, and
+`calendarCreationUncertain` need connection/operator attention. Transient quota,
+provider, source or deadline failures have a backed-off `next_sync_at`.
+
 ## Adding a code
 
 1. Raise the semantic error **from the service layer**, never from a router and
