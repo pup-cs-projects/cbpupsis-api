@@ -1,0 +1,267 @@
+# Deploys the API: every push to `staging` deploys the staging environment, and
+# every push to `main` deploys production.
+#
+#   ci + build -> approve -> migrate -> deploy each function -> smoke test
+#
+# `approve` runs in the GitHub Environment of the target (staging or
+# production). Give production required reviewers in the repository settings
+# and every production deploy waits for one click, after CI and the image
+# builds are already green.
+#
+# A function whose smoke test fails is rolled back to the image it ran before,
+# so a bad build never stays live. Migrations are not rolled back: write them
+# expand-then-contract, so the previous code still works against the new schema.
+#
+# AWS access is keyless. Each run exchanges its GitHub OIDC token for a one-hour
+# role that trusts only this repository's `staging` or `main` branch (see
+# cbpupsis-infra, modules/github-deploy-roles). A pull request run cannot
+# assume it. The role ARNs are repository variables, not secrets:
+# AWS_DEPLOY_ROLE_STAGING and AWS_DEPLOY_ROLE_PROD. The repository is public,
+# so its logs are too: secrets are masked and so is the AWS account ID.
+
+name: deploy
+
+on:
+  push:
+    branches: [staging, main]
+  workflow_dispatch:
+
+# One deploy per branch at a time, and never cancelled midway: a migration cut
+# off halfway or a function updated without its smoke test is worse than a
+# queued deploy.
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ap-southeast-1
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  target:
+    name: Resolve target
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      environment: ${{ steps.resolve.outputs.environment }}
+      github_environment: ${{ steps.resolve.outputs.github_environment }}
+      dockerfile: ${{ steps.resolve.outputs.dockerfile }}
+      role: ${{ steps.resolve.outputs.role }}
+    steps:
+      - id: resolve
+        env:
+          REF: ${{ github.ref_name }}
+          STAGING_ROLE: ${{ vars.AWS_DEPLOY_ROLE_STAGING }}
+          PROD_ROLE: ${{ vars.AWS_DEPLOY_ROLE_PROD }}
+        run: |
+          case "$REF" in
+            staging) environment=staging; github_environment=staging;    dockerfile=staging; role="$STAGING_ROLE"; var=AWS_DEPLOY_ROLE_STAGING ;;
+            main)    environment=prod;    github_environment=production; dockerfile=prod;    role="$PROD_ROLE";    var=AWS_DEPLOY_ROLE_PROD ;;
+            *) echo "::error::Only staging and main deploy. This run is on '$REF'."; exit 1 ;;
+          esac
+          if [ -z "$role" ]; then
+            echo "::error::Repository variable $var is not set. See cbpupsis-infra README, CI/CD."
+            exit 1
+          fi
+          {
+            echo "environment=$environment"
+            echo "github_environment=$github_environment"
+            echo "dockerfile=$dockerfile"
+            echo "role=$role"
+          } >> "$GITHUB_OUTPUT"
+
+  approve:
+    name: Approve ${{ needs.target.outputs.github_environment }}
+    needs: [ci, target, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ${{ needs.target.outputs.github_environment }}
+    steps:
+      - run: echo "Approved $GITHUB_SHA for ${{ needs.target.outputs.github_environment }}."
+
+  migrate:
+    name: Migrate database
+    needs: [target, approve]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen --no-dev
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ needs.target.outputs.role }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: alembic upgrade head
+        # Settings needs DATABASE_URL and JWT_SECRET to load at all; Alembic then
+        # connects with DIRECT_DATABASE_URL, the migration owner (never given to
+        # a function). Every value is masked before anything could print it,
+        # and none is written to GITHUB_ENV, so no later step can see them.
+        env:
+          ENVIRONMENT_NAME: ${{ needs.target.outputs.environment }}
+        run: |
+          app=$(aws secretsmanager get-secret-value --secret-id "cbpupsis/$ENVIRONMENT_NAME/app" --query SecretString --output text)
+          migration=$(aws secretsmanager get-secret-value --secret-id "cbpupsis/$ENVIRONMENT_NAME/migration" --query SecretString --output text)
+          while IFS= read -r value; do
+            [ -n "$value" ] && echo "::add-mask::$value"
+          done < <(jq -r '.[] | tostring' <<<"$app"; jq -r '.[] | tostring' <<<"$migration")
+
+          DATABASE_URL=$(jq -r '.DATABASE_URL' <<<"$app")
+          JWT_SECRET=$(jq -r '.JWT_SECRET' <<<"$app")
+          DIRECT_DATABASE_URL=$(jq -r '.DIRECT_DATABASE_URL' <<<"$migration")
+          export DATABASE_URL JWT_SECRET DIRECT_DATABASE_URL
+
+          uv run alembic -c packages/migrations/alembic.ini upgrade head
+
+  build:
+    name: Build ${{ matrix.app }}
+    needs: [ci, target]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      matrix:
+        app: [student, faculty, admin, worker]
+    env:
+      REPOSITORY: ${{ matrix.app }}-ecr-${{ needs.target.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ needs.target.outputs.role }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - id: exists
+        name: Skip if this commit is already built
+        # Tags are immutable, so a re-run of the same commit cannot push again.
+        # The image already there is the one this commit builds.
+        run: |
+          if aws ecr describe-images --repository-name "$REPOSITORY" --image-ids "imageTag=$GITHUB_SHA" >/dev/null 2>&1; then
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "built=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.exists.outputs.built == 'false'
+
+      - uses: docker/build-push-action@v6
+        if: steps.exists.outputs.built == 'false'
+        with:
+          context: .
+          file: docker/${{ matrix.app }}/Dockerfile.${{ needs.target.outputs.dockerfile }}
+          platforms: linux/amd64
+          build-args: GIT_SHA=${{ github.sha }}
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.REPOSITORY }}:${{ github.sha }}
+          push: true
+          # Lambda rejects the multi-manifest index buildx creates when it adds
+          # provenance or SBOM attestations.
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+
+  deploy:
+    name: Deploy ${{ matrix.app }}
+    needs: [target, approve, migrate, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      # Each function deploys and rolls back on its own; one failing must not
+      # leave another half-deployed.
+      fail-fast: false
+      matrix:
+        app: [student, faculty, admin, worker]
+    env:
+      ENVIRONMENT_NAME: ${{ needs.target.outputs.environment }}
+      FUNCTION: ${{ matrix.app }}-lambda-${{ needs.target.outputs.environment }}
+      REPOSITORY: ${{ matrix.app }}-ecr-${{ needs.target.outputs.environment }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ needs.target.outputs.role }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - id: previous
+        name: Record the running image
+        run: |
+          image=$(aws lambda get-function --function-name "$FUNCTION" --query 'Code.ImageUri' --output text)
+          echo "Running before this deploy: $image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - id: update
+        name: Update function code
+        run: |
+          account=$(aws sts get-caller-identity --query Account --output text)
+          image="$account.dkr.ecr.$AWS_REGION.amazonaws.com/$REPOSITORY:$GITHUB_SHA"
+          aws lambda update-function-code --function-name "$FUNCTION" --image-uri "$image" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION"
+          echo "Now running: $image"
+
+      - name: Smoke test the worker
+        if: matrix.app == 'worker'
+        # The worker has no HTTP endpoint, so it is invoked directly. One drain
+        # is exactly what its schedule would do next minute anyway.
+        run: |
+          error=$(aws lambda invoke --function-name "$FUNCTION" --payload '{}' \
+            --cli-binary-format raw-in-base64-out --query 'FunctionError' --output text response.json)
+          cat response.json; echo
+          if [ "$error" != "None" ]; then
+            echo "::error::$FUNCTION failed its smoke test ($error)."
+            exit 1
+          fi
+
+      - name: Smoke test the API through its portal
+        if: matrix.app != 'worker'
+        # The whole path, CloudFront -> API Gateway -> Lambda -> app: an
+        # anonymous request for the caller's own profile must answer 401. A 5xx
+        # means the app did not start; a 404 means routing is broken.
+        run: |
+          domain=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${{ matrix.app }}-cdn-$ENVIRONMENT_NAME'].DomainName | [0]" \
+            --output text)
+          url="https://$domain/api/v1/users/me"
+          for attempt in 1 2 3 4 5 6; do
+            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$url" || true)
+            echo "Attempt $attempt: $url -> $status"
+            [ "$status" = "401" ] && exit 0
+            sleep 10
+          done
+          echo "::error::$FUNCTION failed its smoke test: expected 401 from $url, got $status."
+          exit 1
+
+      - name: Roll back
+        if: failure() && steps.update.outcome != 'skipped' && steps.previous.outputs.image != ''
+        env:
+          PREVIOUS: ${{ steps.previous.outputs.image }}
+        run: |
+          echo "::error::Rolling $FUNCTION back to $PREVIOUS."
+          aws lambda update-function-code --function-name "$FUNCTION" --image-uri "$PREVIOUS" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION"
