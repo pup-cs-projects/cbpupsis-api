@@ -1,4 +1,4 @@
-"""Schemas for the announcements domain."""
+"""Pydantic schemas (DTOs) for the announcements domain."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AnnouncementRead(BaseModel):
+    """An institution-wide or academic announcement."""
+
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     title: str
     body: str
-    category: str = Field("ACADEMIC")
-    published_at: datetime = Field(..., alias="publishedAt")
-    expires_at: datetime | None = Field(None, alias="expiresAt")
-    is_pinned: bool = Field(False, alias="isPinned")
-
-    model_config = ConfigDict(
-        from_attributes=True, populate_by_name=True, serialize_by_alias=True
-    )
+    category: str = Field(default="ACADEMIC")
+    published_at: datetime
+    expires_at: datetime | None = None
+    is_pinned: bool = False

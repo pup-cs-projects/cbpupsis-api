@@ -3961,23 +3961,6 @@
               }
             ],
             "title": "Description"
-          },
-          "startsAt": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Startsat",
-            "readOnly": true
-          },
-          "endsAt": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Endsat",
-            "readOnly": true
-          },
-          "isMultiDay": {
-            "type": "boolean",
-            "title": "Ismultiday",
-            "readOnly": true
           }
         },
         "type": "object",
@@ -3985,12 +3968,10 @@
           "id",
           "title",
           "starts_at",
-          "ends_at",
-          "startsAt",
-          "endsAt",
-          "isMultiDay"
+          "ends_at"
         ],
-        "title": "AcademicEventRead"
+        "title": "AcademicEventRead",
+        "description": "An academic calendar event."
       },
       "AcademicPeriodRead": {
         "properties": {
@@ -4019,28 +4000,6 @@
           "days_remaining": {
             "type": "integer",
             "title": "Days Remaining"
-          },
-          "opensAt": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Opensat",
-            "readOnly": true
-          },
-          "closesAt": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Closesat",
-            "readOnly": true
-          },
-          "isOpen": {
-            "type": "boolean",
-            "title": "Isopen",
-            "readOnly": true
-          },
-          "daysRemaining": {
-            "type": "integer",
-            "title": "Daysremaining",
-            "readOnly": true
           }
         },
         "type": "object",
@@ -4050,13 +4009,153 @@
           "opens_at",
           "closes_at",
           "is_open",
-          "days_remaining",
-          "opensAt",
-          "closesAt",
-          "isOpen",
-          "daysRemaining"
+          "days_remaining"
         ],
-        "title": "AcademicPeriodRead"
+        "title": "AcademicPeriodRead",
+        "description": "An active or upcoming enrollment / adjustment period."
+      },
+      "AcademicTermRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "academic_year": {
+            "type": "string",
+            "title": "Academic Year"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          },
+          "term_type": {
+            "type": "string",
+            "title": "Term Type",
+            "default": "REGULAR"
+          },
+          "is_current": {
+            "type": "boolean",
+            "title": "Is Current",
+            "default": false
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "early_enrollment_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Early Enrollment Start"
+          },
+          "early_enrollment_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Early Enrollment End"
+          },
+          "regular_enrollment_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regular Enrollment Start"
+          },
+          "regular_enrollment_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regular Enrollment End"
+          },
+          "late_enrollment_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Late Enrollment End"
+          },
+          "add_drop_deadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Add Drop Deadline"
+          },
+          "grade_submission_deadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grade Submission Deadline"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "academic_year",
+          "semester"
+        ],
+        "title": "AcademicTermRead",
+        "description": "An academic term and its key enrollment and grading dates."
       },
       "AccountCreate": {
         "properties": {
@@ -4407,12 +4506,12 @@
             "title": "Category",
             "default": "ACADEMIC"
           },
-          "publishedAt": {
+          "published_at": {
             "type": "string",
             "format": "date-time",
-            "title": "Publishedat"
+            "title": "Published At"
           },
-          "expiresAt": {
+          "expires_at": {
             "anyOf": [
               {
                 "type": "string",
@@ -4422,11 +4521,11 @@
                 "type": "null"
               }
             ],
-            "title": "Expiresat"
+            "title": "Expires At"
           },
-          "isPinned": {
+          "is_pinned": {
             "type": "boolean",
-            "title": "Ispinned",
+            "title": "Is Pinned",
             "default": false
           }
         },
@@ -4435,9 +4534,10 @@
           "id",
           "title",
           "body",
-          "publishedAt"
+          "published_at"
         ],
-        "title": "AnnouncementRead"
+        "title": "AnnouncementRead",
+        "description": "An institution-wide or academic announcement."
       },
       "AttachPolicyRequest": {
         "properties": {
@@ -4764,25 +4864,11 @@
               }
             ],
             "title": "Recent Activity"
-          },
-          "recentActivity": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Recentactivity",
-            "readOnly": true
           }
         },
         "type": "object",
-        "required": [
-          "recentActivity"
-        ],
-        "title": "EmptyStatesRead"
+        "title": "EmptyStatesRead",
+        "description": "Explanatory empty states for zero-history panels."
       },
       "EnrollmentSummaryRead": {
         "properties": {
@@ -4795,6 +4881,18 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Effective Ceiling"
+          },
+          "unit_ceiling": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Ceiling"
           },
           "prescribed_load": {
             "type": "string",
@@ -4822,69 +4920,16 @@
             "type": "string",
             "title": "Schedule Url",
             "default": "/api/v1/student/schedule"
-          },
-          "enrolledUnits": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Enrolledunits",
-            "readOnly": true
-          },
-          "effectiveCeiling": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Effectiveceiling",
-            "readOnly": true
-          },
-          "unit_ceiling": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Unit Ceiling",
-            "readOnly": true
-          },
-          "prescribedLoad": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Prescribedload",
-            "readOnly": true
-          },
-          "approvedOverloadUnits": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Approvedoverloadunits",
-            "readOnly": true
-          },
-          "standingReduction": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Standingreduction",
-            "readOnly": true
-          },
-          "enrolledCourseCount": {
-            "type": "integer",
-            "title": "Enrolledcoursecount",
-            "readOnly": true
-          },
-          "scheduleUrl": {
-            "type": "string",
-            "title": "Scheduleurl",
-            "readOnly": true
           }
         },
         "type": "object",
         "required": [
           "enrolled_units",
           "effective_ceiling",
-          "prescribed_load",
-          "enrolledUnits",
-          "effectiveCeiling",
-          "unit_ceiling",
-          "prescribedLoad",
-          "approvedOverloadUnits",
-          "standingReduction",
-          "enrolledCourseCount",
-          "scheduleUrl"
+          "prescribed_load"
         ],
-        "title": "EnrollmentSummaryRead"
+        "title": "EnrollmentSummaryRead",
+        "description": "Enrolled load, limits, and schedule link for a term."
       },
       "FacultyEnrollmentResult": {
         "properties": {
@@ -5237,37 +5282,17 @@
             "title": "Is Blocking",
             "default": true
           },
+          "blocks_enrollment": {
+            "type": "boolean",
+            "title": "Blocks Enrollment",
+            "default": true
+          },
           "blocks": {
             "items": {
               "type": "string"
             },
             "type": "array",
             "title": "Blocks"
-          },
-          "amountOutstanding": {
-            "type": "string",
-            "title": "Amountoutstanding",
-            "readOnly": true
-          },
-          "amount": {
-            "type": "string",
-            "title": "Amount",
-            "readOnly": true
-          },
-          "isBlocking": {
-            "type": "boolean",
-            "title": "Isblocking",
-            "readOnly": true
-          },
-          "blocks_enrollment": {
-            "type": "boolean",
-            "title": "Blocks Enrollment",
-            "readOnly": true
-          },
-          "blocksEnrollment": {
-            "type": "boolean",
-            "title": "Blocksenrollment",
-            "readOnly": true
           }
         },
         "type": "object",
@@ -5275,14 +5300,10 @@
           "type",
           "office",
           "description",
-          "amount_outstanding",
-          "amountOutstanding",
-          "amount",
-          "isBlocking",
-          "blocks_enrollment",
-          "blocksEnrollment"
+          "amount_outstanding"
         ],
-        "title": "HoldRead"
+        "title": "HoldRead",
+        "description": "A student administrative or financial hold."
       },
       "ItemCreate": {
         "properties": {
@@ -6297,25 +6318,14 @@
             "type": "boolean",
             "title": "Appeal Available",
             "default": false
-          },
-          "unitReduction": {
-            "type": "integer",
-            "title": "Unitreduction",
-            "readOnly": true
-          },
-          "appealAvailable": {
-            "type": "boolean",
-            "title": "Appealavailable",
-            "readOnly": true
           }
         },
         "type": "object",
         "required": [
-          "value",
-          "unitReduction",
-          "appealAvailable"
+          "value"
         ],
-        "title": "ScholasticStandingRead"
+        "title": "ScholasticStandingRead",
+        "description": "Scholastic standing evaluation and load impact."
       },
       "SignInAttemptRead": {
         "properties": {
@@ -6407,8 +6417,8 @@
           "student": {
             "$ref": "#/components/schemas/StudentIdentityRead"
           },
-          "term": {
-            "$ref": "#/components/schemas/TermRead"
+          "current_term": {
+            "$ref": "#/components/schemas/AcademicTermRead"
           },
           "holds": {
             "items": {
@@ -6453,36 +6463,18 @@
           },
           "empty_states": {
             "$ref": "#/components/schemas/EmptyStatesRead"
-          },
-          "current_term": {
-            "$ref": "#/components/schemas/TermRead",
-            "readOnly": true
-          },
-          "recentActivity": {
-            "items": {
-              "$ref": "#/components/schemas/StudentRecentActivityRead"
-            },
-            "type": "array",
-            "title": "Recentactivity",
-            "readOnly": true
-          },
-          "emptyStates": {
-            "$ref": "#/components/schemas/EmptyStatesRead",
-            "readOnly": true
           }
         },
         "type": "object",
         "required": [
           "student",
-          "term",
+          "current_term",
           "standing",
           "enrollment",
-          "empty_states",
-          "current_term",
-          "recentActivity",
-          "emptyStates"
+          "empty_states"
         ],
-        "title": "StudentDashboardData"
+        "title": "StudentDashboardData",
+        "description": "Aggregated sections of the student landing dashboard."
       },
       "StudentDashboardResponse": {
         "properties": {
@@ -6499,21 +6491,22 @@
         "required": [
           "data"
         ],
-        "title": "StudentDashboardResponse"
+        "title": "StudentDashboardResponse",
+        "description": "Root response envelope for the dashboard."
       },
       "StudentIdentityRead": {
         "properties": {
-          "student_id": {
+          "student_number": {
             "type": "string",
-            "title": "Student Id"
+            "title": "Student Number"
           },
-          "display_name": {
+          "name": {
             "type": "string",
-            "title": "Display Name"
+            "title": "Name"
           },
-          "program": {
+          "programme": {
             "type": "string",
-            "title": "Program"
+            "title": "Programme"
           },
           "year_level": {
             "type": "integer",
@@ -6533,72 +6526,18 @@
               }
             ],
             "title": "Avatar Url"
-          },
-          "studentId": {
-            "type": "string",
-            "title": "Studentid",
-            "readOnly": true
-          },
-          "student_number": {
-            "type": "string",
-            "title": "Student Number",
-            "readOnly": true
-          },
-          "displayName": {
-            "type": "string",
-            "title": "Displayname",
-            "readOnly": true
-          },
-          "name": {
-            "type": "string",
-            "title": "Name",
-            "readOnly": true
-          },
-          "programme": {
-            "type": "string",
-            "title": "Programme",
-            "readOnly": true
-          },
-          "yearLevel": {
-            "type": "integer",
-            "title": "Yearlevel",
-            "readOnly": true
-          },
-          "enrollmentStatus": {
-            "type": "string",
-            "title": "Enrollmentstatus",
-            "readOnly": true
-          },
-          "avatarUrl": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Avatarurl",
-            "readOnly": true
           }
         },
         "type": "object",
         "required": [
-          "student_id",
-          "display_name",
-          "program",
-          "year_level",
-          "enrollment_status",
-          "studentId",
           "student_number",
-          "displayName",
           "name",
           "programme",
-          "yearLevel",
-          "enrollmentStatus",
-          "avatarUrl"
+          "year_level",
+          "enrollment_status"
         ],
-        "title": "StudentIdentityRead"
+        "title": "StudentIdentityRead",
+        "description": "The authenticated student's identity block."
       },
       "StudentLoginRequest": {
         "properties": {
@@ -6645,9 +6584,9 @@
             "type": "string",
             "title": "Id"
           },
-          "occurredAt": {
+          "occurred_at": {
             "type": "string",
-            "title": "Occurredat"
+            "title": "Occurred At"
           },
           "type": {
             "type": "string",
@@ -6665,12 +6604,13 @@
         "type": "object",
         "required": [
           "id",
-          "occurredAt",
+          "occurred_at",
           "type",
           "severity",
           "description"
         ],
-        "title": "StudentRecentActivityRead"
+        "title": "StudentRecentActivityRead",
+        "description": "A recent sign-in or security audit event shown on the dashboard."
       },
       "StudentSessionRead": {
         "properties": {
@@ -6834,52 +6774,6 @@
           "refresh_token"
         ],
         "title": "SuperadminTokenPair"
-      },
-      "TermRead": {
-        "properties": {
-          "academic_year": {
-            "type": "string",
-            "title": "Academic Year"
-          },
-          "semester": {
-            "type": "string",
-            "title": "Semester"
-          },
-          "term_type": {
-            "type": "string",
-            "title": "Term Type",
-            "default": "REGULAR"
-          },
-          "is_current": {
-            "type": "boolean",
-            "title": "Is Current",
-            "default": true
-          },
-          "academicYear": {
-            "type": "string",
-            "title": "Academicyear",
-            "readOnly": true
-          },
-          "termType": {
-            "type": "string",
-            "title": "Termtype",
-            "readOnly": true
-          },
-          "isCurrent": {
-            "type": "boolean",
-            "title": "Iscurrent",
-            "readOnly": true
-          }
-        },
-        "type": "object",
-        "required": [
-          "academic_year",
-          "semester",
-          "academicYear",
-          "termType",
-          "isCurrent"
-        ],
-        "title": "TermRead"
       },
       "TokenPair": {
         "properties": {

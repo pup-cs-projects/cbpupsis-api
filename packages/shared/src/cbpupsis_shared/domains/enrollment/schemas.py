@@ -1,4 +1,4 @@
-"""Schemas for the enrollment domain."""
+"""Pydantic schemas (DTOs) for the enrollment domain."""
 
 from __future__ import annotations
 
@@ -6,10 +6,14 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class TermEnrollmentRead(BaseModel):
+    """A student's enrollment record for an academic term."""
+
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     student_id: uuid.UUID
     academic_term_id: uuid.UUID
@@ -17,79 +21,23 @@ class TermEnrollmentRead(BaseModel):
     cor_downloaded: bool
     enrolled_at: datetime
 
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
-
 
 class EnrollmentSummaryRead(BaseModel):
-    enrolled_units: Decimal = Field(
-        ...,
-        validation_alias=AliasChoices("enrolledUnits", "enrolled_units"),
-    )
-    effective_ceiling: Decimal = Field(
-        ...,
-        validation_alias=AliasChoices("effectiveCeiling", "effective_ceiling"),
-    )
-    prescribed_load: Decimal = Field(
-        ...,
-        validation_alias=AliasChoices("prescribedLoad", "prescribed_load"),
-    )
-    approved_overload_units: Decimal = Field(
-        Decimal("0"),
-        validation_alias=AliasChoices(
-            "approvedOverloadUnits", "approved_overload_units"
-        ),
-    )
-    standing_reduction: Decimal = Field(
-        Decimal("0"),
-        validation_alias=AliasChoices("standingReduction", "standing_reduction"),
-    )
-    enrolled_course_count: int = Field(
-        0,
-        validation_alias=AliasChoices("enrolledCourseCount", "enrolled_course_count"),
-    )
-    schedule_url: str = Field(
-        "/api/v1/student/schedule",
-        validation_alias=AliasChoices("scheduleUrl", "schedule_url"),
-    )
+    """Enrolled load, limits, and schedule link for a term."""
 
-    @computed_field
-    @property
-    def enrolledUnits(self) -> Decimal:
-        return self.enrolled_units
+    model_config = ConfigDict(from_attributes=True)
 
-    @computed_field
-    @property
-    def effectiveCeiling(self) -> Decimal:
-        return self.effective_ceiling
+    enrolled_units: Decimal
+    effective_ceiling: Decimal
+    unit_ceiling: Decimal | None = None
+    prescribed_load: Decimal
+    approved_overload_units: Decimal = Decimal("0")
+    standing_reduction: Decimal = Decimal("0")
+    enrolled_course_count: int = 0
+    schedule_url: str = "/api/v1/student/schedule"
 
-    @computed_field
-    @property
-    def unit_ceiling(self) -> Decimal:
-        return self.effective_ceiling
-
-    @computed_field
-    @property
-    def prescribedLoad(self) -> Decimal:
-        return self.prescribed_load
-
-    @computed_field
-    @property
-    def approvedOverloadUnits(self) -> Decimal:
-        return self.approved_overload_units
-
-    @computed_field
-    @property
-    def standingReduction(self) -> Decimal:
-        return self.standing_reduction
-
-    @computed_field
-    @property
-    def enrolledCourseCount(self) -> int:
-        return self.enrolled_course_count
-
-    @computed_field
-    @property
-    def scheduleUrl(self) -> str:
-        return self.schedule_url
-
-    model_config = ConfigDict(populate_by_name=True)
+    @model_validator(mode="after")
+    def populate_unit_ceiling(self) -> EnrollmentSummaryRead:
+        if self.unit_ceiling is None:
+            self.unit_ceiling = self.effective_ceiling
+        return self

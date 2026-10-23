@@ -255,7 +255,6 @@ class TestStudentDashboardAcceptanceCriteria:
 
         assert standing["value"] == "Probation"
         assert standing["unit_reduction"] == 6
-        assert standing["unitReduction"] == 6
         assert standing["appeal_available"] is True
         assert standing["value"] != "Suspension"
 
@@ -379,7 +378,6 @@ class TestStudentDashboardAcceptanceCriteria:
         enrollment = resp.json()["data"]["enrollment"]
 
         assert Decimal(str(enrollment["enrolled_units"])) == Decimal("23")
-        assert Decimal(str(enrollment["enrolledUnits"])) == Decimal("23")
         # prescribedLoad (26) + approvedOverload (3) - standingReduction (0) = 29
         assert Decimal(str(enrollment["effective_ceiling"])) == Decimal("29")
         assert Decimal(str(enrollment["unit_ceiling"])) == Decimal("29")
@@ -498,7 +496,6 @@ class TestStudentDashboardAcceptanceCriteria:
         assert enrl_period is not None
         assert enrl_period["is_open"] is True
         assert enrl_period["days_remaining"] == 3
-        assert enrl_period["daysRemaining"] == 3
 
 
 @pytest.mark.asyncio

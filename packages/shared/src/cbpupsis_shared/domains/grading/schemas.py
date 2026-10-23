@@ -1,4 +1,4 @@
-"""Schemas for the grading domain."""
+"""Pydantic schemas (DTOs) for the grading domain."""
 
 from __future__ import annotations
 
@@ -6,35 +6,25 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict
 
 
 class ScholasticStandingRead(BaseModel):
+    """Scholastic standing evaluation and load impact."""
+
+    model_config = ConfigDict(from_attributes=True)
+
     value: str
-    unit_reduction: int = Field(
-        0,
-        validation_alias=AliasChoices("unitReduction", "unit_reduction"),
-    )
+    unit_reduction: int = 0
     explanation: str | None = None
-    appeal_available: bool = Field(
-        False,
-        validation_alias=AliasChoices("appealAvailable", "appeal_available"),
-    )
-
-    @computed_field
-    @property
-    def unitReduction(self) -> int:
-        return self.unit_reduction
-
-    @computed_field
-    @property
-    def appealAvailable(self) -> bool:
-        return self.appeal_available
-
-    model_config = ConfigDict(populate_by_name=True)
+    appeal_available: bool = False
 
 
 class StudentTermGPARead(BaseModel):
+    """Term GPA and calculated scholastic standing."""
+
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     student_id: uuid.UUID
     academic_term_id: uuid.UUID
@@ -43,5 +33,3 @@ class StudentTermGPARead(BaseModel):
     cumulative_gpa: Decimal
     academic_standing: str
     calculated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)

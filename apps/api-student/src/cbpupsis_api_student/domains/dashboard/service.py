@@ -19,7 +19,6 @@ from cbpupsis_api_student.domains.dashboard.schemas import (
     StudentDashboardData,
     StudentDashboardResponse,
     StudentIdentityRead,
-    TermRead,
 )
 from cbpupsis_shared.domains.academics import client as academics_client
 from cbpupsis_shared.domains.academics.schemas import (
@@ -96,12 +95,12 @@ async def get_dashboard(
             )
 
     identity = StudentIdentityRead(
-        studentId=student_id_str,
-        displayName=display_name,
-        program=program_name,
-        yearLevel=year_level,
-        enrollmentStatus=enrollment_status,
-        avatarUrl=avatar_url,
+        student_number=student_id_str,
+        name=display_name,
+        programme=program_name,
+        year_level=year_level,
+        enrollment_status=enrollment_status,
+        avatar_url=avatar_url,
     )
 
     # 2. Term context
@@ -115,21 +114,14 @@ async def get_dashboard(
         logger.warning("Failed to load academic term for dashboard", exc_info=True)
 
     if active_term is None:
-        term_read = TermRead(
-            academicYear=year or "2025-2026",
+        active_term = AcademicTermRead(
+            id=uuid.uuid4(),
+            academic_year=year or "2025-2026",
             semester=semester or "Second Semester",
-            termType="REGULAR",
-            isCurrent=True,
+            term_type="REGULAR",
+            is_current=True,
         )
-        term_id = uuid.uuid4()
-    else:
-        term_read = TermRead(
-            academicYear=active_term.academic_year,
-            semester=active_term.semester,
-            termType=active_term.term_type,
-            isCurrent=active_term.is_current,
-        )
-        term_id = active_term.id
+    term_id = active_term.id
 
     # 3. Holds
     holds: list[HoldRead] = []
@@ -169,7 +161,7 @@ async def get_dashboard(
             db,
             curriculum_id=curriculum_id,
             year_level=year_level,
-            semester=term_read.semester,
+            semester=active_term.semester,
         )
     except Exception:
         logger.warning(
@@ -242,20 +234,20 @@ async def get_dashboard(
     empty_states = EmptyStatesRead(
         announcements=EMPTY_ANNOUNCEMENTS if len(announcements) == 0 else None,
         events=EMPTY_EVENTS if len(events) == 0 else None,
-        recentActivity=EMPTY_RECENT_ACTIVITY if len(recent_activity) == 0 else None,
+        recent_activity=EMPTY_RECENT_ACTIVITY if len(recent_activity) == 0 else None,
     )
 
     data = StudentDashboardData(
         student=identity,
-        term=term_read,
+        current_term=active_term,
         holds=holds,
         standing=standing,
         enrollment=enrollment,
         periods=periods,
         announcements=announcements,
         events=events,
-        recentActivity=recent_activity,
-        emptyStates=empty_states,
+        recent_activity=recent_activity,
+        empty_states=empty_states,
     )
 
     return StudentDashboardResponse(status="success", data=data)
