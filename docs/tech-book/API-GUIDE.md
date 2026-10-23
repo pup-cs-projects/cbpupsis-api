@@ -923,7 +923,10 @@ each build creates its own.
 
 Student schedule reads and exports follow the
 [US-STU-003 contract](STUDENT-SCHEDULE.md), including weekly contact-hour totals,
-camelCase fields, private documents, and durable calendar revisions.
+snake_case fields, private documents, and durable calendar revisions. Schedule
+JSON is a direct object, consistent with existing resource endpoints. This
+user-approved naming alignment replaces the earlier draft's camelCase fields;
+see the schedule guide's client migration notes before updating a consumer.
 Use `/api/v1/students/me/schedule` and `/api/v1/students/me/schedule/export`;
 the original `/api/v1/student/schedule` URLs remain deprecated compatibility aliases.
 

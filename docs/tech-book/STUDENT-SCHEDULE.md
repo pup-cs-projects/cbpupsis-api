@@ -28,22 +28,48 @@ explanatory empty response, never an ownership 404. Read responses accept `q`
 (maximum 200 characters), matching code, title, or faculty name case-insensitively.
 Whitespace-only `q` restores the complete list. Exports always ignore view filters.
 
-The response remains camelCase, following #96 rather than the parent story's
-snake_case field examples. The route alignment does not change the JSON shape:
+The response uses snake_case to match existing student/faculty APIs and the
+parent-story naming convention. This user-approved contract change supersedes
+the earlier draft's camelCase choice. Data is returned directly at the JSON root;
+no `status`/`data` success wrapper is added.
 
-- `studentName`, `studentNumber`, and `term` (`id`, `year`, `semester`,
-  `startDate`, `endDate`), or null when the term is unavailable.
-- `courses`: `code`, `title`, `section`, `sectionId`, `room`, `facultyName`,
-  `units`, `lectureHours`, `labHours`, `status`, and `meetings`.
-- Meetings carry `id`, `dayOfWeek` (Monday=0 through Sunday=6), local `startTime`
-  and `endTime`, nullable `room`, and `type` (`lecture` or `laboratory`). Different
+- `student_name`, `student_number`, and `term` (`id`, `year`, `semester`,
+  `start_date`, `end_date`), or null when the term is unavailable.
+- `courses`: `code`, `title`, `section`, `section_id`, `room`, `faculty_name`,
+  `units`, `lecture_hours`, `lab_hours`, `status`, and `meetings`.
+- Meetings carry `id`, `day_of_week` (Monday=0 through Sunday=6), local `start_time`
+  and `end_time`, nullable `room`, and `type` (`lecture` or `laboratory`). Different
   meeting rooms are preserved; course-level `room` joins the distinct rooms.
-- `totalCredits`, `totalLectureHours`, and `totalLabHours` sum the returned rows.
+- `total_credits`, `total_lecture_hours`, and `total_lab_hours` sum the returned rows.
   All Decimal quantities serialize as strings, consistent with Pydantic's exact
   decimal representation. Contact hours are weekly timetable durations, not
   term-wide totals and not inferred from credits.
 - `state`: `ready`, `notEnrolled`, `noMatches`, or `termUnavailable`; empty
   results include a human-readable `message`, empty `courses`, and zero totals.
+
+### Migrating from the earlier draft
+
+This is a breaking JSON property-name change on all three schedule read URLs,
+including the deprecated `/student/schedule` alias. Those aliases preserve URLs,
+not the former camelCase response shape. Update clients and QA assertions before
+publishing this revision; there is no dual-spelling response.
+
+| Earlier draft property | Current property |
+| --- | --- |
+| `studentName`, `studentNumber` | `student_name`, `student_number` |
+| `sectionId`, `facultyName` | `section_id`, `faculty_name` |
+| `lectureHours`, `labHours` | `lecture_hours`, `lab_hours` |
+| `totalCredits` | `total_credits` |
+| `totalLectureHours`, `totalLabHours` | `total_lecture_hours`, `total_lab_hours` |
+| Term `startDate`, `endDate` | `start_date`, `end_date` |
+| Meeting `dayOfWeek` | `day_of_week` |
+| Meeting `startTime`, `endTime` | `start_time`, `end_time` |
+
+Only property names change. Existing `state` values (`notEnrolled`, `noMatches`,
+`termUnavailable`), decimal strings, HTTP/error codes, guards, selectors and
+filtering semantics stay unchanged. PDF/ICS attachments are not JSON and retain
+their existing formats, UIDs and revision behavior. Other domains' contracts are
+not renamed by this feature.
 
 Only officially `enrolled` term/course records appear. Pending or dropped courses
 are excluded. COR download is not required. Approval workflows are separate;

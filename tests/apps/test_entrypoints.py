@@ -101,6 +101,54 @@ def test_schedule_self_routes_and_compatibility_alias_contract(app: FastAPI) -> 
     assert "/api/v1/students/{student_number}/schedule" in paths
 
 
+@pytest.mark.parametrize("app", [student_app, main.app], ids=["student", "composed"])
+def test_schedule_openapi_exposes_snake_case_response_properties(app: FastAPI) -> None:
+    schemas = app.openapi()["components"]["schemas"]
+    expected = {
+        "ScheduleRead": {
+            "student_name",
+            "student_number",
+            "term",
+            "courses",
+            "total_credits",
+            "total_lecture_hours",
+            "total_lab_hours",
+            "state",
+            "message",
+        },
+        "ScheduleTerm": {"id", "year", "semester", "start_date", "end_date"},
+        "ScheduleCourse": {
+            "code",
+            "title",
+            "section",
+            "section_id",
+            "room",
+            "faculty_name",
+            "units",
+            "lecture_hours",
+            "lab_hours",
+            "status",
+            "meetings",
+        },
+        "ScheduleMeeting": {
+            "id",
+            "day_of_week",
+            "start_time",
+            "end_time",
+            "room",
+            "type",
+        },
+    }
+    for model, properties in expected.items():
+        assert set(schemas[model]["properties"]) == properties
+    assert schemas["ScheduleRead"]["properties"]["state"]["enum"] == [
+        "ready",
+        "notEnrolled",
+        "noMatches",
+        "termUnavailable",
+    ]
+
+
 def test_no_app_mounts_the_service_bypassing_admin_panel() -> None:
     """Even a development panel must not bypass MFA, overrides, and auditing."""
 

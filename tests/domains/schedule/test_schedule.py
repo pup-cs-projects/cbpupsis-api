@@ -119,11 +119,32 @@ async def test_compatibility_exports_share_complete_content_and_revisions(
         assert set(revisions[1].values()) == {1}
 
 
-async def test_ac_103_1_fields_and_ac_103_4_computed_totals(client, setup):
-    response = await client.get(URL, headers=setup.headers)
+@pytest.mark.parametrize(
+    "path", [URL, COMPAT_URL, f"/api/v1/students/{NUMBER}/schedule"]
+)
+async def test_ac_103_1_fields_and_ac_103_4_computed_totals(client, setup, path):
+    response = await client.get(path, headers=setup.headers)
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["studentName"] == "Ana Peña" and body["studentNumber"] == NUMBER
+    assert set(body) == {
+        "student_name",
+        "student_number",
+        "term",
+        "courses",
+        "total_credits",
+        "total_lecture_hours",
+        "total_lab_hours",
+        "state",
+        "message",
+    }
+    assert body["student_name"] == "Ana Peña" and body["student_number"] == NUMBER
+    assert set(body["term"]) == {
+        "id",
+        "year",
+        "semester",
+        "start_date",
+        "end_date",
+    }
     assert body["term"]["year"] == "2026-2027"
     assert len(body["courses"]) == 2
     course = body["courses"][0]
@@ -131,25 +152,34 @@ async def test_ac_103_1_fields_and_ac_103_4_computed_totals(client, setup):
         "code",
         "title",
         "section",
-        "sectionId",
+        "section_id",
         "room",
-        "facultyName",
+        "faculty_name",
         "units",
         "status",
-        "lectureHours",
-        "labHours",
+        "lecture_hours",
+        "lab_hours",
         "meetings",
-    } <= course.keys()
+    } == course.keys()
+    for meeting in course["meetings"]:
+        assert set(meeting) == {
+            "id",
+            "day_of_week",
+            "start_time",
+            "end_time",
+            "room",
+            "type",
+        }
     assert course["room"] == "LAB2, R101"
-    assert course["lectureHours"] == "2.0" or Decimal(course["lectureHours"]) == 2
-    assert Decimal(course["labHours"]) == 3
+    assert course["lecture_hours"] == "2.0" or Decimal(course["lecture_hours"]) == 2
+    assert Decimal(course["lab_hours"]) == 3
     assert [meeting["type"] for meeting in course["meetings"]] == [
         "lecture",
         "laboratory",
     ]
     assert [
         Decimal(body[key])
-        for key in ("totalCredits", "totalLectureHours", "totalLabHours")
+        for key in ("total_credits", "total_lecture_hours", "total_lab_hours")
     ] == [6, 4, 6]
     assert response.headers["cache-control"] == "private, no-store"
 
@@ -173,7 +203,7 @@ async def test_ac_103_2_historical_empty_and_missing_terms(client, setup, db):
         response = await client.get(URL, params=params, headers=setup.headers)
         body = response.json()
         assert response.status_code == 200 and body["courses"] == [] and body["message"]
-        assert Decimal(body["totalCredits"]) == 0
+        assert Decimal(body["total_credits"]) == 0
 
 
 @pytest.mark.parametrize(
@@ -192,7 +222,7 @@ async def test_ac_103_3_filter_does_not_mutate_enrollment(
 ):
     response = await client.get(URL, params={"q": query}, headers=setup.headers)
     assert response.status_code == 200 and len(response.json()["courses"]) == expected
-    assert Decimal(response.json()["totalCredits"]) == expected * 3
+    assert Decimal(response.json()["total_credits"]) == expected * 3
     assert (
         await db.scalar(select(func.count()).select_from(StudentCourseEnrollment)) == 2
     )

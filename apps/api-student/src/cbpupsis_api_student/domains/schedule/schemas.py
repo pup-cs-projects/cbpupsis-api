@@ -1,16 +1,15 @@
-"""CamelCase public schedule contract; contact hours are weekly."""
+"""Snake_case public schedule contract; contact hours are weekly."""
 
 import uuid
 from datetime import date, time
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from pydantic import BaseModel, Field
 
 
 class ScheduleModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+    """Serialize public property names exactly as declared by each DTO."""
 
 
 class ScheduleTerm(ScheduleModel):

@@ -5892,10 +5892,10 @@
             "type": "string",
             "title": "Section"
           },
-          "sectionId": {
+          "section_id": {
             "type": "string",
             "format": "uuid",
-            "title": "Sectionid"
+            "title": "Section Id"
           },
           "room": {
             "anyOf": [
@@ -5908,7 +5908,7 @@
             ],
             "title": "Room"
           },
-          "facultyName": {
+          "faculty_name": {
             "anyOf": [
               {
                 "type": "string"
@@ -5917,22 +5917,22 @@
                 "type": "null"
               }
             ],
-            "title": "Facultyname"
+            "title": "Faculty Name"
           },
           "units": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Units"
           },
-          "lectureHours": {
+          "lecture_hours": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Lecturehours"
+            "title": "Lecture Hours"
           },
-          "labHours": {
+          "lab_hours": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Labhours"
+            "title": "Lab Hours"
           },
           "status": {
             "type": "string",
@@ -5951,12 +5951,12 @@
           "code",
           "title",
           "section",
-          "sectionId",
+          "section_id",
           "room",
-          "facultyName",
+          "faculty_name",
           "units",
-          "lectureHours",
-          "labHours",
+          "lecture_hours",
+          "lab_hours",
           "status",
           "meetings"
         ],
@@ -5969,22 +5969,22 @@
             "format": "uuid",
             "title": "Id"
           },
-          "dayOfWeek": {
+          "day_of_week": {
             "type": "integer",
             "maximum": 6.0,
             "minimum": 0.0,
-            "title": "Dayofweek",
+            "title": "Day Of Week",
             "description": "Monday=0, Sunday=6"
           },
-          "startTime": {
+          "start_time": {
             "type": "string",
             "format": "time",
-            "title": "Starttime"
+            "title": "Start Time"
           },
-          "endTime": {
+          "end_time": {
             "type": "string",
             "format": "time",
-            "title": "Endtime"
+            "title": "End Time"
           },
           "room": {
             "anyOf": [
@@ -6009,9 +6009,9 @@
         "type": "object",
         "required": [
           "id",
-          "dayOfWeek",
-          "startTime",
-          "endTime",
+          "day_of_week",
+          "start_time",
+          "end_time",
           "room",
           "type"
         ],
@@ -6019,13 +6019,13 @@
       },
       "ScheduleRead": {
         "properties": {
-          "studentName": {
+          "student_name": {
             "type": "string",
-            "title": "Studentname"
+            "title": "Student Name"
           },
-          "studentNumber": {
+          "student_number": {
             "type": "string",
-            "title": "Studentnumber"
+            "title": "Student Number"
           },
           "term": {
             "anyOf": [
@@ -6044,22 +6044,22 @@
             "type": "array",
             "title": "Courses"
           },
-          "totalCredits": {
+          "total_credits": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Totalcredits",
+            "title": "Total Credits",
             "default": "0"
           },
-          "totalLectureHours": {
+          "total_lecture_hours": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Totallecturehours",
+            "title": "Total Lecture Hours",
             "default": "0"
           },
-          "totalLabHours": {
+          "total_lab_hours": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Totallabhours",
+            "title": "Total Lab Hours",
             "default": "0"
           },
           "state": {
@@ -6086,8 +6086,8 @@
         },
         "type": "object",
         "required": [
-          "studentName",
-          "studentNumber",
+          "student_name",
+          "student_number",
           "term",
           "state"
         ],
@@ -6108,15 +6108,15 @@
             "type": "string",
             "title": "Semester"
           },
-          "startDate": {
+          "start_date": {
             "type": "string",
             "format": "date",
-            "title": "Startdate"
+            "title": "Start Date"
           },
-          "endDate": {
+          "end_date": {
             "type": "string",
             "format": "date",
-            "title": "Enddate"
+            "title": "End Date"
           }
         },
         "type": "object",
@@ -6124,8 +6124,8 @@
           "id",
           "year",
           "semester",
-          "startDate",
-          "endDate"
+          "start_date",
+          "end_date"
         ],
         "title": "ScheduleTerm"
       },
