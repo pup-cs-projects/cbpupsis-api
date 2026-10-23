@@ -1,5 +1,13 @@
 # FastAPI Modular-Monolith Template
 
+## Student grades and transcript (US-STU-004)
+
+The student app serves private grade reads and a paginated cumulative transcript
+with a complete unofficial PDF export. Decimal averages, ownership refusals,
+empty states and dependency boundaries are defined in
+[the student grades contract](STUDENT-GRADES.md). Producer workflows and deployed
+performance require separate integration validation.
+
 ## Superadmin authentication and overrides (US-AUTH-004)
 
 All paths below have prefix `/api/v1`. Superadmin is distinct from Admin. Admin

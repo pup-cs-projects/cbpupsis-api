@@ -9,6 +9,7 @@ dependencies = [
     "cbpupsis-shared",
     "fastapi",
     "pydantic",
+    "reportlab>=4.4,<5",
     "sqlalchemy[asyncio]",
     "uvicorn[standard]",
 ]

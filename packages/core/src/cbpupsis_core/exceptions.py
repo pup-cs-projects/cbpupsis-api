@@ -222,7 +222,11 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.exception(
             "Unhandled error on %s %s (request_id=%s)",
             request.method,
-            request.url.path,
+            (
+                getattr(request.scope.get("route"), "path", "private-record")
+                if getattr(request.state, "private_response", False)
+                else request.url.path
+            ),
             request_id_of(request),
             exc_info=exc,
         )
@@ -232,4 +236,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "detail": "Internal server error",
                 "request_id": request_id_of(request),
             },
+            headers={"Cache-Control": "private, no-store"}
+            if getattr(request.state, "private_response", False)
+            else None,
         )

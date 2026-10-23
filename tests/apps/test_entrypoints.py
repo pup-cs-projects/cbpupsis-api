@@ -38,7 +38,7 @@ APPS: dict[str, FastAPI] = {
 #: The router prefixes under /api/v1 each app serves.
 EXPECTED_PREFIXES: dict[str, set[str]] = {
     # Role sign-ins live under /auth/<role>, so they share the "auth" prefix.
-    "student": {"auth", "users", "notifications", "items"},
+    "student": {"auth", "users", "notifications", "items", "students"},
     "faculty": {"auth", "users", "notifications", "sections"},
     "admin": {"auth", "users", "notifications", "admin", "superadmin", "iam", "audit"},
 }
@@ -62,6 +62,21 @@ def api_prefixes(app: FastAPI) -> set[str]:
 @pytest.mark.parametrize("name", sorted(APPS))
 def test_each_app_serves_exactly_its_routers(name: str) -> None:
     assert api_prefixes(APPS[name]) == EXPECTED_PREFIXES[name]
+
+
+@pytest.mark.parametrize("app", [student_app, main.app])
+def test_student_records_have_one_public_route_per_operation(app: FastAPI) -> None:
+    paths = {
+        (method, path)
+        for method, path in operations(app)
+        if path.startswith(("/api/v1/student/", "/api/v1/students/"))
+    }
+    assert paths == {
+        ("get", "/api/v1/students/me/grades"),
+        ("get", "/api/v1/students/me/transcript"),
+        ("get", "/api/v1/students/me/transcript/export"),
+        ("get", "/api/v1/students/{student_number}/grades"),
+    }
 
 
 @pytest.mark.parametrize("name", sorted(APPS))

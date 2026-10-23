@@ -7,6 +7,14 @@ import uuid
 from pydantic import BaseModel, ConfigDict
 
 
+class RecordSection(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    course_id: uuid.UUID
+    academic_term_id: uuid.UUID
+
+
 class CourseSectionRead(BaseModel):
     """One course section assigned to the caller."""
 

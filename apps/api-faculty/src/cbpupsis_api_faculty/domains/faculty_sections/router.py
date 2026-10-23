@@ -14,9 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cbpupsis_api_faculty.domains.faculty_auth.dependencies import (
     require_faculty_session,
 )
-from cbpupsis_api_faculty.domains.sections import service
-from cbpupsis_api_faculty.domains.sections.constants import READ_COURSE_SECTION
-from cbpupsis_api_faculty.domains.sections.schemas import (
+from cbpupsis_api_faculty.domains.faculty_sections import service
+from cbpupsis_api_faculty.domains.faculty_sections.constants import READ_COURSE_SECTION
+from cbpupsis_api_faculty.domains.faculty_sections.schemas import (
     CourseSectionRead,
     CourseSectionRosterRead,
 )

@@ -13,6 +13,18 @@ Add the row in the same commit as the code that raises it.
 | **Last updated** | 2026-10-16 |
 | **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications` in `packages/shared`; `items` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The student, faculty, and sections domains raise the shared `auth` classes and add none of their own; `curriculum` raises none. |
 
+## Student academic records (US-STU-004)
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 503 | `GRADE_RECORD_UNAVAILABLE` | Inconsistent source record, unavailable PDF renderer, or export deadline exceeded. No partial academic result or private diagnostic is returned. |
+| 404 | `RESOURCE_NOT_FOUND` | Existing shared code: foreign/missing student identifier, missing owner profile, or a non-student session on student record routes. |
+
+These routes preserve existing 401 authentication/session errors, 403
+`PASSWORD_CHANGE_REQUIRED`, 403 missing-permission responses (without a machine
+code), and 422 selector/pagination validation responses. Every response is
+private/no-store. See [STUDENT-GRADES.md](STUDENT-GRADES.md).
+
 ## The envelope
 
 Every known application error has the same body:

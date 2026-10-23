@@ -43,6 +43,32 @@ from cbpupsis_database.models.users import (
 LIVE_USERS = select(User).where(User.deleted_at.is_(None))
 
 
+async def get_record_identity(db: AsyncSession, student_id: uuid.UUID):
+    """Read identity only for the already-authenticated owner's active account.
+
+    SQL::
+
+        SELECT s.student_number, u.full_name, p.first_name, p.last_name
+        FROM users u JOIN student_profiles s ON s.user_id = u.id
+        LEFT JOIN user_profiles p ON p.user_id = u.id
+        WHERE u.id = :student_id AND u.deleted_at IS NULL AND u.is_active;
+    """
+    result = await db.execute(
+        select(
+            StudentProfile.student_number,
+            User.full_name,
+            UserProfile.first_name,
+            UserProfile.last_name,
+        )
+        .join(StudentProfile, StudentProfile.user_id == User.id)
+        .outerjoin(UserProfile, UserProfile.user_id == User.id)
+        .where(
+            User.id == student_id, User.deleted_at.is_(None), User.is_active.is_(True)
+        )
+    )
+    return result.one_or_none()
+
+
 async def get_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
     """Return one live user by primary key, or ``None``.
 
