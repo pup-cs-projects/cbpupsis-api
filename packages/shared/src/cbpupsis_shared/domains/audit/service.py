@@ -163,6 +163,7 @@ def stage(
     prior_state=None,
     new_state=None,
     payload=None,
+    occurred_at=None,
 ):
     """Stage a canonical row; never commit or copy credential-bearing bodies."""
     context = db.info.get("superadmin_audit")
@@ -174,7 +175,7 @@ def stage(
         actor_id=actor_id,
         target_type=target_type,
         target_id=str(target_id),
-        occurred_at=datetime.now(UTC),
+        occurred_at=occurred_at if occurred_at is not None else datetime.now(UTC),
         prior_state=prior_state if prior_state is not None else {},
         new_state=new_state if new_state is not None else {},
         payload={"outcome": "success", **(payload or {})},
