@@ -656,15 +656,40 @@
         "summary": "Student Refresh",
         "description": "Rotate the student session's refresh token.",
         "operationId": "student_refresh",
+        "parameters": [
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Data"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -750,6 +775,322 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/student/dashboard": {
+      "get": {
+        "tags": [
+          "student-dashboard"
+        ],
+        "summary": "Get Dashboard",
+        "description": "Return single aggregate dashboard for the authenticated student.",
+        "operationId": "get_dashboard_api_v1_student_dashboard_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Target semester name",
+              "title": "Semester"
+            },
+            "description": "Target semester name"
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Target academic year (YYYY-YYYY)",
+              "title": "Year"
+            },
+            "description": "Target academic year (YYYY-YYYY)"
+          },
+          {
+            "name": "announcementLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Announcementlimit"
+            }
+          },
+          {
+            "name": "eventLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Eventlimit"
+            }
+          },
+          {
+            "name": "activityLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Activitylimit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentDashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/student/me/dashboard": {
+      "get": {
+        "tags": [
+          "student-dashboard"
+        ],
+        "summary": "Get My Dashboard",
+        "description": "Alias for /dashboard serving caller's landing view.",
+        "operationId": "get_my_dashboard_api_v1_student_me_dashboard_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Semester"
+            }
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          },
+          {
+            "name": "announcementLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Announcementlimit"
+            }
+          },
+          {
+            "name": "eventLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Eventlimit"
+            }
+          },
+          {
+            "name": "activityLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Activitylimit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentDashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/student/{student_id}/dashboard": {
+      "get": {
+        "tags": [
+          "student-dashboard"
+        ],
+        "summary": "Get Student Dashboard By Id",
+        "description": "Return dashboard by student ID with strict ownership enforcement.\n\nReturns 404 on mismatch to prevent probing.",
+        "operationId": "get_student_dashboard_by_id_api_v1_student__student_id__dashboard_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "student_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Student Id"
+            }
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Semester"
+            }
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          },
+          {
+            "name": "announcementLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Announcementlimit"
+            }
+          },
+          {
+            "name": "eventLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Eventlimit"
+            }
+          },
+          {
+            "name": "activityLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Activitylimit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentDashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/items": {
@@ -1193,15 +1534,40 @@
         "summary": "Faculty Refresh",
         "description": "Rotate the faculty session's refresh token.",
         "operationId": "faculty_refresh",
+        "parameters": [
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Data"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -1660,15 +2026,40 @@
         "summary": "Refresh Admin",
         "description": "Rotate an Admin session and renew its cookies.",
         "operationId": "refresh_admin_api_v1_auth_admin_refresh_post",
+        "parameters": [
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Data"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -3156,15 +3547,40 @@
         ],
         "summary": "Refresh Superadmin",
         "operationId": "refresh_superadmin_api_v1_auth_superadmin_refresh_post",
+        "parameters": [
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Data"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -3505,6 +3921,143 @@
   },
   "components": {
     "schemas": {
+      "AcademicEventRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Starts At"
+          },
+          "ends_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ends At"
+          },
+          "is_multi_day": {
+            "type": "boolean",
+            "title": "Is Multi Day",
+            "default": false
+          },
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "default": "ACADEMIC_CALENDAR"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Startsat",
+            "readOnly": true
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Endsat",
+            "readOnly": true
+          },
+          "isMultiDay": {
+            "type": "boolean",
+            "title": "Ismultiday",
+            "readOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "starts_at",
+          "ends_at",
+          "startsAt",
+          "endsAt",
+          "isMultiDay"
+        ],
+        "title": "AcademicEventRead"
+      },
+      "AcademicPeriodRead": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "opens_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Opens At"
+          },
+          "closes_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Closes At"
+          },
+          "is_open": {
+            "type": "boolean",
+            "title": "Is Open"
+          },
+          "days_remaining": {
+            "type": "integer",
+            "title": "Days Remaining"
+          },
+          "opensAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Opensat",
+            "readOnly": true
+          },
+          "closesAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Closesat",
+            "readOnly": true
+          },
+          "isOpen": {
+            "type": "boolean",
+            "title": "Isopen",
+            "readOnly": true
+          },
+          "daysRemaining": {
+            "type": "integer",
+            "title": "Daysremaining",
+            "readOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "label",
+          "opens_at",
+          "closes_at",
+          "is_open",
+          "days_remaining",
+          "opensAt",
+          "closesAt",
+          "isOpen",
+          "daysRemaining"
+        ],
+        "title": "AcademicPeriodRead"
+      },
       "AccountCreate": {
         "properties": {
           "first_name": {
@@ -3835,6 +4388,57 @@
         ],
         "title": "AdminTokenPair"
       },
+      "AnnouncementRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "default": "ACADEMIC"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Publishedat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "isPinned": {
+            "type": "boolean",
+            "title": "Ispinned",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "body",
+          "publishedAt"
+        ],
+        "title": "AnnouncementRead"
+      },
       "AttachPolicyRequest": {
         "properties": {
           "policy_id": {
@@ -4125,6 +4729,162 @@
         ],
         "title": "EffectivePermissionsRead",
         "description": "Every action a user is effectively granted, and how they got it.\n\nThe two sources are reported separately rather than pre-merged because the\nquestion an admin screen actually asks is not \"what can they do?\" but \"why\ncan they do it, and what do I change to stop it?\" \u2014 and those have different\nanswers: a group grant is revoked by changing membership, a direct grant by\ndetaching the policy. ``effective`` is the union the guards actually check."
+      },
+      "EmptyStatesRead": {
+        "properties": {
+          "announcements": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Announcements"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events"
+          },
+          "recent_activity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recent Activity"
+          },
+          "recentActivity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recentactivity",
+            "readOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "recentActivity"
+        ],
+        "title": "EmptyStatesRead"
+      },
+      "EnrollmentSummaryRead": {
+        "properties": {
+          "enrolled_units": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Enrolled Units"
+          },
+          "effective_ceiling": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Effective Ceiling"
+          },
+          "prescribed_load": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Prescribed Load"
+          },
+          "approved_overload_units": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Approved Overload Units",
+            "default": "0"
+          },
+          "standing_reduction": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Standing Reduction",
+            "default": "0"
+          },
+          "enrolled_course_count": {
+            "type": "integer",
+            "title": "Enrolled Course Count",
+            "default": 0
+          },
+          "schedule_url": {
+            "type": "string",
+            "title": "Schedule Url",
+            "default": "/api/v1/student/schedule"
+          },
+          "enrolledUnits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Enrolledunits",
+            "readOnly": true
+          },
+          "effectiveCeiling": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Effectiveceiling",
+            "readOnly": true
+          },
+          "unit_ceiling": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Unit Ceiling",
+            "readOnly": true
+          },
+          "prescribedLoad": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Prescribedload",
+            "readOnly": true
+          },
+          "approvedOverloadUnits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Approvedoverloadunits",
+            "readOnly": true
+          },
+          "standingReduction": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Standingreduction",
+            "readOnly": true
+          },
+          "enrolledCourseCount": {
+            "type": "integer",
+            "title": "Enrolledcoursecount",
+            "readOnly": true
+          },
+          "scheduleUrl": {
+            "type": "string",
+            "title": "Scheduleurl",
+            "readOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "enrolled_units",
+          "effective_ceiling",
+          "prescribed_load",
+          "enrolledUnits",
+          "effectiveCeiling",
+          "unit_ceiling",
+          "prescribedLoad",
+          "approvedOverloadUnits",
+          "standingReduction",
+          "enrolledCourseCount",
+          "scheduleUrl"
+        ],
+        "title": "EnrollmentSummaryRead"
       },
       "FacultyEnrollmentResult": {
         "properties": {
@@ -4448,6 +5208,81 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HoldRead": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "office": {
+            "type": "string",
+            "title": "Office"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "amount_outstanding": {
+            "type": "string",
+            "title": "Amount Outstanding"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "default": "PHP"
+          },
+          "is_blocking": {
+            "type": "boolean",
+            "title": "Is Blocking",
+            "default": true
+          },
+          "blocks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocks"
+          },
+          "amountOutstanding": {
+            "type": "string",
+            "title": "Amountoutstanding",
+            "readOnly": true
+          },
+          "amount": {
+            "type": "string",
+            "title": "Amount",
+            "readOnly": true
+          },
+          "isBlocking": {
+            "type": "boolean",
+            "title": "Isblocking",
+            "readOnly": true
+          },
+          "blocks_enrollment": {
+            "type": "boolean",
+            "title": "Blocks Enrollment",
+            "readOnly": true
+          },
+          "blocksEnrollment": {
+            "type": "boolean",
+            "title": "Blocksenrollment",
+            "readOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "office",
+          "description",
+          "amount_outstanding",
+          "amountOutstanding",
+          "amount",
+          "isBlocking",
+          "blocks_enrollment",
+          "blocksEnrollment"
+        ],
+        "title": "HoldRead"
       },
       "ItemCreate": {
         "properties": {
@@ -5436,6 +6271,52 @@
         "title": "RosterEntryRead",
         "description": "One enrolled student on a roster."
       },
+      "ScholasticStandingRead": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "unit_reduction": {
+            "type": "integer",
+            "title": "Unit Reduction",
+            "default": 0
+          },
+          "explanation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation"
+          },
+          "appeal_available": {
+            "type": "boolean",
+            "title": "Appeal Available",
+            "default": false
+          },
+          "unitReduction": {
+            "type": "integer",
+            "title": "Unitreduction",
+            "readOnly": true
+          },
+          "appealAvailable": {
+            "type": "boolean",
+            "title": "Appealavailable",
+            "readOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "unitReduction",
+          "appealAvailable"
+        ],
+        "title": "ScholasticStandingRead"
+      },
       "SignInAttemptRead": {
         "properties": {
           "id": {
@@ -5521,6 +6402,204 @@
         "title": "SignInAttemptRead",
         "description": "One recorded sign-in attempt from any role's sign-in flow."
       },
+      "StudentDashboardData": {
+        "properties": {
+          "student": {
+            "$ref": "#/components/schemas/StudentIdentityRead"
+          },
+          "term": {
+            "$ref": "#/components/schemas/TermRead"
+          },
+          "holds": {
+            "items": {
+              "$ref": "#/components/schemas/HoldRead"
+            },
+            "type": "array",
+            "title": "Holds"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/ScholasticStandingRead"
+          },
+          "enrollment": {
+            "$ref": "#/components/schemas/EnrollmentSummaryRead"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicPeriodRead"
+            },
+            "type": "array",
+            "title": "Periods"
+          },
+          "announcements": {
+            "items": {
+              "$ref": "#/components/schemas/AnnouncementRead"
+            },
+            "type": "array",
+            "title": "Announcements"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicEventRead"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "recent_activity": {
+            "items": {
+              "$ref": "#/components/schemas/StudentRecentActivityRead"
+            },
+            "type": "array",
+            "title": "Recent Activity"
+          },
+          "empty_states": {
+            "$ref": "#/components/schemas/EmptyStatesRead"
+          },
+          "current_term": {
+            "$ref": "#/components/schemas/TermRead",
+            "readOnly": true
+          },
+          "recentActivity": {
+            "items": {
+              "$ref": "#/components/schemas/StudentRecentActivityRead"
+            },
+            "type": "array",
+            "title": "Recentactivity",
+            "readOnly": true
+          },
+          "emptyStates": {
+            "$ref": "#/components/schemas/EmptyStatesRead",
+            "readOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "student",
+          "term",
+          "standing",
+          "enrollment",
+          "empty_states",
+          "current_term",
+          "recentActivity",
+          "emptyStates"
+        ],
+        "title": "StudentDashboardData"
+      },
+      "StudentDashboardResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/StudentDashboardData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "StudentDashboardResponse"
+      },
+      "StudentIdentityRead": {
+        "properties": {
+          "student_id": {
+            "type": "string",
+            "title": "Student Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "program": {
+            "type": "string",
+            "title": "Program"
+          },
+          "year_level": {
+            "type": "integer",
+            "title": "Year Level"
+          },
+          "enrollment_status": {
+            "type": "string",
+            "title": "Enrollment Status"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "studentId": {
+            "type": "string",
+            "title": "Studentid",
+            "readOnly": true
+          },
+          "student_number": {
+            "type": "string",
+            "title": "Student Number",
+            "readOnly": true
+          },
+          "displayName": {
+            "type": "string",
+            "title": "Displayname",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "readOnly": true
+          },
+          "programme": {
+            "type": "string",
+            "title": "Programme",
+            "readOnly": true
+          },
+          "yearLevel": {
+            "type": "integer",
+            "title": "Yearlevel",
+            "readOnly": true
+          },
+          "enrollmentStatus": {
+            "type": "string",
+            "title": "Enrollmentstatus",
+            "readOnly": true
+          },
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatarurl",
+            "readOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "student_id",
+          "display_name",
+          "program",
+          "year_level",
+          "enrollment_status",
+          "studentId",
+          "student_number",
+          "displayName",
+          "name",
+          "programme",
+          "yearLevel",
+          "enrollmentStatus",
+          "avatarUrl"
+        ],
+        "title": "StudentIdentityRead"
+      },
       "StudentLoginRequest": {
         "properties": {
           "student_number": {
@@ -5559,6 +6638,39 @@
         ],
         "title": "StudentLoginRequest",
         "description": "Student number, birthdate, and password.\n\nThe student number's format is checked by the service, not here, so a\nmalformed number answers ``AUTH_ID_FORMAT_INVALID`` like the other sign-in\nrules rather than a generic schema error."
+      },
+      "StudentRecentActivityRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "occurredAt": {
+            "type": "string",
+            "title": "Occurredat"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "occurredAt",
+          "type",
+          "severity",
+          "description"
+        ],
+        "title": "StudentRecentActivityRead"
       },
       "StudentSessionRead": {
         "properties": {
@@ -5722,6 +6834,52 @@
           "refresh_token"
         ],
         "title": "SuperadminTokenPair"
+      },
+      "TermRead": {
+        "properties": {
+          "academic_year": {
+            "type": "string",
+            "title": "Academic Year"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          },
+          "term_type": {
+            "type": "string",
+            "title": "Term Type",
+            "default": "REGULAR"
+          },
+          "is_current": {
+            "type": "boolean",
+            "title": "Is Current",
+            "default": true
+          },
+          "academicYear": {
+            "type": "string",
+            "title": "Academicyear",
+            "readOnly": true
+          },
+          "termType": {
+            "type": "string",
+            "title": "Termtype",
+            "readOnly": true
+          },
+          "isCurrent": {
+            "type": "boolean",
+            "title": "Iscurrent",
+            "readOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "academic_year",
+          "semester",
+          "academicYear",
+          "termType",
+          "isCurrent"
+        ],
+        "title": "TermRead"
       },
       "TokenPair": {
         "properties": {

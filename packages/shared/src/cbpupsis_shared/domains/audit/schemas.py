@@ -11,7 +11,7 @@ import uuid
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, IPvAnyAddress, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, field_serializer
 
 
 class AuditEntryRead(BaseModel):
@@ -61,3 +61,13 @@ def render_in_utc8(value: datetime) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return value.astimezone(timezone(timedelta(hours=8))).isoformat()
+
+
+class StudentRecentActivityRead(BaseModel):
+    id: str
+    occurred_at: str = Field(..., alias="occurredAt")
+    type: str
+    severity: str
+    description: str
+
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)

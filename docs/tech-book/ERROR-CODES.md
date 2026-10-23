@@ -231,6 +231,13 @@ supply to reach somebody else's. `ReadAllNotification` and
 There is deliberately **no endpoint that creates a notification.** Notifications
 arrive through the outbox.
 
+### dashboard (student landing view)
+
+| Status | Code | Message | When | Raised in |
+|---|---|---|---|---|
+| 400 | `INVALID_INPUT` | One or more query parameters contain invalid values. | A limit parameter is out of range (< 1 or > 50) or a year parameter is malformed. | `dashboard/exceptions.py` |
+| 404 | `RESOURCE_NOT_FOUND` | The requested resource does not exist or is no longer available. | The requested dashboard is not the caller's own. Answers 404 rather than 403 to prevent probing student identifiers. | `dashboard/exceptions.py` |
+
 ### Removed in this revision
 
 These were returned by earlier builds and no longer are. Clients branching on

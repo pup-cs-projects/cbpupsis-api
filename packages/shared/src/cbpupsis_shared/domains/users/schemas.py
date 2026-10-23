@@ -202,6 +202,42 @@ class FacultyProfileRead(BaseModel):
     is_active: bool
 
 
+class StudentProfileRead(BaseModel):
+    """A student's academic profile and identity, for the student domain."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: uuid.UUID
+    student_number: str
+    program_id: uuid.UUID
+    curriculum_id: uuid.UUID | None = None
+    year_level: int
+    section: str | None = None
+    enrollment_status: str
+    fhe_qualified: bool = True
+    fhe_forfeited: bool = False
+    is_graduating_senior: bool = False
+    has_financial_hold: bool = False
+    has_academic_hold: bool = False
+
+
+class StudentDashboardIdentity(BaseModel):
+    """The identity block the student dashboard renders."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: uuid.UUID
+    student_number: str
+    display_name: str
+    program_name: str
+    year_level: int
+    enrollment_status: str
+    curriculum_id: uuid.UUID | None = None
+    avatar_url: str | None = None
+    has_financial_hold: bool = False
+    has_academic_hold: bool = False
+
+
 class AccountCreate(BaseModel):
     """One account a Superadmin creates: a ``POST /users`` body or a CSV row.
 
