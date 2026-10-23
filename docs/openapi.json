@@ -1410,8 +1410,8 @@
         "tags": [
           "google-calendar"
         ],
-        "summary": "Read Connection",
-        "description": "Read this student's optional Google Calendar connection and sync status.\n\nRequires a live student session and ReadSchedule. Responses are private,\nsnake_case objects without Google credentials, account identity or calendar\nIDs. Disconnected connections expose no targets, even when private mappings\nare retained for reconnect. A queued request is not proof of Google delivery;\ninspect last_error and last_sync_at. Disabled integrations report enabled=false.",
+        "summary": "Read Google Calendar Connection",
+        "description": "Inspect the signed-in student's Google connection without starting a sync.\n\n**Access:** live SIS student bearer session and `ReadSchedule` permission.\nResponse is a direct snake_case object with `Cache-Control: private, no-store`.\nNo Google credentials, account identity or calendar IDs are returned.\n\n### Interpret the status\n- `enabled: false`: this optional integration is disabled on the deployment.\n- `connected`: a saved grant exists and is not marked `reconnectRequired`;\n  this alone does not prove successful delivery.\n- `disconnecting`: Google token revocation is pending.\n- `last_sync_at`: last successful worker reconciliation, including unchanged\n  checks. `next_sync_at` is a scheduled attempt, not a completion guarantee.\n- `targets[].provisioned`: a calendar was assigned, not proof of event delivery.\n\nPoll this endpoint after callback, sync or disconnect. Inspect `last_error`\nand verify the actual schedule in Google Calendar. After explicit disconnect,\nresponses expose `targets: []`, even when private reconnect mappings remain.",
         "operationId": "read_connection_api_v1_students_me_schedule_google_calendar_get",
         "responses": {
           "200": {
@@ -1425,19 +1425,19 @@
             }
           },
           "400": {
-            "description": "Invalid term selectors or GOOGLE_CALENDAR_INVALID_STATE"
+            "description": "Invalid/incomplete term selectors, or GOOGLE_CALENDAR_INVALID_STATE for an expired, replayed, superseded or foreign-session OAuth attempt. Start fresh authorization."
           },
           "401": {
-            "description": "A live student session is required"
+            "description": "Missing, expired or invalid SIS student bearer session. Google credentials are not SIS access tokens."
           },
           "403": {
-            "description": "Student role or ReadSchedule permission is required"
+            "description": "A live student role is required. All operations except disconnect also require ReadSchedule permission."
           },
           "409": {
-            "description": "GOOGLE_CALENDAR_CONFLICT; inspect connection status"
+            "description": "GOOGLE_CALENDAR_CONFLICT: inspect connection status. Authorization conflicts with an existing connection/pending revocation; sync conflicts with a missing connection, active job or term limit."
           },
           "503": {
-            "description": "GOOGLE_CALENDAR_UNAVAILABLE; retry after 30 seconds"
+            "description": "GOOGLE_CALENDAR_UNAVAILABLE: integration is disabled, provider authorization/validation failed or the callback timed out. Retry-After: 30. A failed callback needs fresh authorization, not replay of the same code/state."
           }
         },
         "security": [
@@ -1450,8 +1450,8 @@
         "tags": [
           "google-calendar"
         ],
-        "summary": "Disconnect Calendar",
-        "description": "Stop local synchronization and queue Google authorization revocation.\n\nRequires a live student session, even when ReadSchedule has been withdrawn.\nReturns 202 immediately: connected becomes false and disconnecting remains\ntrue until the worker erases the pending revocation credential. Existing\nGoogle calendars/events are retained. Private, non-credential mappings remain\nfor same-account reconnect but are hidden from disconnected responses. An\nalready in-flight provider request may finish; fresh consent is required to\nreconnect. Repeating disconnect does not delete calendars or start a new grant.",
+        "summary": "Disconnect Google Calendar",
+        "description": "Withdraw consent without deleting the student's Google calendar or events.\n\n**Access:** a live SIS student bearer session. Unlike the other Google\noperations, disconnect remains available after `ReadSchedule` is withdrawn.\nNo request body or Google account/calendar identifier is required.\n\n### Result and completion\n202 stops local sync immediately: `connected: false` and `targets: []`.\n`disconnecting: true` means token revocation is queued, not yet finished.\nKeep the worker running and poll GET until `disconnecting: false` and\n`next_sync_at: null`; inspect errors if revocation remains pending.\nAfter disconnect, `/sync` returns 409 until a fresh connection is completed.\n\n### Retention and reconnect\nExisting Google calendars/events remain visible. Only private non-credential\nmappings are retained for same-account reuse and hidden from disconnected\nresponses. An already in-flight provider request may finish. Wait for pending\nrevocation, then start new authorization/consent with the same Google account\nto reconnect. Repeating DELETE is safe: it does not delete calendars, create\na new grant or require the user to run PowerShell.",
         "operationId": "disconnect_calendar_api_v1_students_me_schedule_google_calendar_delete",
         "responses": {
           "202": {
@@ -1465,19 +1465,19 @@
             }
           },
           "400": {
-            "description": "Invalid term selectors or GOOGLE_CALENDAR_INVALID_STATE"
+            "description": "Invalid/incomplete term selectors, or GOOGLE_CALENDAR_INVALID_STATE for an expired, replayed, superseded or foreign-session OAuth attempt. Start fresh authorization."
           },
           "401": {
-            "description": "A live student session is required"
+            "description": "Missing, expired or invalid SIS student bearer session. Google credentials are not SIS access tokens."
           },
           "403": {
-            "description": "Student role or ReadSchedule permission is required"
+            "description": "A live student role is required. All operations except disconnect also require ReadSchedule permission."
           },
           "409": {
-            "description": "GOOGLE_CALENDAR_CONFLICT; inspect connection status"
+            "description": "GOOGLE_CALENDAR_CONFLICT: inspect connection status. Authorization conflicts with an existing connection/pending revocation; sync conflicts with a missing connection, active job or term limit."
           },
           "503": {
-            "description": "GOOGLE_CALENDAR_UNAVAILABLE; retry after 30 seconds"
+            "description": "GOOGLE_CALENDAR_UNAVAILABLE: integration is disabled, provider authorization/validation failed or the callback timed out. Retry-After: 30. A failed callback needs fresh authorization, not replay of the same code/state."
           }
         },
         "security": [
@@ -1492,8 +1492,8 @@
         "tags": [
           "google-calendar"
         ],
-        "summary": "Begin Authorization",
-        "description": "Begin Google consent without replacing the SIS student login.\n\nSend {} for the current configured term, or provide both year and semester.\nOpen authorization_url in a browser. The single-use attempt expires after\nten minutes and is bound to this SIS session using state, PKCE and OIDC nonce.\nGoogle redirects to the configured frontend URI, not the backend POST route.\nAlready connected or revoking connections return 409; use /sync to add terms.",
+        "summary": "Begin Google Calendar Authorization",
+        "description": "Create a short-lived Google consent attempt for the signed-in student.\n\n**Access:** live SIS student bearer session and `ReadSchedule`. Google consent\nconnects a calendar; it does not replace the SIS login.\n\n### Request body\nSend `{}` for the current configured term, or both selectors:\n`{\"year\":\"2026-2027\",\"semester\":\"first\"}`. Use the deployment's stored\nvalues; do not send blank strings or only one selector.\n\n### Scalar and browser workflow\n1. Send this request in Scalar with the student's `access_token`.\n2. Open the returned `authorization_url` in a browser and select the requested\n   app-created Calendar permission. Scalar does not replace Google consent.\n3. Google redirects to the configured frontend URI, **not** the backend POST\n   callback. Forward the new `state` and `code` to `/callback` using the\n   **same SIS session**, within `expires_in` (600 seconds).\n\nPowerShell is not required. State is single-use, protected by PKCE/OIDC nonce,\nand a new authorization supersedes the previous attempt. Never share the URL.\nExisting connections or pending revocations return 409; use `/sync` to add a\nterm when connected. Operators must configure Google settings and run the\nworker for background synchronization.",
         "operationId": "begin_authorization_api_v1_students_me_schedule_google_calendar_authorization_post",
         "requestBody": {
           "content": {
@@ -1517,19 +1517,19 @@
             }
           },
           "400": {
-            "description": "Invalid term selectors or GOOGLE_CALENDAR_INVALID_STATE"
+            "description": "Invalid/incomplete term selectors, or GOOGLE_CALENDAR_INVALID_STATE for an expired, replayed, superseded or foreign-session OAuth attempt. Start fresh authorization."
           },
           "401": {
-            "description": "A live student session is required"
+            "description": "Missing, expired or invalid SIS student bearer session. Google credentials are not SIS access tokens."
           },
           "403": {
-            "description": "Student role or ReadSchedule permission is required"
+            "description": "A live student role is required. All operations except disconnect also require ReadSchedule permission."
           },
           "409": {
-            "description": "GOOGLE_CALENDAR_CONFLICT; inspect connection status"
+            "description": "GOOGLE_CALENDAR_CONFLICT: inspect connection status. Authorization conflicts with an existing connection/pending revocation; sync conflicts with a missing connection, active job or term limit."
           },
           "503": {
-            "description": "GOOGLE_CALENDAR_UNAVAILABLE; retry after 30 seconds"
+            "description": "GOOGLE_CALENDAR_UNAVAILABLE: integration is disabled, provider authorization/validation failed or the callback timed out. Retry-After: 30. A failed callback needs fresh authorization, not replay of the same code/state."
           },
           "422": {
             "description": "Validation Error",
@@ -1554,8 +1554,8 @@
         "tags": [
           "google-calendar"
         ],
-        "summary": "Complete Authorization",
-        "description": "Complete browser consent using the same live SIS session.\n\nThe frontend forwards the returned code/state as private JSON. Expired,\nreplayed, superseded or foreign-session attempts return 400. Verified consent\nsaves encrypted refresh credentials and queues initial synchronization; 200\ndoes not mean events have arrived. Reconnecting the same verified Google\naccount reuses retained app-created mappings and reconciles managed fields.\nA different Google account never receives the previous account's mappings.",
+        "summary": "Complete Google Calendar Authorization",
+        "description": "Exchange a fresh Google browser redirect for an encrypted calendar grant.\n\n**Access:** the same live SIS student bearer session that began authorization,\nplus `ReadSchedule`. This is an authenticated POST, not Google's browser\nredirect destination.\n\n### Scalar request\nFrom the **new** redirect URL, extract `state` and `code`, URL-decoding each\nvalue exactly once locally. Send `{\"state\":\"...\",\"code\":\"...\"}`; do not\npaste the whole URL or use an online decoder. A missing local frontend page\nmay show connection refused while its address bar still contains the values.\nComplete within ten minutes; never expose codes/state in logs or screenshots.\n\n### Result and recovery\n200 means the grant was saved and initial sync queued, **not** that events\narrived. Poll GET connection status, then inspect Google Calendar. The worker\nmust be running. Same-account reconnect reuses known app-created mappings;\na different verified Google account never receives the previous mappings.\n\nExpired, replayed, superseded or foreign-session attempts return 400. Google\nexchange/verification failures return 503. Start fresh authorization after\neither failure; the consumed callback must not be replayed. Ensure the\nrequested Calendar permission was granted; no credentials are returned.",
         "operationId": "complete_authorization_api_v1_students_me_schedule_google_calendar_callback_post",
         "requestBody": {
           "content": {
@@ -1579,19 +1579,19 @@
             }
           },
           "400": {
-            "description": "Invalid term selectors or GOOGLE_CALENDAR_INVALID_STATE"
+            "description": "Invalid/incomplete term selectors, or GOOGLE_CALENDAR_INVALID_STATE for an expired, replayed, superseded or foreign-session OAuth attempt. Start fresh authorization."
           },
           "401": {
-            "description": "A live student session is required"
+            "description": "Missing, expired or invalid SIS student bearer session. Google credentials are not SIS access tokens."
           },
           "403": {
-            "description": "Student role or ReadSchedule permission is required"
+            "description": "A live student role is required. All operations except disconnect also require ReadSchedule permission."
           },
           "409": {
-            "description": "GOOGLE_CALENDAR_CONFLICT; inspect connection status"
+            "description": "GOOGLE_CALENDAR_CONFLICT: inspect connection status. Authorization conflicts with an existing connection/pending revocation; sync conflicts with a missing connection, active job or term limit."
           },
           "503": {
-            "description": "GOOGLE_CALENDAR_UNAVAILABLE; retry after 30 seconds"
+            "description": "GOOGLE_CALENDAR_UNAVAILABLE: integration is disabled, provider authorization/validation failed or the callback timed out. Retry-After: 30. A failed callback needs fresh authorization, not replay of the same code/state."
           },
           "422": {
             "description": "Validation Error",
@@ -1616,8 +1616,8 @@
         "tags": [
           "google-calendar"
         ],
-        "summary": "Request Synchronization",
-        "description": "Queue reconciliation of a student's selected academic term.\n\nSend {} for the current term or both selectors for another configured term.\nUp to ten terms may be pinned. Returns 202 with status before background work\ncompletes; poll GET for errors/completion. Forces repair of missing or edited\nmanaged series, never imports Google changes into SIS. Requires a connection;\ndisconnected/revoking or currently leased jobs return 409. No primary calendar\naccess, student-number input or immediate-delivery guarantee is provided.",
+        "summary": "Request Google Calendar Synchronization",
+        "description": "Queue one-way reconciliation of a student's SIS timetable into Google.\n\n**Access:** live SIS student bearer session, `ReadSchedule`, and a connected\nGoogle account. Send `{}` for the current term, or both `year` and `semester`\nusing the stored identifiers. Up to ten terms may be pinned; no silent term\nrollover overwrites a prior semester.\n\n### What is synchronized\nForces reconciliation of app-created calendar series with committed SIS\nenrollment, meeting details, term bounds and configured holiday exclusions.\nManaged Google fields may be overwritten; Google edits never change SIS.\nNo primary-calendar access, enrollment editing or approval APIs are involved.\n\n### Verify completion\n202 means **queued**. The returned `last_sync_at` may refer to an earlier job,\nand `last_error: null` alone is not proof of completion. Allow worker polling/\nbacklog, poll GET for a successful reconciliation, then inspect the calendar.\nRepeating unchanged sync must not create duplicate calendars/meeting series.\n\nMissing/revoking connections, active worker leases or the term limit return\n409. Inspect GET status before retrying. There is no immediate-delivery SLA.",
         "operationId": "request_synchronization_api_v1_students_me_schedule_google_calendar_sync_post",
         "requestBody": {
           "content": {
@@ -1641,19 +1641,19 @@
             }
           },
           "400": {
-            "description": "Invalid term selectors or GOOGLE_CALENDAR_INVALID_STATE"
+            "description": "Invalid/incomplete term selectors, or GOOGLE_CALENDAR_INVALID_STATE for an expired, replayed, superseded or foreign-session OAuth attempt. Start fresh authorization."
           },
           "401": {
-            "description": "A live student session is required"
+            "description": "Missing, expired or invalid SIS student bearer session. Google credentials are not SIS access tokens."
           },
           "403": {
-            "description": "Student role or ReadSchedule permission is required"
+            "description": "A live student role is required. All operations except disconnect also require ReadSchedule permission."
           },
           "409": {
-            "description": "GOOGLE_CALENDAR_CONFLICT; inspect connection status"
+            "description": "GOOGLE_CALENDAR_CONFLICT: inspect connection status. Authorization conflicts with an existing connection/pending revocation; sync conflicts with a missing connection, active job or term limit."
           },
           "503": {
-            "description": "GOOGLE_CALENDAR_UNAVAILABLE; retry after 30 seconds"
+            "description": "GOOGLE_CALENDAR_UNAVAILABLE: integration is disabled, provider authorization/validation failed or the callback timed out. Retry-After: 30. A failed callback needs fresh authorization, not replay of the same code/state."
           },
           "422": {
             "description": "Validation Error",
@@ -4604,7 +4604,7 @@
           "authorization_url": {
             "type": "string",
             "title": "Authorization Url",
-            "description": "Open in a browser; contains private state and must not be logged."
+            "description": "Open in a browser and approve the requested Calendar access. Contains private single-use state; never log/share it or fetch it as a Scalar API request. Google redirects to the configured frontend URI."
           },
           "expires_in": {
             "type": "integer",
@@ -4618,7 +4618,8 @@
         "required": [
           "authorization_url"
         ],
-        "title": "AuthorizationRead"
+        "title": "AuthorizationRead",
+        "description": "Browser consent instructions, not a connection or delivery confirmation."
       },
       "Body_import_users_api_v1_users_import_post": {
         "properties": {
@@ -4639,16 +4640,18 @@
         "properties": {
           "year": {
             "type": "string",
-            "title": "Year"
+            "title": "Year",
+            "description": "Stored academic year selected for synchronization."
           },
           "semester": {
             "type": "string",
-            "title": "Semester"
+            "title": "Semester",
+            "description": "Stored semester selected for synchronization."
           },
           "provisioned": {
             "type": "boolean",
             "title": "Provisioned",
-            "description": "A calendar was assigned, not proof of sync."
+            "description": "An app-created calendar was assigned to this term. Does not prove all meetings were delivered; inspect sync status and Google."
           }
         },
         "additionalProperties": false,
@@ -4658,7 +4661,8 @@
           "semester",
           "provisioned"
         ],
-        "title": "CalendarTargetRead"
+        "title": "CalendarTargetRead",
+        "description": "One pinned academic term, with no Google calendar/event identifiers exposed."
       },
       "ChallengeRequest": {
         "properties": {
@@ -4710,18 +4714,19 @@
         "properties": {
           "enabled": {
             "type": "boolean",
-            "title": "Enabled"
+            "title": "Enabled",
+            "description": "Deployment-level Google integration flag, not student consent. Manual SIS schedule/PDF/ICS access remains separate."
           },
           "connected": {
             "type": "boolean",
             "title": "Connected",
-            "description": "Usable refresh grant is saved.",
+            "description": "A refresh grant is saved and not marked reconnectRequired. Not proof of recent sync, current Google availability or event delivery.",
             "default": false
           },
           "disconnecting": {
             "type": "boolean",
             "title": "Disconnecting",
-            "description": "Google token revocation is still pending.",
+            "description": "Google authorization revocation is pending. Keep the worker running and wait for false before beginning a fresh connection.",
             "default": false
           },
           "last_sync_at": {
@@ -4734,7 +4739,8 @@
                 "type": "null"
               }
             ],
-            "title": "Last Sync At"
+            "title": "Last Sync At",
+            "description": "UTC timestamp of the last successful reconciliation, including unchanged checks. May predate the current queued request; null before the first successful reconciliation. Not a Google-write timestamp."
           },
           "next_sync_at": {
             "anyOf": [
@@ -4746,7 +4752,8 @@
                 "type": "null"
               }
             ],
-            "title": "Next Sync At"
+            "title": "Next Sync At",
+            "description": "UTC due time for a worker attempt or revocation retry, not a completion deadline. Null when no attempt is scheduled, including completed disconnect or a terminal sync error."
           },
           "last_error": {
             "anyOf": [
@@ -4757,7 +4764,8 @@
                 "type": "null"
               }
             ],
-            "title": "Last Error"
+            "title": "Last Error",
+            "description": "Sanitized background error category, never Google payloads. reconnectRequired needs fresh consent; other terminal categories need operator review. Null alone does not prove a queued request completed."
           },
           "targets": {
             "items": {
@@ -4765,7 +4773,7 @@
             },
             "type": "array",
             "title": "Targets",
-            "description": "Pinned terms; empty after disconnect, with no Google IDs exposed."
+            "description": "Pinned terms for this connection, up to ten. Empty after disconnect even when private same-account reconnect mappings remain. No Google calendar or event IDs are exposed."
           }
         },
         "additionalProperties": false,
@@ -4773,7 +4781,8 @@
         "required": [
           "enabled"
         ],
-        "title": "ConnectionRead"
+        "title": "ConnectionRead",
+        "description": "Direct private/no-store status; no status/data wrapper or Google credentials."
       },
       "CourseSectionRead": {
         "properties": {
@@ -5582,7 +5591,7 @@
             "minLength": 32,
             "format": "password",
             "title": "State",
-            "description": "Single-use state from this session's browser consent redirect.",
+            "description": "Exact state from the new consent redirect, URL-decoded once. Bound to the student/session that called authorization; not a bearer token.",
             "writeOnly": true
           },
           "code": {
@@ -5591,7 +5600,7 @@
             "minLength": 1,
             "format": "password",
             "title": "Code",
-            "description": "Short-lived Google authorization code; never log or persist it.",
+            "description": "Short-lived code from that same new Google redirect, decoded once. Not the whole URL or a SIS token. Never log, persist or replay it.",
             "writeOnly": true
           }
         },
@@ -5601,7 +5610,8 @@
           "state",
           "code"
         ],
-        "title": "OAuthCallback"
+        "title": "OAuthCallback",
+        "description": "Forward only the new redirect's decoded state/code using the same SIS session.\n\nEach value must be URL-decoded once locally, not via an online decoder.\nDo not paste the entire redirect URL. Attempts expire after ten minutes and\nare single-use; never log, share or replay these values."
       },
       "OverrideRequest": {
         "properties": {
@@ -6852,7 +6862,7 @@
               }
             ],
             "title": "Year",
-            "description": "Stored academic year; pair with semester or omit both.",
+            "description": "Stored academic year, not a calendar date. Pair with semester or omit both for the current configured term; do not send an empty string.",
             "examples": [
               "2026-2027"
             ]
@@ -6869,7 +6879,7 @@
               }
             ],
             "title": "Semester",
-            "description": "Stored semester identifier, not a numeric position.",
+            "description": "Stored semester identifier, such as first, not a numeric position. Supply with year or omit both; do not send an empty string.",
             "examples": [
               "first"
             ]
@@ -6878,7 +6888,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "TermSelection",
-        "description": "Omit both selectors for the current term; otherwise supply both, not blanks."
+        "description": "Send {} for the current configured term, or provide both stored selectors.\n\nBlank strings are invalid. This selects a term; it does not change SIS\nenrollment, term configuration or the student's Google account."
       },
       "TokenPair": {
         "properties": {
