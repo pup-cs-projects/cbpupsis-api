@@ -27,8 +27,10 @@ MALWARE_SIGNATURES: tuple[bytes, ...] = (
     b"X5O!P%@AP[4\\ZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*",
     b"<?php",
     b"<script",
-    b"#!/",
 )
+
+#: Shell script shebang prefixes refused at file start.
+SCRIPT_PREFIXES: tuple[bytes, ...] = (b"#!",)
 
 #: Master demographic and academic fields locked against self-service edits
 #: (BR-STAT-004, AC-102.3). Maps accepted input names to canonical camelCase.

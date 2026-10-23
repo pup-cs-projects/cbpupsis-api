@@ -12,6 +12,7 @@ from cbpupsis_api_student.domains.student_profile.constants import (
     JPEG_MAGIC_PREFIX,
     MALWARE_SIGNATURES,
     PNG_MAGIC_PREFIX,
+    SCRIPT_PREFIXES,
 )
 from cbpupsis_api_student.domains.student_profile.exceptions import (
     AvatarFileTooLargeError,
@@ -55,6 +56,10 @@ def inspect_image_content_type(content: bytes) -> str:
 
 def scan_avatar_bytes(content: bytes) -> None:
     """Scan uploaded avatar bytes for malware or embedded script payloads."""
+    for prefix in SCRIPT_PREFIXES:
+        if content.startswith(prefix):
+            raise AvatarUnsupportedMediaTypeError
+
     lowered = content.lower()
     for sig in MALWARE_SIGNATURES:
         if sig.lower() in lowered:
