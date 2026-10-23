@@ -46,7 +46,7 @@ RUN_ADMIN := $(COMPOSE) run --rm api-admin
 .DEFAULT_GOAL := help
 .PHONY: help build up down restart logs shell ps \
         migrate migrate-status migrate-create migrate-down \
-        seed seed-e2e digests prune worker create-admin create-user \
+        seed seed-e2e seed-demo digests prune worker create-admin create-user \
         test test-docker e2e lint fmt check install hooks setup clean
 
 # --- lifecycle --------------------------------------------------------------
@@ -132,6 +132,9 @@ worker:  ## Run the outbox worker in the foreground, for debugging
 
 seed-e2e:  ## Seed the verified accounts the HTTP suite logs in as (idempotent)
 	$(RUN_ADMIN) python -m scripts.seed_e2e $(if $(PASSWORD),--password $(PASSWORD),)
+
+seed-demo:  ## Seed (or reset) one shared demo account per portal (idempotent)
+	$(RUN_ADMIN) python -m scripts.seed_demo $(if $(PASSWORD),--password $(PASSWORD),)
 
 # --- users ------------------------------------------------------------------
 
