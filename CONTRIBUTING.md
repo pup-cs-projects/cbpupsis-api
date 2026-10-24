@@ -95,7 +95,12 @@ Without make:
 ```bash
 docker compose -f docker/docker-compose.yml up -d --build
 docker compose -f docker/docker-compose.yml run --rm api-admin python -m scripts.seed_iam
+docker compose -f docker/docker-compose.yml run --rm api-admin python -m scripts.seed_programs
 ```
+
+`make seed` seeds permissions, policies, and groups. `make seed-programs` seeds the BSCS and
+BSIT degree programs a student account must name; `make setup` runs both. `make seed-e2e`
+seeds the accounts the HTTP suite logs in as.
 
 Compose runs the three apps as separate services. A one-shot `migrate` service applies
 migrations once before any app starts. Each app has its own API reference:

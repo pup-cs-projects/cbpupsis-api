@@ -23,6 +23,10 @@ from cbpupsis_database.models.audit import AuditEntry, AuthAuditLog
 from cbpupsis_database.session import AsyncSessionLocal
 from cbpupsis_shared.domains.audit import repository
 from cbpupsis_shared.domains.audit.constants import AUDIT_TARGETS, AUDITED_EVENTS
+from cbpupsis_shared.domains.audit.schemas import (
+    StudentRecentActivityRead,
+    render_in_utc8,
+)
 from cbpupsis_shared.outbox import add_receipt, already_delivered
 
 
@@ -163,6 +167,7 @@ def stage(
     prior_state=None,
     new_state=None,
     payload=None,
+    occurred_at=None,
 ):
     """Stage a canonical row; never commit or copy credential-bearing bodies."""
     context = db.info.get("superadmin_audit")
@@ -174,7 +179,7 @@ def stage(
         actor_id=actor_id,
         target_type=target_type,
         target_id=str(target_id),
-        occurred_at=datetime.now(UTC),
+        occurred_at=occurred_at if occurred_at is not None else datetime.now(UTC),
         prior_state=prior_state if prior_state is not None else {},
         new_state=new_state if new_state is not None else {},
         payload={"outcome": "success", **(payload or {})},
@@ -312,3 +317,94 @@ async def list_sign_in_attempts(
     """Return a page of sign-in attempts, newest first."""
     rows, total = await repository.list_sign_in_attempts(db, limit=limit, offset=offset)
     return Page(items=rows, total=total, limit=limit, offset=offset)
+
+
+async def list_student_recent_activity(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    student_number: str | None = None,
+    limit: int = 10,
+) -> list[StudentRecentActivityRead]:
+    """Return unified recent account and auth activity for a student."""
+    auth_logs = await repository.list_student_auth_events(
+        db, user_id=user_id, student_number=student_number or "", limit=limit
+    )
+    audit_entries = await repository.list_student_audit_entries(
+        db, user_id=user_id, limit=limit
+    )
+
+    combined: list[tuple[datetime, StudentRecentActivityRead]] = []
+
+    for log in auth_logs:
+        act_type = "LOGIN_SUCCESS" if log.success else "LOGIN_FAILED"
+        severity = "SUCCESS" if log.success else "WARNING"
+        fail_msg = log.failure_reason or "Incorrect password entered."
+        desc = (
+            "Sign in successful."
+            if log.success
+            else f"Login attempt failed. {fail_msg}"
+        )
+        dt = log.created_at
+        combined.append(
+            (
+                dt,
+                StudentRecentActivityRead(
+                    id=f"act_{str(log.id)[:8]}",
+                    occurred_at=render_in_utc8(dt),
+                    type=act_type,
+                    severity=severity,
+                    description=desc,
+                ),
+            )
+        )
+
+    for entry in audit_entries:
+        action = entry.action.lower()
+        if "enrollment" in action:
+            act_type = "ENROLLMENT_SUBMITTED"
+            severity = "SUCCESS"
+            desc = entry.payload.get("description", "Successfully enrolled for term.")
+        elif "cor" in action:
+            act_type = "COR_GENERATED"
+            severity = "SUCCESS"
+            desc = entry.payload.get(
+                "description", "Certificate of Registration generated."
+            )
+        elif "password" in action:
+            act_type = "PASSWORD_CHANGED"
+            severity = "INFO"
+            desc = "Password was changed."
+        elif "profile" in action:
+            act_type = "PROFILE_UPDATED"
+            severity = "INFO"
+            desc = "Profile information updated."
+        elif "grade" in action:
+            act_type = "GRADE_POSTED"
+            severity = "INFO"
+            desc = "New grade posted."
+        elif "payment" in action:
+            act_type = "PAYMENT_RECEIVED"
+            severity = "SUCCESS"
+            desc = "Payment received."
+        else:
+            act_type = "PROFILE_UPDATED"
+            severity = "INFO"
+            desc = entry.payload.get("description", f"Action {entry.action} completed.")
+
+        dt = entry.occurred_at
+        combined.append(
+            (
+                dt,
+                StudentRecentActivityRead(
+                    id=f"act_{str(entry.id)[:8]}",
+                    occurred_at=render_in_utc8(dt),
+                    type=act_type,
+                    severity=severity,
+                    description=desc,
+                ),
+            )
+        )
+
+    combined.sort(key=lambda x: x[0], reverse=True)
+    return [item[1] for item in combined[:limit]]

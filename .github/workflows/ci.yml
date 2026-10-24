@@ -99,5 +99,7 @@ jobs:
         # an unrelated PR; it shows in the run summary and is triaged as an issue.
         continue-on-error: true
         run: |
-          uv export --no-emit-project --no-dev --format requirements-txt > requirements.txt
+          # Editable workspace packages cannot be installed with hashes.
+          # Their resolved third-party dependencies remain in this export.
+          uv export --no-emit-workspace --no-dev --format requirements-txt > requirements.txt
           uvx pip-audit --requirement requirements.txt --strict

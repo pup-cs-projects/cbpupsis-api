@@ -46,12 +46,18 @@ from cbpupsis_shared.domains.auth.exceptions import (
     AuthSessionExpiredError,
     InactiveUserError,
     InvalidAuthTokenError,
+    MfaEnrollmentRequiredError,
+    MfaRequiredError,
     NotAuthenticatedError,
     SuperadminRoleRequiredError,
     UnverifiedEmailError,
 )
 from cbpupsis_shared.domains.auth.schemas import RefreshRequest
-from cbpupsis_shared.domains.auth.security import decode_token, require_session_version
+from cbpupsis_shared.domains.auth.security import (
+    decode_challenge_token,
+    decode_token,
+    require_session_version,
+)
 from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.iam.constants import SUPERADMIN_GROUP
 from cbpupsis_shared.domains.users import service as users_service
@@ -124,21 +130,31 @@ async def _authenticate(
     try:
         claims = decode_token(credentials.credentials, expected_type="access")
     except InvalidAuthTokenError as invalid:
+        try:
+            challenge = decode_challenge_token(credentials.credentials)
+            if challenge.get("enrollment_required") is True:
+                raise MfaEnrollmentRequiredError from invalid
+            raise MfaRequiredError from invalid
+        except InvalidAuthTokenError:
+            pass
         # A signed but expired JWT can identify an idle session for cleanup,
         # never authorize a request or extend its activity window.
-        stale = decode_token(
-            credentials.credentials, expected_type="access", allow_expired=True
-        )
-        if stale.get("role") == ROLE_SUPERADMIN:
-            await auth_service.check_superadmin_session(
-                db, stale, touch=False, allow_password_change=True
+        try:
+            stale = decode_token(
+                credentials.credentials, expected_type="access", allow_expired=True
             )
-            raise AuthSessionExpiredError from None
-        if stale.get("sid"):
-            # Raises AUTH_SESSION_EXPIRED (and deletes the row) if it went idle.
-            await auth_service.check_session(
-                db, stale, touch=False, allow_password_change=True
-            )
+            if stale.get("role") == ROLE_SUPERADMIN:
+                await auth_service.check_superadmin_session(
+                    db, stale, touch=False, allow_password_change=True
+                )
+                raise AuthSessionExpiredError from None
+            if stale.get("sid"):
+                # Raises AUTH_SESSION_EXPIRED (and deletes the row) if it went idle.
+                await auth_service.check_session(
+                    db, stale, touch=False, allow_password_change=True
+                )
+        except InvalidAuthTokenError:
+            pass
         raise invalid from None
     user = await users_service.get_active_user(db, uuid.UUID(claims["sub"]))
     if user is None:
@@ -151,7 +167,12 @@ async def _authenticate(
             db, claims, allow_password_change=allow_password_change
         )
         request.state.superadmin_audit = audit_client.begin_superadmin_request(
-            db, user.id, request.method, request.url.path
+            db,
+            user.id,
+            request.method,
+            getattr(request.scope.get("route"), "path", "private-record")
+            if getattr(request.state, "private_response", False)
+            else request.url.path,
         )
         db.info["audit_event_handler"] = audit_client.capture_event
         request.state.audit_db = db

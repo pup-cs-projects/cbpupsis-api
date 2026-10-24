@@ -149,7 +149,7 @@ class TestCredentialIndistinguishability:
         bodies = []
         for response in responses:
             assert response.status_code == 401
-            assert response.json()["code"] == "AUTH_FAILED"
+            assert response.json()["code"] == "AUTH_INVALID_CREDENTIALS"
             body = response.json()
             body.pop("request_id", None)
             bodies.append(body)
