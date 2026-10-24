@@ -165,6 +165,20 @@ jobs:
             echo "built=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # The Lambda adapter and the worker's base image come from public.ecr.aws.
+      # Anonymous pulls there share a small per-IP data quota with every other
+      # GitHub-hosted runner, and run out ("toomanyrequests: Data limit
+      # exceeded"); signed-in pulls get a far larger one. ECR Public issues its
+      # token only in us-east-1.
+      - name: Log in to Amazon ECR Public
+        if: steps.exists.outputs.built == 'false'
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+        env:
+          AWS_REGION: us-east-1
+          AWS_DEFAULT_REGION: us-east-1
+
       - uses: docker/setup-buildx-action@v3
         if: steps.exists.outputs.built == 'false'
 
