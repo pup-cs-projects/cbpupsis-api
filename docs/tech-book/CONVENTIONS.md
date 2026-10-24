@@ -19,7 +19,7 @@ working.
   vocabulary below.
 - **Team:** three backend developers here, two frontend developers on `cbpupsis-client`, and a
   product owner who owns the backlog and merges.
-- **Backlog:** org project board "CBPUPSIS API" (project 2).
+- **Backlog:** org project board "CBPUPSIS" (project 4), shared by both repositories.
   [BACKLOG.md](../project-specs/BACKLOG.md) maps epics to SRS requirements, and
   [WRITING-ISSUES.md](WRITING-ISSUES.md) explains how to write and file issues.
 - **Data privacy:** student records are personal information under RA 10173. Never log names,

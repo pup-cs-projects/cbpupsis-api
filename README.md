@@ -8,7 +8,7 @@ administration and reporting.
 | | |
 |---|---|
 | Requirements | [docs/project-specs/SRS.md](docs/project-specs/SRS.md) |
-| Board | [CBPUPSIS API](https://github.com/orgs/pup-cs-projects/projects/2) |
+| Board | [CBPUPSIS](https://github.com/orgs/pup-cs-projects/projects/4) |
 | Web client | [cbpupsis-client](https://github.com/pup-cs-projects/cbpupsis-client) |
 | How to contribute | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
