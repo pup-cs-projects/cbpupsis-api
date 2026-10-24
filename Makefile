@@ -139,6 +139,9 @@ seed-e2e:  ## Seed the verified accounts the HTTP suite logs in as (idempotent)
 seed-demo:  ## Seed (or reset) one shared demo account per portal (idempotent)
 	$(RUN_ADMIN) python -m scripts.seed_demo $(if $(PASSWORD),--password $(PASSWORD),)
 
+seed-demo-data:  ## Fill the demo student's profile and current-term schedule (after seed-demo)
+	$(RUN_ADMIN) python -m scripts.seed_demo_data
+
 # --- users ------------------------------------------------------------------
 
 create-admin:  ## Promote an existing user to Admins: make create-admin EMAIL=you@example.com
