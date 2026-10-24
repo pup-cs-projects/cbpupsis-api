@@ -3,16 +3,26 @@
 All settings are read from the environment (via ``.env`` locally, or injected by
 the platform in staging/production). This module is the single place secrets and
 configuration are read; import ``settings`` elsewhere rather than reading the
-environment directly.
+environment directly. Deployed, the secrets themselves come from AWS Secrets
+Manager and are copied into the environment first (:func:`load_deployed_secrets`).
 """
 
 from __future__ import annotations
 
+import json
+import os
+from collections.abc import MutableMapping
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal, Protocol
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+#: Names the deployed secret: set on every Lambda function (by cbpupsis-infra) to
+#: the ARN of one Secrets Manager secret, a JSON object such as
+#: ``{"DATABASE_URL": "...", "JWT_SECRET": "..."}``. Unset locally and in tests,
+#: where nothing is fetched.
+APP_SECRETS_ARN = "APP_SECRETS_ARN"
 
 #: Where each role's portal runs locally, matching the dev stack's ports.
 DEV_FRONTEND_URLS: dict[str, str] = {
@@ -327,9 +337,75 @@ class Settings(BaseSettings):
         return self
 
 
+class SecretsClient(Protocol):
+    """The one Secrets Manager call the loader makes (a boto3 client fits)."""
+
+    def get_secret_value(self, *, SecretId: str) -> dict[str, Any]:
+        """Return the secret, with its text under ``SecretString``."""
+        ...
+
+
+def load_deployed_secrets(
+    environ: MutableMapping[str, str] = os.environ,
+    client: SecretsClient | None = None,
+) -> list[str]:
+    """Copy the deployed secret into the environment, before :class:`Settings` reads it.
+
+    Deployed, secrets are not environment variables: the function is given only
+    :data:`APP_SECRETS_ARN`, and anyone who can read a Lambda's configuration
+    would otherwise read the database password too. This turns the secret back
+    into environment variables inside the process, so :class:`Settings` stays
+    the one place configuration is read and needs no AWS-specific source.
+
+    A variable that is already set wins over the secret's copy, the same way an
+    explicit value wins everywhere else in configuration.
+
+    Fails loudly: with :data:`APP_SECRETS_ARN` set, a secret that cannot be
+    fetched or parsed stops startup rather than letting the app run half
+    configured. No error message ever includes a secret's value.
+
+    Returns the names of the variables it set, never their values.
+    """
+    arn = environ.get(APP_SECRETS_ARN)
+    if not arn:
+        return []
+
+    if client is None:
+        # Imported lazily so only a deployed process, which has a secret to
+        # fetch, needs boto3 and AWS credentials; tests and local runs never
+        # import it (the same reasoning as the SES sender).
+        import boto3  # noqa: PLC0415 - see the comment above
+
+        client = boto3.client("secretsmanager")
+
+    text = client.get_secret_value(SecretId=arn)["SecretString"]
+    try:
+        secret = json.loads(text)
+    except json.JSONDecodeError:
+        # `from None`: the decode error carries the whole secret text.
+        raise ValueError(
+            f"The secret named by {APP_SECRETS_ARN} is not JSON."
+        ) from None
+    if not isinstance(secret, dict) or not all(
+        isinstance(value, str) for value in secret.values()
+    ):
+        raise ValueError(
+            f"The secret named by {APP_SECRETS_ARN} must be a JSON object of "
+            "string values."
+        )
+
+    loaded: list[str] = []
+    for name, value in secret.items():
+        if name not in environ:
+            environ[name] = value
+            loaded.append(name)
+    return loaded
+
+
 @lru_cache
 def get_settings() -> Settings:
-    """Return a cached :class:`Settings` instance."""
+    """Return a cached :class:`Settings` instance, loading deployed secrets first."""
+    load_deployed_secrets()
     return Settings()
 
 
