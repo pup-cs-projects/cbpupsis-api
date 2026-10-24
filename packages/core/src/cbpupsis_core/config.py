@@ -229,17 +229,17 @@ class Settings(BaseSettings):
     #: far below what makes an online guessing attack worthwhile.
     rate_limit_login: str = "10/minute"
 
-    # --- Email (AWS SES) ---
-    #: SES region. Only consulted when ``ses_from_email`` is set.
-    aws_region: str = "us-east-1"
-    #: Verified SES identity messages are sent from. Leaving this unset is the
-    #: switch that selects the console sender, so development and tests never
-    #: need AWS credentials and can never send real mail.
-    ses_from_email: str | None = None
-    #: Optional SES configuration set, for bounce/complaint event publishing.
-    ses_configuration_set: str | None = None
+    # --- Email (Resend) ---
+    #: Sender of every message, on a domain verified in Resend, for example
+    #: ``CBPUPSIS <no-reply@cbpupsis.org>``. Together with ``resend_api_key`` it
+    #: switches on real delivery; with neither set the console sender is used,
+    #: so development and tests never need a key and can never send real mail.
+    email_from: str | None = None
+    #: Resend API key (``re_...``) with sending access. Deployed, it comes from
+    #: the app secret in Secrets Manager, never from a plain environment value.
+    resend_api_key: SecretStr | None = None
     #: SMTP host of a local mail catcher (Mailpit in the compose stack). Set, it
-    #: replaces both the console sender and SES, so every message, temporary
+    #: replaces both the console sender and Resend, so every message, temporary
     #: passwords and links included, lands whole in the catcher's inbox instead
     #: of a real one. Development only: settings refuse it anywhere else.
     dev_smtp_host: str | None = None
@@ -258,12 +258,12 @@ class Settings(BaseSettings):
 
     @property
     def email_enabled(self) -> bool:
-        """Whether a real SES sender should be used.
+        """Whether real mail is sent through Resend.
 
-        Expressed once here so the fallback rule — no verified sender identity
-        means no real mail — cannot be applied inconsistently.
+        Expressed once here so the fallback rule — no sender and key means no
+        real mail — cannot be applied inconsistently.
         """
-        return self.ses_from_email is not None
+        return self.email_from is not None and self.resend_api_key is not None
 
     def frontend_url_for(self, role: str | None) -> str:
         """Return the base URL of the portal an emailed link for ``role`` opens.
@@ -296,10 +296,10 @@ class Settings(BaseSettings):
         """
         return self.environment == "development"
 
-    @field_validator("dev_smtp_host", mode="before")
+    @field_validator("dev_smtp_host", "email_from", "resend_api_key", mode="before")
     @classmethod
-    def blank_mail_catcher_is_off(cls, value: object) -> object:
-        """``DEV_SMTP_HOST=`` means no catcher, so a file or test can switch it off."""
+    def blank_mail_setting_is_off(cls, value: object) -> object:
+        """A blank value (``EMAIL_FROM=``) means unset, so a file can switch it off."""
         if isinstance(value, str) and not value.strip():
             return None
         return value
@@ -369,13 +369,28 @@ class Settings(BaseSettings):
     def keep_the_mail_catcher_in_development(self) -> Settings:
         """Refuse a mail catcher outside development.
 
-        It takes precedence over SES, so in staging or production it would
+        It takes precedence over Resend, so in staging or production it would
         silently swallow every real email, password resets included.
         """
         if self.dev_smtp_host is not None and self.environment != "development":
             raise ValueError(
                 "dev_smtp_host is for development only; unset it in "
-                f"{self.environment} and configure ses_from_email instead."
+                f"{self.environment} and configure email_from and resend_api_key "
+                "instead."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def configure_email_completely(self) -> Settings:
+        """Refuse a sender without a key, or a key without a sender.
+
+        Either half alone would fall back to the console sender and drop every
+        email, password resets included, while the app looks healthy.
+        """
+        if (self.email_from is None) != (self.resend_api_key is None):
+            raise ValueError(
+                "email_from and resend_api_key go together: set both to send "
+                "through Resend, or neither for the console backend."
             )
         return self
 
