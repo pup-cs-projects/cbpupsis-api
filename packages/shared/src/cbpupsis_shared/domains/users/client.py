@@ -23,11 +23,16 @@ from cbpupsis_shared.domains.users.schemas import (
     AdminProfileRead,
     EmergencyContactRead,
     FacultyProfileRead,
+    ScheduleIdentity,
     StudentProfileRead,
     UserProfileRead,
     UserRead,
 )
-from cbpupsis_shared.domains.users.service import AccountProblem, SignInSubject
+from cbpupsis_shared.domains.users.service import (
+    AccountProblem,
+    SignInSubject,
+    record_identity,
+)
 
 __all__ = [
     "AccountProblem",
@@ -52,7 +57,10 @@ __all__ = [
     "list_emergency_contacts",
     "lock_active_user",
     "lock_role_subject",
+    "record_identity",
     "save_admin_profile",
+    "schedule_identity",
+    "schedule_names",
     "stage_admin_deactivation_override",
     "stage_create_emergency_contact",
     "stage_delete_emergency_contact",
@@ -60,6 +68,18 @@ __all__ = [
     "stage_update_user_profile",
     "user_exists",
 ]
+
+
+async def schedule_identity(
+    db: AsyncSession, user_id: uuid.UUID
+) -> ScheduleIdentity | None:
+    return await service.schedule_identity(db, user_id)
+
+
+async def schedule_names(
+    db: AsyncSession, ids: list[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    return await service.schedule_names(db, ids)
 
 
 async def get_user(db: AsyncSession, user_id: uuid.UUID) -> UserRead:

@@ -455,7 +455,7 @@ class TestTemporaryPassword:
         # only told to a caller who holds the password.
         wrong = await _student_login(client, "Not-the-password-1!")
         assert wrong.status_code == 401
-        assert wrong.json()["code"] == "AUTH_FAILED"
+        assert wrong.json()["code"] == "AUTH_INVALID_CREDENTIALS"
 
     async def test_an_expired_temporary_password_cannot_be_changed(
         self,

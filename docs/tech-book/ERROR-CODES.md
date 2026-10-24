@@ -13,6 +13,18 @@ Add the row in the same commit as the code that raises it.
 | **Last updated** | 2026-10-23 |
 | **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications` in `packages/shared`; `items` and `student_profile` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The `student_auth`, `faculty_auth`, and `sections` domains raise the shared `auth` classes and add none of their own; `curriculum` raises none. |
 
+## Student academic records (US-STU-004)
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 503 | `GRADE_RECORD_UNAVAILABLE` | Inconsistent source record, unavailable PDF renderer, or export deadline exceeded. No partial academic result or private diagnostic is returned. |
+| 404 | `RESOURCE_NOT_FOUND` | Existing shared code: foreign/missing student identifier, missing owner profile, or a non-student session on student record routes. |
+
+These routes preserve existing 401 authentication/session errors, 403
+`PASSWORD_CHANGE_REQUIRED`, 403 missing-permission responses (without a machine
+code), and 422 selector/pagination validation responses. Every response is
+private/no-store. See [STUDENT-GRADES.md](STUDENT-GRADES.md).
+
 ## The envelope
 
 Every known application error has the same body:
@@ -102,21 +114,22 @@ Every table has the same columns. A blank **Code** means the error carries no
 | 401 | | Invalid authentication token | JWT signature, expiry, or token-type check failed; a challenge token presented where a session is required; a token without a session id. Identical for all. | `auth/security.py`, `auth/service/sessions.py`, `auth/service/tokens.py`, `auth/service/role_sign_in.py` |
 | 401 | | Not authenticated | No `Authorization` header (or Admin cookie). | `auth/dependencies.py` |
 | 401 | | Incorrect email or password | Email sign-in failed. Identical for unknown account, wrong password, inactive or deleted user, and accounts that must use a role sign-in (student, faculty, Admin, Superadmin). | `auth/service/accounts.py`, `admin_auth/service.py` |
-| 401 | `AUTH_FAILED` | Invalid credentials. Please verify your Student ID, birthdate, and password. | Student sign-in failed. Byte-identical for unknown student number, wrong birthdate, wrong password, and inactive account. | `auth/exceptions.py` (raised by `student_auth/service.py`) |
-| 401 | `AUTH_FAILED` | Invalid employee ID or password. | Faculty sign-in failed. Byte-identical for unknown employee id, wrong password, and inactive account or faculty profile. | `auth/exceptions.py` (raised by `faculty_auth/service.py`) |
+| 401 | `AUTH_INVALID_CREDENTIALS` | Invalid credentials. Please verify your Student ID, birthdate, and password. | Student sign-in failed. Byte-identical for unknown student number, wrong birthdate, wrong password, and inactive account. | `auth/exceptions.py` (raised by `student_auth/service.py`) |
+| 401 | `AUTH_INVALID_CREDENTIALS` | Invalid employee ID or password. | Faculty sign-in failed. Byte-identical for unknown employee id, wrong password, and inactive account or faculty profile. | `auth/exceptions.py` (raised by `faculty_auth/service.py`) |
 | 401 | `AUTH_SESSION_EXPIRED` | Your session has ended. Sign in again. | The server-side session is missing or idle past `SESSION_IDLE_TIMEOUT_MINUTES` (15), for every role; or an account-wide revocation changed the session generation. The session and its refresh tokens are deleted. | `auth/service/sessions.py`, `auth/security.py` |
 | 401 | | User is no longer active | The account was deactivated after the token was issued. | `auth/dependencies.py`, `auth/service/sessions.py`, `auth/service/tokens.py` |
 | 401 | | Refresh token already used | A rotated token was replayed. Revokes the user's whole token family. | `auth/service/tokens.py` |
 | 401 | `AUTH_TEMPORARY_PASSWORD_EXPIRED` | Your temporary password has expired. Ask the system administrator to issue a new one. | A sign-in (student, faculty, Admin, Superadmin, `/auth/login`) with a correct temporary password past `TEMPORARY_PASSWORD_TTL_DAYS`, or a password change from one. **Only reachable after the credential step passes**, so a wrong password still gets that role's identical 401. Recorded on the sign-in ledger; does not count toward the lockout. A Superadmin must reissue (`POST /users/{id}/reissue-temporary-password`). | `auth/service/role_sign_in.py`, `auth/service/passwords.py` |
 | 401 | `AUTH_MFA_INVALID` | The security code or hardware-key response is invalid | A wrong TOTP code, an unknown or used recovery code, or an invalid hardware-key response. Counts toward the lockout. | `auth/service/mfa.py`, `admin_auth/service.py` |
 | 401 | `AUTH_MFA_CODE_REUSED` | That security code has already been used; enter the current code | A TOTP time-step at or below the last accepted one. Counts toward the lockout. | `auth/service/mfa.py` |
-| 401 | `AUTH_MFA_REQUIRED` | A second factor is required | An Admin challenge token presented where a completed session is required. | `admin_auth/dependencies.py` |
-| 403 | `AUTH_MFA_ENROLLMENT_REQUIRED` | Set up multi-factor authentication to continue | Enrollment is not available or not finished: enrolling when TOTP is already enrolled, confirming without a pending seed, verifying before enrolling, or an Admin enrollment challenge presented as a session. | `auth/service/mfa.py`, `admin_auth/*`, `faculty_auth/service.py` |
+| 401 | `AUTH_MFA_REQUIRED` | A second factor is required | An Admin or faculty challenge token presented where a completed session is required. | `admin_auth/dependencies.py`, `faculty_auth/dependencies.py` |
+| 403 | `AUTH_MFA_ENROLLMENT_REQUIRED` | Set up multi-factor authentication to continue | Enrollment is not available or not finished: enrolling when TOTP is already enrolled, confirming without a pending seed, verifying before enrolling, or an Admin or faculty enrollment challenge presented as a session. | `auth/service/mfa.py`, `admin_auth/*`, `faculty_auth/*` |
 | 403 | `AUTH_INSUFFICIENT_ROLE` | This action is not available to your role | The session is not a current MFA-completed session of the role the endpoint needs (student, faculty, Admin), or the faculty profile is inactive. | `auth/exceptions.py` (raised by each role's `dependencies.py`) |
 | 403 | `SUPERADMIN_ROLE_REQUIRED` | A live MFA-completed Superadmin session is required | Live, verified, non-conflicting Superadmin MFA session required. Also every account-management route (`POST /users`, `POST /users/import`, `POST /users/{id}/reissue-temporary-password`) called with another role's session. | `auth/service/sessions.py`, `iam/dependencies.py` |
 | 403 | `PASSWORD_CHANGE_REQUIRED` | Change your temporary password to continue. | **Every authenticated route, for every role,** while the account holds a Superadmin-issued temporary password, except `POST /auth/change-password` (which clears it) and the logout routes. Refresh still rotates; the tokens it mints get this 403 too. | `auth/service/sessions.py` |
 | 403 | `email_not_verified` | Verify your email address to continue. Check your inbox, or request a new verification link. | Email sign-in or refresh with a correct password, but the address is unverified. **Only reachable after the password check passes**; see below. | `auth/service/sessions.py` |
 | 404 | `RESOURCE_NOT_FOUND` | Resource not found. | The record is absent or outside the caller's reach: an Admin position's scope, or a course section not assigned to the faculty member. Identical for both cases. | `auth/exceptions.py` |
+| 503 | `SERVICE_UNAVAILABLE` | The schedule is temporarily unavailable. Please retry shortly. | Student schedule/export data is invalid or exceeds its generation bounds, or document generation/database access fails or exceeds the ten-second export deadline. No partial attachment; `Retry-After: 30` and private/no-store. | `schedule/exceptions.py` in `apps/api-student` |
 | 400 | `INVALID_EMAIL_ADDRESS` | Enter a valid email address. | A reset request contains a malformed email. | `auth/service/passwords.py` |
 | 410 | `AUTH_RESET_TOKEN_EXPIRED` | The password reset link has expired; request a new one | A reset token older than its TTL was submitted. | `auth/service/passwords.py` |
 | 410 | `AUTH_RESET_TOKEN_USED` | The password reset link has already been used; request a new one | An already-redeemed reset token was submitted. | `auth/service/passwords.py` |
@@ -262,6 +275,20 @@ them must move to the rows above.
 | `POST /auth/register` (201, 409 "Email already registered", 429 `rate_limited`) | 404: there is no public registration. A Superadmin creates accounts with `POST /users` or `POST /users/import` |
 | 409 "Email already registered" (no code) on `POST /users` | 409 `USER_ALREADY_EXISTS` with `field` |
 | `POST /users` body `{email, password, full_name}` | The account fields (`first_name`, `surname`, `email`, `role`, and the role's fields); the system generates the password |
+
+## Optional Google Calendar integration
+
+| Status | Code | Client action |
+| --- | --- | --- |
+| 400 | `GOOGLE_CALENDAR_INVALID_STATE` | Start authorization again; state expired, was replayed, or belongs to another student/session. |
+| 409 | `GOOGLE_CALENDAR_CONFLICT` | Inspect connection status; connect first, wait for active sync/revocation, or respect the ten-term limit. |
+| 503 | `GOOGLE_CALENDAR_UNAVAILABLE` | Integration is disabled/misconfigured or Google authorization failed; retry after 30 seconds, or contact the operator. No provider payload or credential is returned. |
+
+Google endpoints redact validation inputs. Background `last_error` is a sanitized
+status, not a new HTTP error envelope: see [the integration guide](GOOGLE-CALENDAR.md).
+`reconnectRequired`, `permissionDenied`, `calendarMissing`, and
+`calendarCreationUncertain` need connection/operator attention. Transient quota,
+provider, source or deadline failures have a backed-off `next_sync_at`.
 
 ## Adding a code
 

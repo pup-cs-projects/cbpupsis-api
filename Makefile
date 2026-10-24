@@ -46,7 +46,7 @@ RUN_ADMIN := $(COMPOSE) run --rm api-admin
 .DEFAULT_GOAL := help
 .PHONY: help build up down restart logs shell ps \
         migrate migrate-status migrate-create migrate-down \
-        seed seed-e2e seed-demo digests prune worker create-admin create-user \
+        seed seed-programs seed-e2e digests prune worker create-admin create-user \
         test test-docker e2e lint fmt check install hooks setup clean
 
 # --- lifecycle --------------------------------------------------------------
@@ -120,6 +120,9 @@ migrate-down:  ## Roll back one migration
 
 seed:  ## Seed permissions, policies, and groups (idempotent)
 	$(RUN_ADMIN) python -m scripts.seed_iam
+
+seed-programs:  ## Seed the degree programs student accounts need (idempotent)
+	$(RUN_ADMIN) python -m scripts.seed_programs
 
 digests:  ## Stage the periodic digests (what the scheduler runs)
 	$(RUN_ADMIN) python -m scripts.send_digests
@@ -221,6 +224,7 @@ setup:  ## First run on a fresh clone: build, start, migrate, seed
 	@$(MAKE) --no-print-directory up env=$(env)
 	@$(MAKE) --no-print-directory migrate env=$(env)
 	@$(MAKE) --no-print-directory seed env=$(env)
+	@$(MAKE) --no-print-directory seed-programs env=$(env)
 	@echo
 	@echo "Ready. Next:"
 	@echo "  1. Register at http://localhost:8001/scalar (POST /api/v1/auth/register)"

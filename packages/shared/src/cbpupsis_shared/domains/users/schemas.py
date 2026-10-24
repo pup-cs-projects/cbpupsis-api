@@ -56,6 +56,18 @@ class UserBase(BaseModel):
     full_name: str | None = Field(default=None, max_length=FULL_NAME_MAX_LENGTH)
 
 
+class RecordIdentity(BaseModel):
+    student_number: str
+    full_name: str
+
+
+class ScheduleIdentity(BaseModel):
+    """Student identity for a private, caller-owned schedule."""
+
+    student_number: str
+    full_name: str
+
+
 class UserProfileFields(BaseModel):
     """The editable profile fields, with their validation.
 

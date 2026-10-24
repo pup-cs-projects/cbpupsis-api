@@ -58,10 +58,42 @@ from cbpupsis_shared.domains.users.schemas import (
     AdminProfileRead,
     EmergencyContactRead,
     FacultyProfileRead,
+    RecordIdentity,
+    ScheduleIdentity,
     StudentProfileRead,
     UserProfileRead,
 )
 from cbpupsis_shared.outbox import publish_transactional
+
+
+async def record_identity(db: AsyncSession, student_id: uuid.UUID):
+    row = await repository.get_record_identity(db, student_id)
+    if row is None:
+        return None
+    name = row.full_name or " ".join(filter(None, [row.first_name, row.last_name]))
+    return RecordIdentity(student_number=row.student_number, full_name=name)
+
+
+async def schedule_identity(
+    db: AsyncSession, user_id: uuid.UUID
+) -> ScheduleIdentity | None:
+    row = await repository.schedule_identity(db, user_id)
+    if row is None:
+        return None
+    number, full_name, first, last = row
+    return ScheduleIdentity(
+        student_number=number,
+        full_name=full_name or " ".join(part for part in (first, last) if part),
+    )
+
+
+async def schedule_names(
+    db: AsyncSession, ids: list[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    return {
+        user_id: full or " ".join(part for part in (first, last) if part)
+        for user_id, full, first, last in await repository.schedule_names(db, ids)
+    }
 
 
 async def get_by_id(db: AsyncSession, user_id: uuid.UUID) -> User:
