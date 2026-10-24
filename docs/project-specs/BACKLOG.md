@@ -1,9 +1,41 @@
 # Backlog map
 
+> **Notice, 2026-10-24: epics now follow the CBPUPSIS board.**
+> All work in both repositories is tracked on one board,
+> [CBPUPSIS](https://github.com/orgs/pup-cs-projects/projects/4). There is one epic,
+> EPIC-001 ([#58](https://github.com/pup-cs-projects/cbpupsis-api/issues/58)), with one `FR-00N`
+> parent per module beneath it, `US-<MODULE>-<NNN>` stories beneath those, and `[API]` and
+> `[WEB]` tasks beneath each story. Each FR has its own sprint (`S1 FR-001 Auth` to
+> `S8 FR-008 Operations`). See [WRITING-ISSUES.md](../tech-book/WRITING-ISSUES.md). The EP-NN
+> epics below were closed as superseded and are kept for history only. They map to the board as
+> follows.
+
+| Old epic | Now | Issue |
+|---|---|---|
+| EPIC-001 (closed #2) | EPIC-001 | [#58](https://github.com/pup-cs-projects/cbpupsis-api/issues/58) |
+| EP-00 Developer setup | SETUP parents under EPIC-001 | [#56](https://github.com/pup-cs-projects/cbpupsis-api/issues/56), [cbpupsis-client#2](https://github.com/pup-cs-projects/cbpupsis-client/issues/2) |
+| EP-01 Authentication and access control | FR-001 | [#59](https://github.com/pup-cs-projects/cbpupsis-api/issues/59) |
+| EP-02 Student profile | FR-002 | [#60](https://github.com/pup-cs-projects/cbpupsis-api/issues/60) |
+| EP-03 Course catalog, curriculum, and sections | FR-003 (FR12) | [#61](https://github.com/pup-cs-projects/cbpupsis-api/issues/61) |
+| EP-04 Academic calendar | FR-005 (FR11), no story yet | [#63](https://github.com/pup-cs-projects/cbpupsis-api/issues/63) |
+| EP-05 Enrollment, registration, and add or drop | FR-003 | [#61](https://github.com/pup-cs-projects/cbpupsis-api/issues/61) |
+| EP-06 Course schedule | FR-002 | [#60](https://github.com/pup-cs-projects/cbpupsis-api/issues/60) |
+| EP-07 Grades, rosters, and grade submission | FR-002 (grade viewing), FR-004 (rosters, submission) | [#60](https://github.com/pup-cs-projects/cbpupsis-api/issues/60), [#62](https://github.com/pup-cs-projects/cbpupsis-api/issues/62) |
+| EP-08 Academic standing and petitions | FR-005 (standing), FR-007 (petitions) | [#63](https://github.com/pup-cs-projects/cbpupsis-api/issues/63), [#65](https://github.com/pup-cs-projects/cbpupsis-api/issues/65) |
+| EP-09 Fees, assessments, and student accounts | FR-006 | [#64](https://github.com/pup-cs-projects/cbpupsis-api/issues/64) |
+| EP-10 Payments through Xendit | FR-006 | [#64](https://github.com/pup-cs-projects/cbpupsis-api/issues/64) |
+| EP-11 User administration and system configuration | FR-008 | [#66](https://github.com/pup-cs-projects/cbpupsis-api/issues/66) |
+| EP-12 Data management and system monitoring | FR-008 | [#66](https://github.com/pup-cs-projects/cbpupsis-api/issues/66) |
+| EP-13 Reports | FR-007 holds FR24; FR16 and FR23 have no parent yet | [#65](https://github.com/pup-cs-projects/cbpupsis-api/issues/65) |
+| EP-14 Notifications, EP-15 Security, EP-16 Infrastructure | no parent on the board yet (cross-cutting) | product owner to decide |
+
+The client epics EP-01 to EP-16 (cbpupsis-client#3 to #18) map the same way.
+
+
 | | |
 |---|---|
 | **Last updated** | 2026-09-15 |
-| **Boards** | [CBPUPSIS API](https://github.com/orgs/pup-cs-projects/projects/2) · [CBPUPSIS Client](https://github.com/orgs/pup-cs-projects/projects/3) |
+| **Board** | [CBPUPSIS](https://github.com/orgs/pup-cs-projects/projects/4) (projects 2 and 3 were retired on 2026-10-24) |
 | **Related** | [SRS.md](SRS.md) · [PRD.md](PRD.md) · [US-ACS.md](US-ACS.md) |
 
 How the SRS becomes work. Every epic exists **twice**, once per repository, with the same

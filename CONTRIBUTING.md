@@ -10,7 +10,7 @@ pull request. The frontend team has its own guide in
 | Frontend developers (2) | The web client, in `cbpupsis-client` |
 | Product owner (@JpCurada) | Backlog, priorities, final review, merges to `main` |
 
-Work is tracked on the [CBPUPSIS API board](https://github.com/orgs/pup-cs-projects/projects/2).
+Work in both repositories is tracked on one board, [CBPUPSIS](https://github.com/orgs/pup-cs-projects/projects/4).
 
 ## Contents
 
@@ -273,19 +273,24 @@ frontend team hears about it from you, not from a broken screen.
 Use the issue forms: **User story**, **Task**, **Bug report**, **Decision**. The full guide is
 [docs/tech-book/WRITING-ISSUES.md](docs/tech-book/WRITING-ISSUES.md). In short:
 
-- Titles: `EP-NN: <module>` for epics, `US-N: <capability>` for stories, `Decide: <question>` for
-  decisions, and a plain imperative sentence for tasks.
-- Labels: one `type:`, one `area:`, one `priority:`.
+- Titles: `FR-00N: <module>` for functional requirements, `US-<MODULE>-<NNN>: <capability>` for
+  stories, `[API] US-...` and `[WEB] US-...` for the backend and frontend halves of a story,
+  `Decide: <question>` for decisions, and a plain imperative sentence for other tasks.
+- Labels: one `type:`, one `module:`, and one MoSCoW label (`must-have`, `should-have`,
+  `could-have`, `wont-have`).
 - Stories describe what a user can observe and carry Given, When, Then acceptance criteria with
-  ids (`AC-4.1`) that tests reference.
-- Attach every story and task to its epic as a **sub-issue**.
+  ids (`AC-STU-001.1`) that tests reference.
+- Every `[API]` task names the permission each endpoint requires. Sample JSON in an issue is an
+  illustration, never a default.
+- Attach every story and task to its parent as a **sub-issue**, and add it to the
+  [CBPUPSIS board](https://github.com/orgs/pup-cs-projects/projects/4).
 - Write plainly. Do not use em dashes.
 
 ## 9. Definition of ready and done
 
 **Ready to start** when the issue has:
 
-- [ ] A parent epic, and `type:`, `area:`, and `priority:` labels
+- [ ] A parent issue, and `type:`, `module:`, and MoSCoW labels
 - [ ] Acceptance criteria that can fail, with ids for stories
 - [ ] An SRS reference
 - [ ] No open blocker (no `status: blocked`)
