@@ -12,12 +12,18 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     EnrollmentSummaryRead,
     TermEnrollmentRead,
 )
+from cbpupsis_shared.domains.enrollment.service import (
+    enrolled_sections,
+    record_enrollments,
+)
 
 __all__ = [
     "EnrollmentSummaryRead",
     "TermEnrollmentRead",
+    "enrolled_sections",
     "get_enrollment_summary",
     "get_term_enrollment",
+    "record_enrollments",
 ]
 
 

@@ -12,14 +12,23 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.curriculum import service
-from cbpupsis_shared.domains.curriculum.schemas import ProgramRead
+from cbpupsis_shared.domains.curriculum.schemas import ProgramRead, ScheduleCourse
+from cbpupsis_shared.domains.curriculum.service import record_courses
 
 __all__ = [
     "ProgramRead",
     "active_programs_by_code",
     "get_prescribed_load",
     "get_program",
+    "record_courses",
+    "schedule_courses",
 ]
+
+
+async def schedule_courses(
+    db: AsyncSession, ids: list[uuid.UUID]
+) -> list[ScheduleCourse]:
+    return await service.schedule_courses(db, ids)
 
 
 async def active_programs_by_code(

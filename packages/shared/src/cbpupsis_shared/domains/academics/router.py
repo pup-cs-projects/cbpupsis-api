@@ -1,7 +1,5 @@
-"""Router for the academics domain."""
-
-from __future__ import annotations
+"""Internal calendar reads have no public HTTP endpoints yet."""
 
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/academics", tags=["academics"])
+router = APIRouter()

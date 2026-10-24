@@ -1,4 +1,4 @@
-"""Pydantic schemas (DTOs) for the enrollment domain."""
+"""Enrollment DTOs, without another student's data."""
 
 from __future__ import annotations
 
@@ -41,3 +41,15 @@ class EnrollmentSummaryRead(BaseModel):
         if self.unit_ceiling is None:
             self.unit_ceiling = self.effective_ceiling
         return self
+
+
+class RecordEnrollment(BaseModel):
+    id: uuid.UUID
+    academic_term_id: uuid.UUID
+    section_id: uuid.UUID
+
+
+class EnrolledSection(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    section_id: uuid.UUID
+    status: str

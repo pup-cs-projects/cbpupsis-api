@@ -13,6 +13,11 @@ from cbpupsis_shared.domains.academics.schemas import (
     AcademicPeriodRead,
     AcademicTermRead,
 )
+from cbpupsis_shared.domains.academics.service import (
+    holidays,
+    record_terms,
+    resolve_term,
+)
 
 __all__ = [
     "AcademicEventRead",
@@ -21,7 +26,10 @@ __all__ = [
     "get_current_term",
     "get_term",
     "get_term_periods",
+    "holidays",
     "list_upcoming_events",
+    "record_terms",
+    "resolve_term",
 ]
 
 

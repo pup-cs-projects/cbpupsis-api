@@ -1,8 +1,9 @@
-"""Business logic for the academics domain."""
+"""Academic term, period, and calendar rules; no public term-management API."""
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
 from datetime import UTC, datetime, time
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,8 @@ from cbpupsis_shared.domains.academics.schemas import (
     AcademicEventRead,
     AcademicPeriodRead,
     AcademicTermRead,
+    HolidayRead,
+    TermRead,
 )
 
 
@@ -128,3 +131,23 @@ async def list_upcoming_events(
             )
         )
     return events
+
+
+async def record_terms(db: AsyncSession, ids: Collection[uuid.UUID]) -> list[TermRead]:
+    return [
+        TermRead.model_validate(row) for row in await repository.list_terms(db, ids)
+    ]
+
+
+async def resolve_term(
+    db: AsyncSession, year: str | None, semester: str | None
+) -> TermRead | None:
+    rows = await repository.find_terms(db, year, semester)
+    return TermRead.model_validate(rows[0]) if len(rows) == 1 else None
+
+
+async def holidays(db: AsyncSession, term_id: uuid.UUID) -> list[HolidayRead]:
+    return [
+        HolidayRead.model_validate(row)
+        for row in await repository.holidays(db, term_id)
+    ]

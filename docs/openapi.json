@@ -1366,6 +1366,983 @@
         }
       }
     },
+    "/api/v1/students/me/grades": {
+      "get": {
+        "tags": [
+          "student-grades"
+        ],
+        "summary": "Read Grades",
+        "description": "Read your finalized grades for one academic term (US-STU-004).\n\nRequires a live **student Bearer session** and the **ReadGrade**\npermission. `me` is resolved from the access token; no student number\nis needed. Other roles receive `404 RESOURCE_NOT_FOUND`.\n\nOmit both filters for the latest term containing posted marks, not\nnecessarily the current academic term. To select history, supply\n`year` and `semester` together, for example `year=2025-2026` and\n`semester=first`. Labels must match the stored term exactly; blank\nor unpaired filters return **422**.\n\nOnly finalized, locked, non-draft marks are visible. Each course has\nits code, title, units, final mark, status, posted date and any stored\nincomplete deadline. Decimal values are JSON **strings**. GWA is\nunit-weighted, excludes NSTP and nonnumeric marks, includes numeric\nfailures and rounds half-up to two places. No eligible numeric units\nmeans `gwa: null`.\n\nNo posted marks returns **200** with an explanatory empty state.\nStanding is read from a stored evaluation, never calculated here;\nmissing evaluation leaves standing and `unitReduction` null. This\nread does not submit/correct marks or convert expired incompletes.\nResponses use `Cache-Control: private, no-store`.",
+        "operationId": "read_grades_api_v1_students_me_grades_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Academic-year label exactly as stored. Supply together with semester, or omit both to select the latest term with posted marks.",
+              "examples": [
+                "2025-2026"
+              ],
+              "title": "Year"
+            },
+            "description": "Academic-year label exactly as stored. Supply together with semester, or omit both to select the latest term with posted marks."
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Semester label exactly as stored, including letter case. Required when year is supplied; blank or unpaired filters return 422.",
+              "examples": [
+                "first"
+              ],
+              "title": "Semester"
+            },
+            "description": "Semester label exactly as stored, including letter case. Required when year is supplied; blank or unpaired filters return 422."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GradesRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token, expired/revoked session, or inactive account. A live authenticated session is required."
+          },
+          "403": {
+            "description": "Missing the required read permission, or a temporary password must be changed (PASSWORD_CHANGE_REQUIRED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: the session is not a student session, no student record is available, or the supplied student number is not the signed-in student's own number."
+          },
+          "503": {
+            "description": "GRADE_RECORD_UNAVAILABLE: stored academic data cannot be safely read. No partial or fabricated record is returned."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/students/{student_number}/grades": {
+      "get": {
+        "tags": [
+          "student-grades"
+        ],
+        "summary": "Read Identified Grades",
+        "description": "Read your grades using an explicit student number (US-STU-004).\n\nRequires a live **student Bearer session** and **ReadGrade**. The\npath parameter must match the signed-in student's number exactly.\nThis is **not** a staff lookup or a way to read another student's\ngrades: foreign and unknown numbers both return\n`404 RESOURCE_NOT_FOUND` without confirming whether they exist.\n\nIn Scalar, enter your own student number in the path field, for\nexample `2021-00901-MN-0`, and use that same student's Bearer token.\nPrefer `/api/v1/students/me/grades` for normal frontend self-service.\n\nTerm selection, calculation rules, empty states and response fields\nare identical to the `me` endpoint. Omit both term filters for the\nlatest posted term, or supply `year` and `semester` together; blank\nor unpaired filters return **422**. Only finalized, non-draft marks\nare returned. Responses use `Cache-Control: private, no-store`.",
+        "operationId": "read_identified_grades_api_v1_students__student_number__grades_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "student_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The signed-in student's own institutional student number, not a user UUID. Another student's number and an unknown number both return 404 RESOURCE_NOT_FOUND.",
+              "examples": [
+                "2021-00901-MN-0"
+              ],
+              "title": "Student Number"
+            },
+            "description": "The signed-in student's own institutional student number, not a user UUID. Another student's number and an unknown number both return 404 RESOURCE_NOT_FOUND."
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Academic-year label exactly as stored. Supply together with semester, or omit both to select the latest term with posted marks.",
+              "examples": [
+                "2025-2026"
+              ],
+              "title": "Year"
+            },
+            "description": "Academic-year label exactly as stored. Supply together with semester, or omit both to select the latest term with posted marks."
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Semester label exactly as stored, including letter case. Required when year is supplied; blank or unpaired filters return 422.",
+              "examples": [
+                "first"
+              ],
+              "title": "Semester"
+            },
+            "description": "Semester label exactly as stored, including letter case. Required when year is supplied; blank or unpaired filters return 422."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GradesRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token, expired/revoked session, or inactive account. A live authenticated session is required."
+          },
+          "403": {
+            "description": "Missing the required read permission, or a temporary password must be changed (PASSWORD_CHANGE_REQUIRED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: the session is not a student session, no student record is available, or the supplied student number is not the signed-in student's own number."
+          },
+          "503": {
+            "description": "GRADE_RECORD_UNAVAILABLE: stored academic data cannot be safely read. No partial or fabricated record is returned."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/students/me/transcript": {
+      "get": {
+        "tags": [
+          "student-grades"
+        ],
+        "summary": "Read Transcript",
+        "description": "Read your academic history, paginated by term (US-STU-004).\n\nRequires a live **student Bearer session** and **ReadTranscript**.\nTerms containing finalized, non-draft marks are ordered newest first.\nPagination counts **terms**, not courses: `page` starts at 1 and\n`limit` defaults to 20 with a maximum of 100. Invalid values return\n**422**. `total` counts all available terms; `nextPage` is null when\nno later page exists.\n\nAll eligible attempts, including repeated courses and numeric\nfailures, contribute to GWA. NSTP and nonnumeric marks do not.\nCumulative GWA uses completed terms: their end date must be before\ntoday's Asia/Manila date. Ongoing terms remain visible but do not\ncontribute to cumulative GWA. Earned credits include posted passes,\nincluding ongoing terms, and count each catalog course only once.\n\nTop-level totals cover the **whole record**, independently of page\nand limit. Each term's running totals cover history through that\nterm. Decimal values are strings; averages round half-up to two\nplaces and are null when there are no eligible numeric units.\nNo posted marks returns **200** with empty terms and an explanation.\n\nUse `/api/v1/students/me/transcript/export` for a complete printable\nPDF, not just the current page. Responses are private and no-store.",
+        "operationId": "read_transcript_api_v1_students_me_transcript_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "One-based page of academic terms, newest first. A page beyond the last returns empty terms while preserving overall totals.",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "One-based page of academic terms, newest first. A page beyond the last returns empty terms while preserving overall totals."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum term blocks per page, not courses. Defaults to 20 and accepts 1 through 100; never changes cumulative totals.",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum term blocks per page, not courses. Defaults to 20 and accepts 1 through 100; never changes cumulative totals."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token, expired/revoked session, or inactive account. A live authenticated session is required."
+          },
+          "403": {
+            "description": "Missing the required read permission, or a temporary password must be changed (PASSWORD_CHANGE_REQUIRED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: the session is not a student session, no student record is available, or the supplied student number is not the signed-in student's own number."
+          },
+          "503": {
+            "description": "GRADE_RECORD_UNAVAILABLE: stored academic data cannot be safely read. No partial or fabricated record is returned."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/students/me/transcript/export": {
+      "get": {
+        "tags": [
+          "student-grades"
+        ],
+        "summary": "Export Transcript",
+        "description": "Download your complete unofficial transcript PDF (US-STU-004).\n\nRequires a live **student Bearer session** and **ReadTranscript**.\nThe PDF includes the university header, your identity, all posted\nterm tables, GWA/earned-unit totals and page numbers. It is labeled\n**Unofficial Transcript - Student Copy**, not an official registrar\ncertification. Table headings repeat when records span pages.\n\nExport always includes the **complete record**, regardless of JSON\npagination. This endpoint has no page/limit parameters or term\nfilters; supplying them does not narrow the PDF. No posted marks\nstill returns a valid PDF with an explanatory empty state.\n\nSuccess returns **200 application/pdf** with attachment filename\n`unofficial-transcript.pdf`, `Cache-Control: private, no-store`, and\n`X-Content-Type-Options: nosniff`. Use Scalar's response preview or\ndownload control; opening the URL in a new unauthenticated browser\ntab returns **401** because the Bearer token is not sent there.\n\nGeneration is in memory; no transcript file is stored by the API.\nRendering failure, timeout or inconsistent source data returns\n`503 GRADE_RECORD_UNAVAILABLE`, never a partial academic record.",
+        "operationId": "export_transcript_api_v1_students_me_transcript_export_get",
+        "responses": {
+          "200": {
+            "description": "Complete unofficial student transcript as a private PDF attachment, including an explanatory empty transcript if no finalized marks are available.",
+            "content": {
+              "application/pdf": {}
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token, expired/revoked session, or inactive account. A live authenticated session is required."
+          },
+          "403": {
+            "description": "Missing the required read permission, or a temporary password must be changed (PASSWORD_CHANGE_REQUIRED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: the session is not a student session, no student record is available, or the supplied student number is not the signed-in student's own number."
+          },
+          "503": {
+            "description": "GRADE_RECORD_UNAVAILABLE: academic data is inconsistent, or PDF rendering failed or exceeded its time limit."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/students/me/schedule": {
+      "get": {
+        "tags": [
+          "student-schedule"
+        ],
+        "summary": "Read My Course Schedule",
+        "description": "Read the signed-in student's officially enrolled courses, meeting times and weekly\ncontact-hour totals (US-STU-003).\n\n**Authentication:** a live student bearer session and `ReadSchedule` permission\nare required. Only the caller's records are accessible; this is not a staff or\nread-all endpoint. Downloading a Certificate of Registration is not required.\n\n**Term selection:** omit both `year` and `semester` for the current academic term,\nor supply both, for example `year=2026-2027&semester=first`. Historical configured\nterms are supported. Supplying just one selector or blank selectors returns 422.\n\n**Filtering:** `q` searches course code, title and faculty name case-insensitively.\nFor example, `q=CS001` narrows the rows and their totals. Clear `q` to restore the\nfull list; searching does not modify enrollment.\n\n**Response:** a direct snake_case JSON object, without a `status`/`data` wrapper.\nEach course includes its section, rooms, faculty, credit units, enrollment status,\nseparate lecture/lab hours and every meeting. Contact hours are weekly durations\ncalculated from meetings, not credit conversions or term-wide totals. Decimal\nquantities serialize as strings. Totals sum only the returned courses.\n\n**Empty states still return 200:** `notEnrolled` means no official enrollment for\nthe selected term; `noMatches` means the filter matched no enrolled courses;\n`termUnavailable` means the requested/current term configuration is unavailable.\nThese responses include an explanatory `message`, empty `courses` and zero totals.\nNonempty results have `state=ready`. Pending and dropped courses are excluded;\ncommitted enrollment changes are reflected on subsequent reads.\n\nResponses are private and use `Cache-Control: private, no-store`.",
+        "operationId": "read_schedule_api_v1_students_me_schedule_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Stored academic-year string, not a calendar-year integer. Supply with semester, or omit both to use the current academic term.",
+              "examples": [
+                "2026-2027"
+              ],
+              "title": "Year"
+            },
+            "description": "Stored academic-year string, not a calendar-year integer. Supply with semester, or omit both to use the current academic term."
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Semester identifier as stored for the academic term. Supply with year, or omit both for the current term; a single selector is rejected.",
+              "examples": [
+                "first"
+              ],
+              "title": "Semester"
+            },
+            "description": "Semester identifier as stored for the academic term. Supply with year, or omit both for the current term; a single selector is rejected."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Case-insensitive substring search across course code, course title and faculty name. Blank or whitespace-only values restore all courses. Only returned rows and totals are filtered; enrollment is never changed.",
+              "examples": [
+                "CS001",
+                "Algorithms",
+                "Synthetic Faculty"
+              ],
+              "default": "",
+              "title": "Q"
+            },
+            "description": "Case-insensitive substring search across course code, course title and faculty name. Blank or whitespace-only values restore all courses. Only returned rows and totals are filtered; enrollment is never changed."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Caller-owned courses and totals, or explained empty state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired or inactive student bearer session."
+          },
+          "403": {
+            "description": "The caller is not a student or lacks ReadSchedule permission."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: no accessible student identity. Foreign and nonexistent student numbers receive indistinguishable ownership errors."
+          },
+          "422": {
+            "description": "Invalid query parameters: supply year and semester together with nonblank values, respect field lengths and use a supported export format."
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE: schedule data or generation unavailable.",
+            "headers": {
+              "Retry-After": {
+                "description": "Wait 30 seconds before retrying.",
+                "schema": {
+                  "type": "integer",
+                  "example": 30
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/students/me/schedule/export": {
+      "get": {
+        "tags": [
+          "student-schedule"
+        ],
+        "summary": "Export My Course Schedule",
+        "description": "Download the signed-in student's complete officially enrolled schedule as a PDF\nor iCalendar attachment (US-STU-003). Requires a live student bearer session and\n`ReadSchedule` permission, just like the schedule read endpoint.\n\n**Choose a format:** `format=pdf` produces a university-headed printable document\nwith student identity, term, every course/meeting, credit units, separate weekly\nlecture/lab hours and totals. `format=ics` produces an iCalendar file with one\nrecurring event series per meeting slot, preserving separate lecture/lab times.\n\n**Select a term:** omit both `year` and `semester` for the current term, or supply\nboth, for example `year=2026-2027&semester=first`. Historical configured terms are\nsupported. The export always includes the complete selected term; the read\nendpoint's `q` filter does not restrict downloads and is not an export parameter.\nNo enrollment produces an empty schedule document/calendar. Missing term\nconfiguration produces an explanatory PDF or an empty calendar, not an ownership\n404.\n\n**Calendar behavior:** meeting times use Asia/Manila, weekly recurrences end at\nthe term boundary, and configured academic holidays are excluded. Stable opaque\nUIDs and durable SEQUENCE revisions support unchanged re-exports, updates and\ncancellation records for removed meetings. Import/re-import behavior depends on\nthe calendar client: downloading a file is not Google authorization or automatic\nsynchronization.\n\n**Download and failures:** 200 returns the file bytes, not JSON, with attachment\nfilename `course-schedule.pdf` or `course-schedule.ics`. The entire file is\nbuffered before responding. Generation has a ten-second deadline; failures\nreturn 503 `SERVICE_UNAVAILABLE` with `Retry-After: 30`, never a partial attachment.\nResponses are private and use `Cache-Control: private, no-store`.",
+        "operationId": "export_schedule_api_v1_students_me_schedule_export_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "pdf",
+                "ics"
+              ],
+              "type": "string",
+              "description": "Required download format: pdf for printing, ics for calendar import.",
+              "examples": [
+                "pdf",
+                "ics"
+              ],
+              "title": "Format"
+            },
+            "description": "Required download format: pdf for printing, ics for calendar import."
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Stored academic-year string, not a calendar-year integer. Supply with semester, or omit both to use the current academic term.",
+              "examples": [
+                "2026-2027"
+              ],
+              "title": "Year"
+            },
+            "description": "Stored academic-year string, not a calendar-year integer. Supply with semester, or omit both to use the current academic term."
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Semester identifier as stored for the academic term. Supply with year, or omit both for the current term; a single selector is rejected.",
+              "examples": [
+                "first"
+              ],
+              "title": "Semester"
+            },
+            "description": "Semester identifier as stored for the academic term. Supply with year, or omit both for the current term; a single selector is rejected."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Complete schedule file attachment in the requested format.",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "text/calendar": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Content-Disposition": {
+                "description": "Attachment named course-schedule.pdf or course-schedule.ics.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Private document; must not be stored in caches.",
+                "schema": {
+                  "type": "string",
+                  "example": "private, no-store"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired or inactive student bearer session."
+          },
+          "403": {
+            "description": "The caller is not a student or lacks ReadSchedule permission."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: no accessible student identity. Foreign and nonexistent student numbers receive indistinguishable ownership errors."
+          },
+          "422": {
+            "description": "Invalid query parameters: supply year and semester together with nonblank values, respect field lengths and use a supported export format."
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE: schedule data or generation unavailable.",
+            "headers": {
+              "Retry-After": {
+                "description": "Wait 30 seconds before retrying.",
+                "schema": {
+                  "type": "integer",
+                  "example": 30
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/students/{student_number}/schedule": {
+      "get": {
+        "tags": [
+          "student-schedule"
+        ],
+        "summary": "Read My Schedule by Student Number",
+        "description": "Read the signed-in student's officially enrolled courses, meeting times and weekly\ncontact-hour totals (US-STU-003).\n\n**Authentication:** a live student bearer session and `ReadSchedule` permission\nare required. Only the caller's records are accessible; this is not a staff or\nread-all endpoint. Downloading a Certificate of Registration is not required.\n\n**Term selection:** omit both `year` and `semester` for the current academic term,\nor supply both, for example `year=2026-2027&semester=first`. Historical configured\nterms are supported. Supplying just one selector or blank selectors returns 422.\n\n**Filtering:** `q` searches course code, title and faculty name case-insensitively.\nFor example, `q=CS001` narrows the rows and their totals. Clear `q` to restore the\nfull list; searching does not modify enrollment.\n\n**Response:** a direct snake_case JSON object, without a `status`/`data` wrapper.\nEach course includes its section, rooms, faculty, credit units, enrollment status,\nseparate lecture/lab hours and every meeting. Contact hours are weekly durations\ncalculated from meetings, not credit conversions or term-wide totals. Decimal\nquantities serialize as strings. Totals sum only the returned courses.\n\n**Empty states still return 200:** `notEnrolled` means no official enrollment for\nthe selected term; `noMatches` means the filter matched no enrolled courses;\n`termUnavailable` means the requested/current term configuration is unavailable.\nThese responses include an explanatory `message`, empty `courses` and zero totals.\nNonempty results have `state=ready`. Pending and dropped courses are excluded;\ncommitted enrollment changes are reflected on subsequent reads.\n\nResponses are private and use `Cache-Control: private, no-store`.\n\n\n**Explicit ownership check:** `student_number` must exactly match the signed-in\nstudent's institutional number. A different student's number and a nonexistent\nnumber both return the same 404 `RESOURCE_NOT_FOUND`; this endpoint cannot look\nup other students. Prefer `/api/v1/students/me/schedule` when the client does not\nneed to send an explicit identifier. Term selectors, filtering and totals behave\nidentically to that self route.",
+        "operationId": "read_identified_schedule_api_v1_students__student_number__schedule_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "student_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Your own institutional student number; must match the bearer session.",
+              "examples": [
+                "2021-00123-MN-0"
+              ],
+              "title": "Student Number"
+            },
+            "description": "Your own institutional student number; must match the bearer session."
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Stored academic-year string, not a calendar-year integer. Supply with semester, or omit both to use the current academic term.",
+              "examples": [
+                "2026-2027"
+              ],
+              "title": "Year"
+            },
+            "description": "Stored academic-year string, not a calendar-year integer. Supply with semester, or omit both to use the current academic term."
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Semester identifier as stored for the academic term. Supply with year, or omit both for the current term; a single selector is rejected.",
+              "examples": [
+                "first"
+              ],
+              "title": "Semester"
+            },
+            "description": "Semester identifier as stored for the academic term. Supply with year, or omit both for the current term; a single selector is rejected."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Case-insensitive substring search across course code, course title and faculty name. Blank or whitespace-only values restore all courses. Only returned rows and totals are filtered; enrollment is never changed.",
+              "examples": [
+                "CS001",
+                "Algorithms",
+                "Synthetic Faculty"
+              ],
+              "default": "",
+              "title": "Q"
+            },
+            "description": "Case-insensitive substring search across course code, course title and faculty name. Blank or whitespace-only values restore all courses. Only returned rows and totals are filtered; enrollment is never changed."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's schedule after verifying the supplied number.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired or inactive student bearer session."
+          },
+          "403": {
+            "description": "The caller is not a student or lacks ReadSchedule permission."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: no accessible student identity. Foreign and nonexistent student numbers receive indistinguishable ownership errors."
+          },
+          "422": {
+            "description": "Invalid query parameters: supply year and semester together with nonblank values, respect field lengths and use a supported export format."
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE: schedule data or generation unavailable.",
+            "headers": {
+              "Retry-After": {
+                "description": "Wait 30 seconds before retrying.",
+                "schema": {
+                  "type": "integer",
+                  "example": 30
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/students/me/schedule/google-calendar": {
+      "get": {
+        "tags": [
+          "google-calendar"
+        ],
+        "summary": "Read Google Calendar Connection",
+        "description": "Inspect the signed-in student's Google connection without starting a sync.\n\n**Access:** live SIS student bearer session and `ReadSchedule` permission.\nResponse is a direct snake_case object with `Cache-Control: private, no-store`.\nNo Google credentials, account identity or calendar IDs are returned.\n\n### Interpret the status\n- `enabled: false`: this optional integration is disabled on the deployment.\n- `connected`: a saved grant exists and is not marked `reconnectRequired`;\n  this alone does not prove successful delivery.\n- `disconnecting`: Google token revocation is pending.\n- `last_sync_at`: last successful worker reconciliation, including unchanged\n  checks. `next_sync_at` is a scheduled attempt, not a completion guarantee.\n- `targets[].provisioned`: a calendar was assigned, not proof of event delivery.\n\nPoll this endpoint after callback, sync or disconnect. Inspect `last_error`\nand verify the actual schedule in Google Calendar. After explicit disconnect,\nresponses expose `targets: []`, even when private reconnect mappings remain.",
+        "operationId": "read_connection_api_v1_students_me_schedule_google_calendar_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid/incomplete term selectors, or GOOGLE_CALENDAR_INVALID_STATE for an expired, replayed, superseded or foreign-session OAuth attempt. Start fresh authorization."
+          },
+          "401": {
+            "description": "Missing, expired or invalid SIS student bearer session. Google credentials are not SIS access tokens."
+          },
+          "403": {
+            "description": "A live student role is required. All operations except disconnect also require ReadSchedule permission."
+          },
+          "409": {
+            "description": "GOOGLE_CALENDAR_CONFLICT: inspect connection status. Authorization conflicts with an existing connection/pending revocation; sync conflicts with a missing connection, active job or term limit."
+          },
+          "503": {
+            "description": "GOOGLE_CALENDAR_UNAVAILABLE: integration is disabled, provider authorization/validation failed or the callback timed out. Retry-After: 30. A failed callback needs fresh authorization, not replay of the same code/state."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "google-calendar"
+        ],
+        "summary": "Disconnect Google Calendar",
+        "description": "Withdraw consent without deleting the student's Google calendar or events.\n\n**Access:** a live SIS student bearer session. Unlike the other Google\noperations, disconnect remains available after `ReadSchedule` is withdrawn.\nNo request body or Google account/calendar identifier is required.\n\n### Result and completion\n202 stops local sync immediately: `connected: false` and `targets: []`.\n`disconnecting: true` means token revocation is queued, not yet finished.\nKeep the worker running and poll GET until `disconnecting: false` and\n`next_sync_at: null`; inspect errors if revocation remains pending.\nAfter disconnect, `/sync` returns 409 until a fresh connection is completed.\n\n### Retention and reconnect\nExisting Google calendars/events remain visible. Only private non-credential\nmappings are retained for same-account reuse and hidden from disconnected\nresponses. An already in-flight provider request may finish. Wait for pending\nrevocation, then start new authorization/consent with the same Google account\nto reconnect. Repeating DELETE is safe: it does not delete calendars, create\na new grant or require the user to run PowerShell.",
+        "operationId": "disconnect_calendar_api_v1_students_me_schedule_google_calendar_delete",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid/incomplete term selectors, or GOOGLE_CALENDAR_INVALID_STATE for an expired, replayed, superseded or foreign-session OAuth attempt. Start fresh authorization."
+          },
+          "401": {
+            "description": "Missing, expired or invalid SIS student bearer session. Google credentials are not SIS access tokens."
+          },
+          "403": {
+            "description": "A live student role is required. All operations except disconnect also require ReadSchedule permission."
+          },
+          "409": {
+            "description": "GOOGLE_CALENDAR_CONFLICT: inspect connection status. Authorization conflicts with an existing connection/pending revocation; sync conflicts with a missing connection, active job or term limit."
+          },
+          "503": {
+            "description": "GOOGLE_CALENDAR_UNAVAILABLE: integration is disabled, provider authorization/validation failed or the callback timed out. Retry-After: 30. A failed callback needs fresh authorization, not replay of the same code/state."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/students/me/schedule/google-calendar/authorization": {
+      "post": {
+        "tags": [
+          "google-calendar"
+        ],
+        "summary": "Begin Google Calendar Authorization",
+        "description": "Create a short-lived Google consent attempt for the signed-in student.\n\n**Access:** live SIS student bearer session and `ReadSchedule`. Google consent\nconnects a calendar; it does not replace the SIS login.\n\n### Request body\nSend `{}` for the current configured term, or both selectors:\n`{\"year\":\"2026-2027\",\"semester\":\"first\"}`. Use the deployment's stored\nvalues; do not send blank strings or only one selector.\n\n### Scalar and browser workflow\n1. Send this request in Scalar with the student's `access_token`.\n2. Open the returned `authorization_url` in a browser and select the requested\n   app-created Calendar permission. Scalar does not replace Google consent.\n3. Google redirects to the configured frontend URI, **not** the backend POST\n   callback. Forward the new `state` and `code` to `/callback` using the\n   **same SIS session**, within `expires_in` (600 seconds).\n\nPowerShell is not required. State is single-use, protected by PKCE/OIDC nonce,\nand a new authorization supersedes the previous attempt. Never share the URL.\nExisting connections or pending revocations return 409; use `/sync` to add a\nterm when connected. Operators must configure Google settings and run the\nworker for background synchronization.",
+        "operationId": "begin_authorization_api_v1_students_me_schedule_google_calendar_authorization_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermSelection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid/incomplete term selectors, or GOOGLE_CALENDAR_INVALID_STATE for an expired, replayed, superseded or foreign-session OAuth attempt. Start fresh authorization."
+          },
+          "401": {
+            "description": "Missing, expired or invalid SIS student bearer session. Google credentials are not SIS access tokens."
+          },
+          "403": {
+            "description": "A live student role is required. All operations except disconnect also require ReadSchedule permission."
+          },
+          "409": {
+            "description": "GOOGLE_CALENDAR_CONFLICT: inspect connection status. Authorization conflicts with an existing connection/pending revocation; sync conflicts with a missing connection, active job or term limit."
+          },
+          "503": {
+            "description": "GOOGLE_CALENDAR_UNAVAILABLE: integration is disabled, provider authorization/validation failed or the callback timed out. Retry-After: 30. A failed callback needs fresh authorization, not replay of the same code/state."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/students/me/schedule/google-calendar/callback": {
+      "post": {
+        "tags": [
+          "google-calendar"
+        ],
+        "summary": "Complete Google Calendar Authorization",
+        "description": "Exchange a fresh Google browser redirect for an encrypted calendar grant.\n\n**Access:** the same live SIS student bearer session that began authorization,\nplus `ReadSchedule`. This is an authenticated POST, not Google's browser\nredirect destination.\n\n### Scalar request\nFrom the **new** redirect URL, extract `state` and `code`, URL-decoding each\nvalue exactly once locally. Send `{\"state\":\"...\",\"code\":\"...\"}`; do not\npaste the whole URL or use an online decoder. A missing local frontend page\nmay show connection refused while its address bar still contains the values.\nComplete within ten minutes; never expose codes/state in logs or screenshots.\n\n### Result and recovery\n200 means the grant was saved and initial sync queued, **not** that events\narrived. Poll GET connection status, then inspect Google Calendar. The worker\nmust be running. Same-account reconnect reuses known app-created mappings;\na different verified Google account never receives the previous mappings.\n\nExpired, replayed, superseded or foreign-session attempts return 400. Google\nexchange/verification failures return 503. Start fresh authorization after\neither failure; the consumed callback must not be replayed. Ensure the\nrequested Calendar permission was granted; no credentials are returned.",
+        "operationId": "complete_authorization_api_v1_students_me_schedule_google_calendar_callback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthCallback"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid/incomplete term selectors, or GOOGLE_CALENDAR_INVALID_STATE for an expired, replayed, superseded or foreign-session OAuth attempt. Start fresh authorization."
+          },
+          "401": {
+            "description": "Missing, expired or invalid SIS student bearer session. Google credentials are not SIS access tokens."
+          },
+          "403": {
+            "description": "A live student role is required. All operations except disconnect also require ReadSchedule permission."
+          },
+          "409": {
+            "description": "GOOGLE_CALENDAR_CONFLICT: inspect connection status. Authorization conflicts with an existing connection/pending revocation; sync conflicts with a missing connection, active job or term limit."
+          },
+          "503": {
+            "description": "GOOGLE_CALENDAR_UNAVAILABLE: integration is disabled, provider authorization/validation failed or the callback timed out. Retry-After: 30. A failed callback needs fresh authorization, not replay of the same code/state."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/students/me/schedule/google-calendar/sync": {
+      "post": {
+        "tags": [
+          "google-calendar"
+        ],
+        "summary": "Request Google Calendar Synchronization",
+        "description": "Queue one-way reconciliation of a student's SIS timetable into Google.\n\n**Access:** live SIS student bearer session, `ReadSchedule`, and a connected\nGoogle account. Send `{}` for the current term, or both `year` and `semester`\nusing the stored identifiers. Up to ten terms may be pinned; no silent term\nrollover overwrites a prior semester.\n\n### What is synchronized\nForces reconciliation of app-created calendar series with committed SIS\nenrollment, meeting details, term bounds and configured holiday exclusions.\nManaged Google fields may be overwritten; Google edits never change SIS.\nNo primary-calendar access, enrollment editing or approval APIs are involved.\n\n### Verify completion\n202 means **queued**. The returned `last_sync_at` may refer to an earlier job,\nand `last_error: null` alone is not proof of completion. Allow worker polling/\nbacklog, poll GET for a successful reconciliation, then inspect the calendar.\nRepeating unchanged sync must not create duplicate calendars/meeting series.\n\nMissing/revoking connections, active worker leases or the term limit return\n409. Inspect GET status before retrying. There is no immediate-delivery SLA.",
+        "operationId": "request_synchronization_api_v1_students_me_schedule_google_calendar_sync_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermSelection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid/incomplete term selectors, or GOOGLE_CALENDAR_INVALID_STATE for an expired, replayed, superseded or foreign-session OAuth attempt. Start fresh authorization."
+          },
+          "401": {
+            "description": "Missing, expired or invalid SIS student bearer session. Google credentials are not SIS access tokens."
+          },
+          "403": {
+            "description": "A live student role is required. All operations except disconnect also require ReadSchedule permission."
+          },
+          "409": {
+            "description": "GOOGLE_CALENDAR_CONFLICT: inspect connection status. Authorization conflicts with an existing connection/pending revocation; sync conflicts with a missing connection, active job or term limit."
+          },
+          "503": {
+            "description": "GOOGLE_CALENDAR_UNAVAILABLE: integration is disabled, provider authorization/validation failed or the callback timed out. Retry-After: 30. A failed callback needs fresh authorization, not replay of the same code/state."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/auth/faculty/login": {
       "post": {
         "tags": [
@@ -4022,6 +4999,18 @@
         "title": "AcademicPeriodRead",
         "description": "An active or upcoming enrollment / adjustment period."
       },
+      "AcademicStanding": {
+        "type": "string",
+        "enum": [
+          "Good Standing",
+          "Warning Level 1",
+          "Warning Level 2",
+          "Probation",
+          "College Dropping",
+          "University Dismissal"
+        ],
+        "title": "AcademicStanding"
+      },
       "AcademicTermRead": {
         "properties": {
           "id": {
@@ -4655,6 +5644,28 @@
         "title": "AuditEntryRead",
         "description": "One recorded administrative change, as returned by the API."
       },
+      "AuthorizationRead": {
+        "properties": {
+          "authorization_url": {
+            "type": "string",
+            "title": "Authorization Url",
+            "description": "Open in a browser and approve the requested Calendar access. Contains private single-use state; never log/share it or fetch it as a Scalar API request. Google redirects to the configured frontend URI."
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "description": "Attempt lifetime, in seconds.",
+            "default": 600
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "authorization_url"
+        ],
+        "title": "AuthorizationRead",
+        "description": "Browser consent instructions, not a connection or delivery confirmation."
+      },
       "Body_import_users_api_v1_users_import_post": {
         "properties": {
           "file": {
@@ -4669,6 +5680,34 @@
           "file"
         ],
         "title": "Body_import_users_api_v1_users_import_post"
+      },
+      "CalendarTargetRead": {
+        "properties": {
+          "year": {
+            "type": "string",
+            "title": "Year",
+            "description": "Stored academic year selected for synchronization."
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester",
+            "description": "Stored semester selected for synchronization."
+          },
+          "provisioned": {
+            "type": "boolean",
+            "title": "Provisioned",
+            "description": "An app-created calendar was assigned to this term. Does not prove all meetings were delivered; inspect sync status and Google."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "year",
+          "semester",
+          "provisioned"
+        ],
+        "title": "CalendarTargetRead",
+        "description": "One pinned academic term, with no Google calendar/event identifiers exposed."
       },
       "ChallengeRequest": {
         "properties": {
@@ -4715,6 +5754,80 @@
         ],
         "title": "Channel",
         "description": "Where a notification can be delivered.\n\nA ``StrEnum`` so it compares equal to the strings stored in preference rows\nand delivery receipts, without those columns needing a database enum that\nwould make adding a channel a migration."
+      },
+      "ConnectionRead": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Deployment-level Google integration flag, not student consent. Manual SIS schedule/PDF/ICS access remains separate."
+          },
+          "connected": {
+            "type": "boolean",
+            "title": "Connected",
+            "description": "A refresh grant is saved and not marked reconnectRequired. Not proof of recent sync, current Google availability or event delivery.",
+            "default": false
+          },
+          "disconnecting": {
+            "type": "boolean",
+            "title": "Disconnecting",
+            "description": "Google authorization revocation is pending. Keep the worker running and wait for false before beginning a fresh connection.",
+            "default": false
+          },
+          "last_sync_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync At",
+            "description": "UTC timestamp of the last successful reconciliation, including unchanged checks. May predate the current queued request; null before the first successful reconciliation. Not a Google-write timestamp."
+          },
+          "next_sync_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Sync At",
+            "description": "UTC due time for a worker attempt or revocation retry, not a completion deadline. Null when no attempt is scheduled, including completed disconnect or a terminal sync error."
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error",
+            "description": "Sanitized background error category, never Google payloads. reconnectRequired needs fresh consent; other terminal categories need operator review. Null alone does not prove a queued request completed."
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarTargetRead"
+            },
+            "type": "array",
+            "title": "Targets",
+            "description": "Pinned terms for this connection, up to ten. Empty after disconnect even when private same-account reconnect mappings remain. No Google calendar or event IDs are exposed."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "ConnectionRead",
+        "description": "Direct private/no-store status; no status/data wrapper or Google credentials."
       },
       "CourseSectionRead": {
         "properties": {
@@ -5183,6 +6296,248 @@
         "type": "object",
         "title": "ForgotPasswordResponse",
         "description": "Uniform response for a password-reset request."
+      },
+      "GradeCourse": {
+        "properties": {
+          "course_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Course Id",
+            "description": "Catalog course ID used to deduplicate credits."
+          },
+          "enrollment_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Enrollment Id",
+            "description": "Course-enrollment ID for this attempt."
+          },
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Catalog course code.",
+            "examples": [
+              "COMP101"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Catalog course title."
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units",
+            "description": "Lecture plus laboratory units, serialized as a Decimal string.",
+            "examples": [
+              "3.0"
+            ]
+          },
+          "final_grade": {
+            "type": "string",
+            "enum": [
+              "1.00",
+              "1.25",
+              "1.50",
+              "1.75",
+              "2.00",
+              "2.25",
+              "2.50",
+              "2.75",
+              "3.00",
+              "5.00",
+              "Inc",
+              "W"
+            ],
+            "title": "Final Grade",
+            "description": "Published final mark. Numeric marks have two places; Inc means incomplete and W means withdrawn.",
+            "examples": [
+              "1.25",
+              "Inc",
+              "W"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Passed",
+              "Failed",
+              "Incomplete",
+              "Withdrawn"
+            ],
+            "title": "Status",
+            "description": "Readable outcome for this attempt; Inc is not a numeric failure."
+          },
+          "posted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Posted At",
+            "description": "Stored final-submission timestamp in UTC."
+          },
+          "completion_deadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Deadline",
+            "description": "Stored UTC completion deadline for Inc; null for other marks. An expired deadline does not automatically change the mark on read."
+          }
+        },
+        "type": "object",
+        "required": [
+          "course_id",
+          "enrollment_id",
+          "code",
+          "title",
+          "units",
+          "final_grade",
+          "status",
+          "posted_at"
+        ],
+        "title": "GradeCourse",
+        "description": "One posted course attempt; draft marks are excluded."
+      },
+      "GradesRead": {
+        "properties": {
+          "student": {
+            "$ref": "#/components/schemas/RecordIdentity"
+          },
+          "term": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TermRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Selected term, or null when no matching term is found."
+          },
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/GradeCourse"
+            },
+            "type": "array",
+            "title": "Courses",
+            "description": "Posted attempts, sorted by course code."
+          },
+          "gwa": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gwa",
+            "description": "Unit-weighted term average as a two-place Decimal string. Excludes NSTP and nonnumeric marks, includes numeric failures; null when there are no eligible numeric units.",
+            "examples": [
+              "1.63"
+            ]
+          },
+          "units_earned": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units Earned",
+            "description": "Units of unique passed courses in this term, as a Decimal string. Failures, withdrawals and unresolved incompletes earn no units.",
+            "default": "0.0"
+          },
+          "academic_standing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcademicStanding"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stored selected-term evaluation, not recalculated from GWA. Null when not evaluated; Suspension is not an allowed standing."
+          },
+          "unitReduction": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unitreduction",
+            "description": "Standing-based unit reduction: 0 for Good Standing/Warning Level 1, 3 for Warning Level 2, 6 for Probation. Null when unevaluated or when dropping/dismissal requires the separate enrollment workflow."
+          },
+          "standing_state": {
+            "type": "string",
+            "enum": [
+              "evaluated",
+              "not_evaluated"
+            ],
+            "title": "Standing State",
+            "description": "Whether a stored term evaluation exists.",
+            "default": "not_evaluated"
+          },
+          "standing_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Message",
+            "description": "Explanation for unevaluated standing; null when evaluated.",
+            "default": "Academic standing has not yet been evaluated."
+          },
+          "standing_evaluated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Evaluated At",
+            "description": "Stored evaluation timestamp in UTC, or null."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "empty"
+            ],
+            "title": "State",
+            "description": "Whether the selection contains published marks.",
+            "default": "empty"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "Empty-selection explanation; null when marks are available.",
+            "default": "No finalized marks are available for this selection."
+          }
+        },
+        "type": "object",
+        "required": [
+          "student"
+        ],
+        "title": "GradesRead",
+        "description": "One student's selected term, published marks and stored standing.\n\nDecimal values are JSON strings. Averages use ROUND_HALF_UP to two\nplaces. Empty or wholly nonnumeric/NSTP results have a null GWA,\nnever a fabricated zero. Standing is not inferred from these marks."
       },
       "GroupCreate": {
         "properties": {
@@ -5666,6 +7021,36 @@
         ],
         "title": "NotificationRead",
         "description": "One notification as returned by the API."
+      },
+      "OAuthCallback": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 32,
+            "format": "password",
+            "title": "State",
+            "description": "Exact state from the new consent redirect, URL-decoded once. Bound to the student/session that called authorization; not a bearer token.",
+            "writeOnly": true
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "format": "password",
+            "title": "Code",
+            "description": "Short-lived code from that same new Google redirect, decoded once. Not the whole URL or a SIS token. Never log, persist or replay it.",
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "code"
+        ],
+        "title": "OAuthCallback",
+        "description": "Forward only the new redirect's decoded state/code using the same SIS session.\n\nEach value must be URL-decoded once locally, not via an online decoder.\nDo not paste the entire redirect URL. Attempts expire after ten minutes and\nare single-use; never log, share or replay these values."
       },
       "OverrideRequest": {
         "properties": {
@@ -6151,6 +7536,24 @@
         "title": "PolicyRead",
         "description": "Policy as returned by the API, including its resolved permissions."
       },
+      "RecordIdentity": {
+        "properties": {
+          "student_number": {
+            "type": "string",
+            "title": "Student Number"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "student_number",
+          "full_name"
+        ],
+        "title": "RecordIdentity"
+      },
       "RefreshRequest": {
         "properties": {
           "refresh_token": {
@@ -6299,6 +7702,321 @@
         ],
         "title": "RosterEntryRead",
         "description": "One enrolled student on a roster."
+      },
+      "ScheduleCourse": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Course code; searchable using q.",
+            "examples": [
+              "CS001"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Course title; searchable using q.",
+            "examples": [
+              "Algorithms"
+            ]
+          },
+          "section": {
+            "type": "string",
+            "title": "Section",
+            "description": "Enrolled section name.",
+            "examples": [
+              "BSCS 1-1"
+            ]
+          },
+          "section_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Section Id",
+            "description": "Enrolled section identifier."
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room",
+            "description": "Distinct meeting rooms joined by commas, or null."
+          },
+          "faculty_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Faculty Name",
+            "description": "Assigned faculty name; searchable using q; null if unassigned."
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units",
+            "description": "Credit units, serialized as a decimal string; not contact hours."
+          },
+          "lecture_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Lecture Hours",
+            "description": "Weekly lecture hours from meeting durations, as a decimal string."
+          },
+          "lab_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Lab Hours",
+            "description": "Weekly lab hours from meeting durations, as a decimal string."
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Official enrollment status; only enrolled courses are included.",
+            "examples": [
+              "enrolled"
+            ]
+          },
+          "meetings": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduleMeeting"
+            },
+            "type": "array",
+            "title": "Meetings",
+            "description": "All weekly meeting slots, preserving individual times and rooms."
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "section",
+          "section_id",
+          "room",
+          "faculty_name",
+          "units",
+          "lecture_hours",
+          "lab_hours",
+          "status",
+          "meetings"
+        ],
+        "title": "ScheduleCourse",
+        "description": "An officially enrolled course and its section's complete weekly timetable."
+      },
+      "ScheduleMeeting": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Distinct meeting identifier within the section."
+          },
+          "day_of_week": {
+            "type": "integer",
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Day Of Week",
+            "description": "Monday=0, Sunday=6"
+          },
+          "start_time": {
+            "type": "string",
+            "format": "time",
+            "title": "Start Time",
+            "description": "Meeting start time in Asia/Manila.",
+            "examples": [
+              "08:00:00"
+            ]
+          },
+          "end_time": {
+            "type": "string",
+            "format": "time",
+            "title": "End Time",
+            "description": "Meeting end time in Asia/Manila.",
+            "examples": [
+              "10:00:00"
+            ]
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room",
+            "description": "Meeting-specific room, or null if unassigned.",
+            "examples": [
+              "R101"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "lecture",
+              "laboratory"
+            ],
+            "title": "Type",
+            "description": "Contact-hour category for this meeting."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "day_of_week",
+          "start_time",
+          "end_time",
+          "room",
+          "type"
+        ],
+        "title": "ScheduleMeeting",
+        "description": "One weekly lecture or laboratory meeting, using Asia/Manila local times."
+      },
+      "ScheduleRead": {
+        "properties": {
+          "student_name": {
+            "type": "string",
+            "title": "Student Name",
+            "description": "Signed-in student's full name."
+          },
+          "student_number": {
+            "type": "string",
+            "title": "Student Number",
+            "description": "Signed-in student's institutional number.",
+            "examples": [
+              "2021-00123-MN-0"
+            ]
+          },
+          "term": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleTerm"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Selected term, or null when configuration is unavailable."
+          },
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduleCourse"
+            },
+            "type": "array",
+            "title": "Courses",
+            "description": "Officially enrolled courses matching q; empty for empty states."
+          },
+          "total_credits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Credits",
+            "description": "Sum of returned course credit units, as a decimal string.",
+            "default": "0"
+          },
+          "total_lecture_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Lecture Hours",
+            "description": "Sum of returned weekly lecture hours, as a decimal string.",
+            "default": "0"
+          },
+          "total_lab_hours": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Lab Hours",
+            "description": "Sum of returned weekly laboratory hours, as a decimal string.",
+            "default": "0"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "notEnrolled",
+              "noMatches",
+              "termUnavailable"
+            ],
+            "title": "State",
+            "description": "ready: courses returned; notEnrolled: no official enrollment; noMatches: filter matched none; termUnavailable: missing/ambiguous term configuration."
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "Human-readable explanation for an empty result; null when ready."
+          }
+        },
+        "type": "object",
+        "required": [
+          "student_name",
+          "student_number",
+          "term",
+          "state"
+        ],
+        "title": "ScheduleRead",
+        "description": "Direct snake_case schedule response; no status/data success envelope."
+      },
+      "ScheduleTerm": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Academic term identifier."
+          },
+          "year": {
+            "type": "string",
+            "title": "Year",
+            "description": "Stored academic-year string.",
+            "examples": [
+              "2026-2027"
+            ]
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester",
+            "description": "Stored semester identifier.",
+            "examples": [
+              "first"
+            ]
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date",
+            "description": "Inclusive term start date."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date",
+            "description": "Inclusive term end date and recurrence boundary."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "year",
+          "semester",
+          "start_date",
+          "end_date"
+        ],
+        "title": "ScheduleTerm",
+        "description": "Configured academic term selected for this schedule."
       },
       "ScholasticStandingRead": {
         "properties": {
@@ -6783,6 +8501,84 @@
         ],
         "title": "SuperadminTokenPair"
       },
+      "TermRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "academic_year": {
+            "type": "string",
+            "title": "Academic Year"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "academic_year",
+          "semester",
+          "start_date",
+          "end_date"
+        ],
+        "title": "TermRead"
+      },
+      "TermSelection": {
+        "properties": {
+          "year": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year",
+            "description": "Stored academic year, not a calendar date. Pair with semester or omit both for the current configured term; do not send an empty string.",
+            "examples": [
+              "2026-2027"
+            ]
+          },
+          "semester": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 30,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semester",
+            "description": "Stored semester identifier, such as first, not a numeric position. Supply with year or omit both; do not send an empty string.",
+            "examples": [
+              "first"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TermSelection",
+        "description": "Send {} for the current configured term, or provide both stored selectors.\n\nBlank strings are invalid. This selects a term; it does not change SIS\nenrollment, term configuration or the student's Google account."
+      },
       "TokenPair": {
         "properties": {
           "access_token": {
@@ -6862,6 +8658,172 @@
           "challenge_token"
         ],
         "title": "TotpEnrollmentRequest"
+      },
+      "TranscriptRead": {
+        "properties": {
+          "student": {
+            "$ref": "#/components/schemas/RecordIdentity"
+          },
+          "terms": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptTerm"
+            },
+            "type": "array",
+            "title": "Terms",
+            "description": "This page's term blocks, newest first."
+          },
+          "cumulative_gwa": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Gwa",
+            "description": "Whole-record completed-term GWA as a two-place Decimal string. Null with no eligible numeric units; independent of the requested page.",
+            "examples": [
+              "2.21"
+            ]
+          },
+          "total_units_earned": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Units Earned",
+            "description": "Whole-record earned units as a Decimal string, counting each passed catalog course once. Includes passes in ongoing terms.",
+            "default": "0.0"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "description": "Requested one-based term page."
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "description": "Requested term-page size, default 20 and maximum 100."
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Number of terms with published marks across all pages."
+          },
+          "nextPage": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextpage",
+            "description": "Next term page number, or null when no later page exists."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "empty"
+            ],
+            "title": "State",
+            "description": "Whole-record availability. Remains available for an out-of-range page when other pages contain marks.",
+            "default": "empty"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "Explanation when no posted marks exist anywhere in the record.",
+            "default": "No finalized marks are available."
+          }
+        },
+        "type": "object",
+        "required": [
+          "student",
+          "page",
+          "limit",
+          "total"
+        ],
+        "title": "TranscriptRead",
+        "description": "Paginated term history with whole-record totals.\n\nEvery finalized attempt remains visible. All eligible attempts count\ntoward GWA, but each passed catalog course earns cumulative credit\nonly once. Decimal values are strings, not floating-point numbers."
+      },
+      "TranscriptTerm": {
+        "properties": {
+          "term": {
+            "$ref": "#/components/schemas/TermRead"
+          },
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/GradeCourse"
+            },
+            "type": "array",
+            "title": "Courses"
+          },
+          "gwa": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gwa",
+            "description": "Term GWA using the same rules as grades."
+          },
+          "units_earned": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units Earned",
+            "description": "Unique passed-course units within this term."
+          },
+          "cumulative_gwa": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Gwa",
+            "description": "GWA from eligible attempts in completed terms up to this term; computed from unrounded totals, independently of pagination."
+          },
+          "total_units_earned": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Units Earned",
+            "description": "Running earned units through this term, counting each passed catalog course only once across history."
+          },
+          "completed": {
+            "type": "boolean",
+            "title": "Completed",
+            "description": "True when the term end date is before today's Asia/Manila date. Ongoing terms are visible but excluded from cumulative GWA."
+          }
+        },
+        "type": "object",
+        "required": [
+          "term",
+          "courses",
+          "gwa",
+          "units_earned",
+          "cumulative_gwa",
+          "total_units_earned",
+          "completed"
+        ],
+        "title": "TranscriptTerm",
+        "description": "One term's posted attempts and running totals through that term."
       },
       "UnreadCount": {
         "properties": {

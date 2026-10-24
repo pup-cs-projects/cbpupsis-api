@@ -43,6 +43,83 @@ from cbpupsis_database.models.users import (
 LIVE_USERS = select(User).where(User.deleted_at.is_(None))
 
 
+async def get_record_identity(db: AsyncSession, student_id: uuid.UUID):
+    """Read identity only for the already-authenticated owner's active account.
+
+    SQL::
+
+        SELECT s.student_number, u.full_name, p.first_name, p.last_name
+        FROM users u JOIN student_profiles s ON s.user_id = u.id
+        LEFT JOIN user_profiles p ON p.user_id = u.id
+        WHERE u.id = :student_id AND u.deleted_at IS NULL AND u.is_active;
+    """
+    result = await db.execute(
+        select(
+            StudentProfile.student_number,
+            User.full_name,
+            UserProfile.first_name,
+            UserProfile.last_name,
+        )
+        .join(StudentProfile, StudentProfile.user_id == User.id)
+        .outerjoin(UserProfile, UserProfile.user_id == User.id)
+        .where(
+            User.id == student_id, User.deleted_at.is_(None), User.is_active.is_(True)
+        )
+    )
+    return result.one_or_none()
+
+
+async def schedule_identity(db: AsyncSession, user_id: uuid.UUID):
+    """Read only the caller's institutional identity.
+
+    SQL::
+
+        SELECT sp.student_number, u.full_name, p.first_name, p.last_name
+        FROM users u JOIN student_profiles sp ON sp.user_id = u.id
+        LEFT JOIN user_profiles p ON p.user_id = u.id
+        WHERE u.id = :user_id AND u.deleted_at IS NULL AND u.is_active = true;
+    """
+    return (
+        await db.execute(
+            select(
+                StudentProfile.student_number,
+                User.full_name,
+                UserProfile.first_name,
+                UserProfile.last_name,
+            )
+            .join(StudentProfile, StudentProfile.user_id == User.id)
+            .outerjoin(UserProfile, UserProfile.user_id == User.id)
+            .where(
+                User.id == user_id, User.deleted_at.is_(None), User.is_active.is_(True)
+            )
+        )
+    ).first()
+
+
+async def schedule_names(db: AsyncSession, ids: list[uuid.UUID]):
+    """Batch-read live faculty display names without exposing user records.
+
+    SQL::
+
+        SELECT u.id, u.full_name, p.first_name, p.last_name
+        FROM users u LEFT JOIN user_profiles p ON p.user_id = u.id
+        WHERE u.id IN (:ids) AND u.deleted_at IS NULL AND u.is_active = true;
+    """
+    if not ids:
+        return []
+    return (
+        await db.execute(
+            select(
+                User.id, User.full_name, UserProfile.first_name, UserProfile.last_name
+            )
+            .outerjoin(UserProfile, UserProfile.user_id == User.id)
+            .where(
+                User.id.in_(ids), User.deleted_at.is_(None), User.is_active.is_(True)
+            )
+        )
+    ).all()
+
+
 async def get_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
     """Return one live user by primary key, or ``None``.
 

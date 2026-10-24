@@ -1,4 +1,4 @@
-"""Pydantic schemas (DTOs) for the academics domain."""
+"""Academic term, period, calendar, and holiday DTOs."""
 
 from __future__ import annotations
 
@@ -54,3 +54,18 @@ class AcademicEventRead(BaseModel):
     is_multi_day: bool = False
     category: str = "ACADEMIC_CALENDAR"
     description: str | None = None
+
+
+class TermRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    academic_year: str
+    semester: str
+    start_date: date
+    end_date: date
+
+
+class HolidayRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    start_date: date
+    end_date: date | None

@@ -1,7 +1,5 @@
-"""Router for the enrollment domain."""
-
-from __future__ import annotations
+"""Enrollment approval routes belong to a separate story."""
 
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/enrollment", tags=["enrollment"])
+router = APIRouter()
