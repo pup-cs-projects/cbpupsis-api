@@ -458,6 +458,7 @@ source = { editable = "packages/core" }
 dependencies = [
     { name = "boto3" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "pydantic", extra = ["email"] },
     { name = "pydantic-settings" },
     { name = "redis" },
@@ -468,6 +469,7 @@ dependencies = [
 requires-dist = [
     { name = "boto3" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "pydantic", extras = ["email"] },
     { name = "pydantic-settings" },
     { name = "redis", specifier = ">=5.0" },

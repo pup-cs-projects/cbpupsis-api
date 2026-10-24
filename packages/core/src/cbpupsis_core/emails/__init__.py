@@ -2,7 +2,7 @@
 
 Two concerns that change for unrelated reasons, so they are two modules::
 
-    sender.py      the EmailSender protocol: SES, console, and mail catcher
+    sender.py      the EmailSender protocol: Resend, console, and mail catcher
     templates.py   the bodies — subject and text for each transactional email
 
 Wording changes weekly and is reviewed by whoever owns the copy; transport
@@ -27,9 +27,10 @@ from __future__ import annotations
 
 from cbpupsis_core.emails.sender import (
     ConsoleEmailSender,
+    EmailDeliveryError,
     EmailSender,
     MailCatcherSender,
-    SESEmailSender,
+    ResendEmailSender,
     get_email_sender,
     send_email,
 )
@@ -50,9 +51,10 @@ __all__ = [
     "VERIFICATION_SUBJECT",
     "WELCOME_SUBJECT",
     "ConsoleEmailSender",
+    "EmailDeliveryError",
     "EmailSender",
     "MailCatcherSender",
-    "SESEmailSender",
+    "ResendEmailSender",
     "get_email_sender",
     "password_changed_email",
     "password_reset_email",
