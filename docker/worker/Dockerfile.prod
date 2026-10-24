@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1
+#
+# Production image for the outbox worker on AWS Lambda. Unlike the app images
+# this is not a web server: Lambda's Python runtime calls
+# cbpupsis_shared.worker.lambda_handler directly, once per EventBridge tick.
+# Compose still runs the worker from the admin image (`python -m
+# cbpupsis_shared.worker`); that image cannot serve here, because the Lambda Web
+# Adapter in it waits for a web server that the worker never starts.
+#
+# Contains only the kernel packages (core, database, shared): the worker never
+# imports an app.
+#
+# Build from the PROJECT ROOT, not from docker/:
+#   docker build -f docker/worker/Dockerfile.prod -t worker .
+
+# ---------- build stage ----------
+# The Lambda base image itself, so compiled wheels (asyncpg, bcrypt,
+# cryptography) are chosen for exactly the runtime's Python and libc.
+FROM public.ecr.aws/lambda/python:3.12 AS build
+
+COPY --from=ghcr.io/astral-sh/uv:0.9.9 /uv /bin/
+
+WORKDIR /build
+
+COPY pyproject.toml uv.lock ./
+COPY packages/core ./packages/core
+COPY packages/database ./packages/database
+COPY packages/shared ./packages/shared
+
+# Lambda's runtime imports from LAMBDA_TASK_ROOT, not from a virtualenv, so the
+# dependencies are installed flat into a target directory. --frozen exports
+# exactly what uv.lock records; --no-deps then installs that list and nothing a
+# resolver might add, so the image runs what the test suite ran.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv export --frozen --no-dev --no-editable --no-hashes \
+      --package cbpupsis-shared --format requirements-txt -o requirements.txt && \
+    uv pip install --no-deps --compile-bytecode --python python3.12 \
+      --target /build/task -r requirements.txt
+
+# ---------- runtime stage ----------
+FROM public.ecr.aws/lambda/python:3.12 AS runtime
+
+COPY --from=build /build/task ${LAMBDA_TASK_ROOT}
+
+# Secrets are injected at runtime (Secrets Manager, env), never baked into a
+# layer: anyone who can pull the image can read every layer.
+CMD ["cbpupsis_shared.worker.lambda_handler"]

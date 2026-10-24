@@ -42,9 +42,10 @@ repos:
       - id: mixed-line-ending
         args: [--fix=no]
       # The org's Free plan cannot protect branches on private repositories,
-      # so "never commit directly to main or dev" is enforced on each machine.
+      # so "never commit directly to main, staging, or dev" is enforced on each
+      # machine. A push to staging or main deploys, which makes it matter more.
       - id: no-commit-to-branch
-        args: [--branch, main, --branch, dev]
+        args: [--branch, main, --branch, staging, --branch, dev]
 
   # Ruff replaces autoflake, isort, flake8, and black, configured once under
   # [tool.ruff] in pyproject.toml. Do not add black beside it: the two

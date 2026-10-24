@@ -153,13 +153,32 @@ run `make create-admin EMAIL=you@example.com` (or
 7. **Merge.** When CI is green and one reviewer has approved, a maintainer **squashes and
    merges**. The PR title becomes the commit on `dev`. Delete the branch afterwards.
 
-`dev` is released to `main` by the product owner through a PR from `dev` to `main`.
+### Releasing
+
+Releases move `dev` -> `staging` -> `main`, each step a pull request merged by the product owner.
+A merge into `staging` deploys the staging environment, and a merge into `main` deploys
+production (see `deploy.yml` below).
+
+1. Open a PR from `dev` to `staging`. Merging it deploys staging.
+2. Check the release on the staging portals.
+3. Open a PR from `staging` to `main`. Merging it deploys production.
+
+Use a **merge commit**, not a squash, for `dev` -> `staging` and `staging` -> `main`, so the
+three branches keep the same history and the next release PR shows only what is new.
+
+An urgent fix may go `hotfix/<name>` -> `main` directly. Afterwards open a PR from `main` back
+into `staging` and from `staging` into `dev`, so the fix is not lost by the next release.
+
+Every migration must be **expand then contract**: a deploy that fails its smoke test rolls the
+code back, but not the database, so the previous code must still work against the new schema.
+Add a column in one release and drop the old one in a later release, never in the same one.
 
 ## 4. Branches and commits
 
 | Branch | Purpose | Example |
 |---|---|---|
-| `main` | Released code. Never commit to it directly. | |
+| `main` | Production. A merge deploys it. Never commit to it directly. | |
+| `staging` | The release candidate. A merge deploys staging. Never commit to it directly. | |
 | `dev` | Integration branch. Every PR targets it. Never commit to it directly. | |
 | `feature/<name>` | New work | `feature/account-lockout` |
 | `bugfix/<name>` | A fix for something on `dev` | `bugfix/gpa-excludes-nstp` |
@@ -198,7 +217,7 @@ Installed by `uv run pre-commit install`, configured in `.pre-commit-config.yaml
 |---|---|---|
 | File hygiene | commit | valid YAML, JSON, TOML; trailing whitespace; final newline; merge markers; large files; mixed line endings; stray debugger calls |
 | `detect-private-key` | commit | no private keys in the diff |
-| `no-commit-to-branch` | commit | refuses commits on `main` and `dev` |
+| `no-commit-to-branch` | commit | refuses commits on `main`, `staging`, and `dev` |
 | `ruff-check --fix` | commit | lint (PEP 8, imports, bugbear, pyupgrade) and fixes what it can |
 | `ruff-format` | commit | formatting |
 | `bandit` | commit | security lint over `packages/`, `apps/`, `scripts/`, and `main.py` |
@@ -213,9 +232,13 @@ moves the failure to your PR.
 
 | Workflow | When | What |
 |---|---|---|
-| `ci.yml` | every push to `main` or `dev`, and every PR | pre-commit hooks; `pytest` with coverage; `pip-audit` for vulnerable dependencies |
+| `ci.yml` | every push to `dev`, every PR, and as the first stage of every deploy | pre-commit hooks; `pytest` with coverage; `pip-audit` for vulnerable dependencies |
+| `deploy.yml` | every push to `staging` (deploys staging) or `main` (deploys production) | CI; database migrations; builds the student, faculty, admin, and worker images; updates each Lambda function; smoke-tests each one and rolls it back to its previous image if the test fails |
 | `e2e.yml` | manual only (Actions tab), paused until the Bruno collection stops using the removed `/auth/register` | starts Docker, Postgres, and the API, seeds accounts, runs the Bruno suite |
-| `pr-conventions.yml` | every PR | Conventional Commits title; branch name; PR targets `dev` |
+| `pr-conventions.yml` | every PR | Conventional Commits title; branch name; base branch (`dev` for work, `dev` -> `staging` -> `main` for releases) |
+
+A deploy that fails shows as a red run on the `staging` or `main` branch. The infrastructure it
+deploys to is defined in `cbpupsis-infra`.
 
 The org is on the GitHub Free plan, so these checks cannot be made required. **The team rule is
 that nobody merges a PR with a red check.** To read a failure: `gh run view <id> --log-failed`.
@@ -280,7 +303,7 @@ Use the issue forms: **User story**, **Task**, **Bug report**, **Decision**. The
 | Symptom | Fix |
 |---|---|
 | `Permission denied` on push | Accept the org invitation and confirm you have write access to the repo |
-| Commit refused: "Don't commit to branch" | You are on `dev` or `main`. `git checkout -b feature/<name>`, then commit |
+| Commit refused: "Don't commit to branch" | You are on `dev`, `staging`, or `main`. `git checkout -b feature/<name>`, then commit |
 | Commit refused by `conventional-pre-commit` | Rewrite the message as `type(scope): description` |
 | Hook changed files and the commit stopped | `git add` those files and commit again |
 | `make: command not found` on Windows | Use the plain commands shown next to each make target |
