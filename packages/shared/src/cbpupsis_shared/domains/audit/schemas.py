@@ -11,7 +11,7 @@ import uuid
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, field_serializer
+from pydantic import BaseModel, ConfigDict, IPvAnyAddress, field_serializer
 
 
 class AuditEntryRead(BaseModel):
@@ -43,7 +43,7 @@ class SignInAttemptRead(BaseModel):
     id: uuid.UUID
     attempted_id: str
     user_id: uuid.UUID | None
-    ip_address: str | None
+    ip_address: IPvAnyAddress | None
     user_agent: str | None
     success: bool
     failure_reason: str | None
@@ -54,10 +54,6 @@ class SignInAttemptRead(BaseModel):
     def serialize_created_at(self, value: datetime) -> str:
         """Same rendering as :class:`AuditEntryRead`."""
         return render_in_utc8(value)
-
-    @field_serializer("ip_address")
-    def serialize_ip_address(self, value: object) -> str | None:
-        return None if value is None else str(value)
 
 
 def render_in_utc8(value: datetime) -> str:

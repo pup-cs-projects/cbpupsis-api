@@ -136,6 +136,9 @@ worker:  ## Run the outbox worker in the foreground, for debugging
 seed-e2e:  ## Seed the verified accounts the HTTP suite logs in as (idempotent)
 	$(RUN_ADMIN) python -m scripts.seed_e2e $(if $(PASSWORD),--password $(PASSWORD),)
 
+seed-demo:  ## Seed (or reset) one shared demo account per portal (idempotent)
+	$(RUN_ADMIN) python -m scripts.seed_demo $(if $(PASSWORD),--password $(PASSWORD),)
+
 # --- users ------------------------------------------------------------------
 
 create-admin:  ## Promote an existing user to Admins: make create-admin EMAIL=you@example.com
