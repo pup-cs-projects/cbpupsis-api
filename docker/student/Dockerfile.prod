@@ -51,6 +51,12 @@ WORKDIR /app
 
 COPY --from=build --chown=appuser:appgroup /app /app
 
+# Lambda ignores USER and runs the container as its own non-root user, which
+# cannot enter /app (useradd -m made it appuser's 0700 home). Without this the
+# function fails at start with Runtime.InvalidEntrypoint. Read and traverse
+# only: nothing here needs to be written at runtime.
+RUN chmod -R a+rX /app
+
 USER appuser
 
 EXPOSE 8001
