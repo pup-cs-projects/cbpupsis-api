@@ -89,6 +89,7 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ReadCourseSection", "View the course sections assigned to you"),
     ("ReadGrade", "Read your own finalized grades"),
     ("ReadTranscript", "Read and export your own transcript"),
+    ("ReadSchedule", "Read and export your own student course schedule"),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -106,6 +107,7 @@ POLICIES: dict[str, list[str]] = {
     "CourseSectionReader": ["ReadCourseSection"],
     "GradeReader": ["ReadGrade"],
     "TranscriptReader": ["ReadTranscript"],
+    "ScheduleReader": ["ReadSchedule"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
@@ -138,7 +140,7 @@ GROUPS: dict[str, list[str]] = {
     ADMIN_GROUP: [],
     FACULTY_GROUP: ["CourseSectionReader"],
     # Superadmin-created student accounts join this group.
-    STUDENT_GROUP: ["GradeReader", "TranscriptReader"],
+    STUDENT_GROUP: ["GradeReader", "TranscriptReader", "ScheduleReader"],
     SUPERADMIN_GROUP: list(POLICIES),
 }
 

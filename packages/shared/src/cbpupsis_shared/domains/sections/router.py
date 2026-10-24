@@ -1,4 +1,4 @@
-"""No shared section HTTP routes; the faculty facade owns its endpoints."""
+"""Sections are mounted through the faculty-owned authorization adapter."""
 
 from fastapi import APIRouter
 

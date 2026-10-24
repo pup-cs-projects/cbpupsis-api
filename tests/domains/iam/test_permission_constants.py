@@ -30,14 +30,13 @@ import pytest
 from cbpupsis_api_admin.domains.superadmin_ops import (
     constants as superadmin_ops_constants,
 )
-from cbpupsis_api_faculty.domains.faculty_sections import (
-    constants as sections_constants,
-)
 from cbpupsis_api_student.domains.items import constants as items_constants
+from cbpupsis_api_student.domains.schedule import constants as schedule_constants
 from cbpupsis_shared.domains.auth import constants as auth_constants
 from cbpupsis_shared.domains.grading import constants as grading_constants
 from cbpupsis_shared.domains.iam import constants as iam_constants
 from cbpupsis_shared.domains.notifications import constants as notifications_constants
+from cbpupsis_shared.domains.sections import constants as sections_constants
 from cbpupsis_shared.domains.users import constants as users_constants
 from scripts.seed_iam import GROUPS, PERMISSIONS
 
@@ -51,6 +50,7 @@ DOMAIN_CONSTANTS: dict[str, ModuleType] = {
     "notifications": notifications_constants,
     "sections": sections_constants,
     "grading": grading_constants,
+    "schedule": schedule_constants,
     "superadmin_ops": superadmin_ops_constants,
 }
 

@@ -27,3 +27,14 @@ class RecordCourse(BaseModel):
     course_code: str
     title: str
     total_units: Decimal
+
+
+class ScheduleCourse(BaseModel):
+    """Course catalog fields used by student schedules."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    course_code: str
+    title: str
+    lecture_units: Decimal
+    lab_units: Decimal

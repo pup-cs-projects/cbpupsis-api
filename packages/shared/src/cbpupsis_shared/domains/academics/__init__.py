@@ -1,1 +1,1 @@
-"""Academic term read interfaces."""
+"""Academic term and holiday reads."""

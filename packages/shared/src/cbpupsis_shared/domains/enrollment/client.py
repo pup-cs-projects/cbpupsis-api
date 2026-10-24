@@ -1,5 +1,8 @@
-"""Public internal interface for owner-scoped enrollment history."""
+"""Public enrollment interface."""
 
-from cbpupsis_shared.domains.enrollment.service import record_enrollments
+from cbpupsis_shared.domains.enrollment.service import (
+    enrolled_sections,
+    record_enrollments,
+)
 
-__all__ = ["record_enrollments"]
+__all__ = ["enrolled_sections", "record_enrollments"]

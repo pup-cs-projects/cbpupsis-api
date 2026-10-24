@@ -25,7 +25,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from cbpupsis_core.config import settings
-from cbpupsis_core.logging import request_id_var
+from cbpupsis_core.logging import request_id_var, request_log_path
 
 logger = logging.getLogger(__name__)
 
@@ -55,11 +55,7 @@ def register_middleware(app: FastAPI) -> None:
         if private:
             response.headers["Cache-Control"] = "private, no-store"
             response.headers["X-Content-Type-Options"] = "nosniff"
-        path = (
-            getattr(request.scope.get("route"), "path", "private-record")
-            if private
-            else request.url.path
-        )
+        path = request_log_path(request)
         if private and response.status_code >= 400:
             logger.warning(
                 "grades.request_refused",

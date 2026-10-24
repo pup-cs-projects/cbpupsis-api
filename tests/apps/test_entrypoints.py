@@ -76,6 +76,14 @@ def test_student_records_have_one_public_route_per_operation(app: FastAPI) -> No
         ("get", "/api/v1/students/me/transcript"),
         ("get", "/api/v1/students/me/transcript/export"),
         ("get", "/api/v1/students/{student_number}/grades"),
+        ("get", "/api/v1/students/me/schedule"),
+        ("get", "/api/v1/students/me/schedule/export"),
+        ("get", "/api/v1/students/{student_number}/schedule"),
+        ("get", "/api/v1/students/me/schedule/google-calendar"),
+        ("delete", "/api/v1/students/me/schedule/google-calendar"),
+        ("post", "/api/v1/students/me/schedule/google-calendar/authorization"),
+        ("post", "/api/v1/students/me/schedule/google-calendar/callback"),
+        ("post", "/api/v1/students/me/schedule/google-calendar/sync"),
     }
 
 
@@ -99,6 +107,107 @@ def test_the_composed_app_registers_each_operation_once() -> None:
         for op in item.values()
     )
     assert not [op_id for op_id, n in counts.items() if n > 1]
+
+
+@pytest.mark.parametrize("app", [student_app, main.app], ids=["student", "composed"])
+def test_schedule_self_routes_and_removed_alias_contract(app: FastAPI) -> None:
+    paths = app.openapi()["paths"]
+    for suffix in ("", "/export"):
+        canonical = paths[f"/api/v1/students/me/schedule{suffix}"]["get"]
+        assert f"/api/v1/student/schedule{suffix}" not in paths
+        assert not canonical.get("deprecated", False)
+        assert canonical["security"] == [{"HTTPBearer": []}]
+    assert "/api/v1/students/{student_number}/schedule" in paths
+
+
+@pytest.mark.parametrize("app", [student_app, main.app], ids=["student", "composed"])
+def test_schedule_openapi_documents_selectors_filters_and_downloads(
+    app: FastAPI,
+) -> None:
+    schema = app.openapi()
+    paths = schema["paths"]
+    base = "/api/v1/students/me/schedule"
+    for path in (base, f"{base}/export", "/api/v1/students/{student_number}/schedule"):
+        operation = paths[path]["get"]
+        assert len(operation["description"]) > 600
+        assert "ReadSchedule" in operation["description"]
+        assert {"200", "401", "403", "404", "422", "503"} <= operation[
+            "responses"
+        ].keys()
+        parameters = {
+            parameter["name"]: parameter for parameter in operation["parameters"]
+        }
+        for name in ("year", "semester"):
+            assert "both" in parameters[name]["description"]
+            assert parameters[name]["schema"]["examples"]
+        assert "private, no-store" in operation["description"]
+    read_parameters = {p["name"]: p for p in paths[base]["get"]["parameters"]}
+    assert "faculty" in read_parameters["q"]["description"]
+    assert "notEnrolled" in paths[base]["get"]["description"]
+    export = paths[f"{base}/export"]["get"]
+    assert "q" not in {p["name"] for p in export["parameters"]}
+    for media_type in ("application/pdf", "text/calendar"):
+        assert export["responses"]["200"]["content"][media_type]["schema"] == {
+            "type": "string",
+            "format": "binary",
+        }
+    assert "Content-Disposition" in export["responses"]["200"]["headers"]
+    assert (
+        export["responses"]["503"]["headers"]["Retry-After"]["schema"]["example"] == 30
+    )
+    for model in ("ScheduleRead", "ScheduleCourse", "ScheduleMeeting", "ScheduleTerm"):
+        assert all(
+            field.get("description")
+            for field in schema["components"]["schemas"][model]["properties"].values()
+        )
+
+
+@pytest.mark.parametrize("app", [student_app, main.app], ids=["student", "composed"])
+def test_schedule_openapi_exposes_snake_case_response_properties(app: FastAPI) -> None:
+    schemas = app.openapi()["components"]["schemas"]
+    expected = {
+        "ScheduleRead": {
+            "student_name",
+            "student_number",
+            "term",
+            "courses",
+            "total_credits",
+            "total_lecture_hours",
+            "total_lab_hours",
+            "state",
+            "message",
+        },
+        "ScheduleTerm": {"id", "year", "semester", "start_date", "end_date"},
+        "ScheduleCourse": {
+            "code",
+            "title",
+            "section",
+            "section_id",
+            "room",
+            "faculty_name",
+            "units",
+            "lecture_hours",
+            "lab_hours",
+            "status",
+            "meetings",
+        },
+        "ScheduleMeeting": {
+            "id",
+            "day_of_week",
+            "start_time",
+            "end_time",
+            "room",
+            "type",
+        },
+    }
+    for model, properties in expected.items():
+        assert set(schemas[model]["properties"]) == properties
+    assert schemas["ScheduleRead"]["properties"]["state"]["enum"] == [
+        "ready",
+        "notEnrolled",
+        "noMatches",
+        "termUnavailable",
+    ]
 
 
 def test_no_app_mounts_the_service_bypassing_admin_panel() -> None:

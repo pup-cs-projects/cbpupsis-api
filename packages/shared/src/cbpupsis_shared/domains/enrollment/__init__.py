@@ -1,1 +1,1 @@
-"""Enrollment read interfaces for academic records."""
+"""Read-only interfaces for committed enrollment records."""

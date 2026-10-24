@@ -26,6 +26,20 @@ async def list_record_courses(db: AsyncSession, ids: Collection[uuid.UUID]):
     return list(await db.scalars(select(Course).where(Course.id.in_(ids))))
 
 
+async def schedule_courses(
+    db: AsyncSession, ids: Collection[uuid.UUID]
+) -> list[Course]:
+    """Read catalog details for the selected sections, including inactive courses.
+
+    SQL::
+
+        SELECT * FROM courses WHERE id IN (:ids);
+    """
+    if not ids:
+        return []
+    return list(await db.scalars(select(Course).where(Course.id.in_(ids))))
+
+
 async def list_active_programs_by_code(
     db: AsyncSession, codes: Collection[str]
 ) -> list[Program]:

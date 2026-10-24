@@ -1,4 +1,4 @@
-"""Owner-scoped enrollment projections; no enrollment mutations."""
+"""Owner-scoped enrollment queries; no enrollment mutations."""
 
 import uuid
 
@@ -36,3 +36,37 @@ async def list_record_enrollments(db: AsyncSession, student_id: uuid.UUID):
         .where(TermEnrollment.student_id == student_id)
     )
     return result.all()
+
+
+async def enrolled_sections(
+    db: AsyncSession, student_id: uuid.UUID, term_id: uuid.UUID
+):
+    """Read officially enrolled courses; pending/dropped records are not classes.
+
+    SQL::
+
+        SELECT sce.* FROM student_course_enrollments AS sce
+        JOIN term_enrollments AS te ON te.id = sce.term_enrollment_id
+        WHERE te.student_id = :student_id AND te.academic_term_id = :term_id
+          AND sce.academic_term_id = :term_id
+          AND te.enrollment_status = 'enrolled' AND sce.status = 'enrolled'
+        ORDER BY sce.section_id LIMIT 101;
+    """
+    return list(
+        await db.scalars(
+            select(StudentCourseEnrollment)
+            .join(
+                TermEnrollment,
+                TermEnrollment.id == StudentCourseEnrollment.term_enrollment_id,
+            )
+            .where(
+                TermEnrollment.student_id == student_id,
+                TermEnrollment.academic_term_id == term_id,
+                StudentCourseEnrollment.academic_term_id == term_id,
+                TermEnrollment.enrollment_status == "enrolled",
+                StudentCourseEnrollment.status == "enrolled",
+            )
+            .order_by(StudentCourseEnrollment.section_id)
+            .limit(101)
+        )
+    )

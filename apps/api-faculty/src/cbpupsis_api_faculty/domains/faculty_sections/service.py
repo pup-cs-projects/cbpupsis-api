@@ -1,4 +1,4 @@
-"""Faculty facade; shared section rules preserve existing ownership checks."""
+"""Faculty section operations delegate to the shared ownership boundary."""
 
 from cbpupsis_shared.domains.sections.client import (
     get_section_roster,

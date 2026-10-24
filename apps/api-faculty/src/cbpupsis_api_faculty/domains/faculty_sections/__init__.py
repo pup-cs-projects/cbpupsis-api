@@ -1,1 +1,1 @@
-"""Faculty-owned section HTTP surface."""
+"""Faculty-owned HTTP surface for shared section reads."""

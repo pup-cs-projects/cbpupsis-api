@@ -1,4 +1,4 @@
-"""Internal reads only; no academic management endpoints are mounted."""
+"""Internal calendar reads have no public HTTP endpoints yet."""
 
 from fastapi import APIRouter
 

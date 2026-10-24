@@ -8,7 +8,30 @@ from collections.abc import Collection
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_database.models.sections import CourseSection
+from cbpupsis_database.models.sections import CourseSection, SectionSchedule
+
+
+async def schedule_sections(db: AsyncSession, ids: list[uuid.UUID]):
+    """Read section metadata and meeting slots in two bounded queries.
+
+    SQL::
+
+        SELECT * FROM course_sections WHERE id IN (:ids);
+        SELECT * FROM section_schedules WHERE section_id IN (:ids)
+        ORDER BY day_of_week, start_time, id LIMIT 1001;
+    """
+    if not ids:
+        return [], []
+    sections = await db.scalars(select(CourseSection).where(CourseSection.id.in_(ids)))
+    meetings = await db.scalars(
+        select(SectionSchedule)
+        .where(SectionSchedule.section_id.in_(ids))
+        .order_by(
+            SectionSchedule.day_of_week, SectionSchedule.start_time, SectionSchedule.id
+        )
+        .limit(1001)
+    )
+    return list(sections), list(meetings)
 
 
 async def list_record_sections(db: AsyncSession, ids: Collection[uuid.UUID]):

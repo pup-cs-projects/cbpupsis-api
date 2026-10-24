@@ -1,4 +1,4 @@
-"""Internal projections only; enrollment workflows remain separate."""
+"""Enrollment approval routes belong to a separate story."""
 
 from fastapi import APIRouter
 
