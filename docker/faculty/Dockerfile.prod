@@ -55,6 +55,15 @@ USER appuser
 
 EXPOSE 8002
 
+# AWS Lambda Web Adapter: a Lambda extension that turns each invocation into an
+# HTTP request to uvicorn below, so this same image runs on Lambda unchanged.
+# Outside Lambda (compose, docker run) nothing starts an extension, so it is
+# inert. The readiness check uses /health for the reason given at HEALTHCHECK;
+# Lambda ignores HEALTHCHECK itself.
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0 /lambda-adapter /opt/extensions/lambda-adapter
+ENV AWS_LWA_PORT=8002 \
+    AWS_LWA_READINESS_CHECK_PATH=/health
+
 # Hits /health, which is deliberately dependency-free: a check that queried
 # Postgres would get a healthy container killed whenever the database was
 # briefly slow.

@@ -73,6 +73,11 @@ USER appuser
 
 EXPOSE 8003
 
+# Same Lambda Web Adapter as Dockerfile.prod; inert outside Lambda.
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0 /lambda-adapter /opt/extensions/lambda-adapter
+ENV AWS_LWA_PORT=8003 \
+    AWS_LWA_READINESS_CHECK_PATH=/health
+
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8003/health', timeout=2).status == 200 else 1)"
 

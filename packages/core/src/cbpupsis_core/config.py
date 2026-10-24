@@ -3,16 +3,28 @@
 All settings are read from the environment (via ``.env`` locally, or injected by
 the platform in staging/production). This module is the single place secrets and
 configuration are read; import ``settings`` elsewhere rather than reading the
-environment directly.
+environment directly. Deployed, the secrets themselves come from AWS Secrets
+Manager and are copied into the environment first (:func:`load_deployed_secrets`).
 """
 
 from __future__ import annotations
 
+import json
+import os
+from base64 import urlsafe_b64decode
+from collections.abc import MutableMapping
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal, Protocol
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+#: Names the deployed secret: set on every Lambda function (by cbpupsis-infra) to
+#: the ARN of one Secrets Manager secret, a JSON object such as
+#: ``{"DATABASE_URL": "...", "JWT_SECRET": "..."}``. Unset locally and in tests,
+#: where nothing is fetched.
+APP_SECRETS_ARN = "APP_SECRETS_ARN"
 
 #: Where each role's portal runs locally, matching the dev stack's ports.
 DEV_FRONTEND_URLS: dict[str, str] = {
@@ -32,7 +44,9 @@ class Settings(BaseSettings):
     # the same values without duplicating them. There is deliberately no `.env`
     # fallback: two places to look for config is how a value gets changed in one
     # of them and nobody can explain why the app disagrees.
-    model_config = SettingsConfigDict(env_file="env/admin/env.dev", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file="env/admin/env.dev", extra="ignore", hide_input_in_errors=True
+    )
 
     # --- Application ---
     app_name: str = "CBPUPSIS API"
@@ -112,6 +126,14 @@ class Settings(BaseSettings):
     mfa_encryption_key: SecretStr | None = None
     webauthn_rp_id: str = "admin.cbpupsis"
     webauthn_origin: str = "https://admin.cbpupsis"
+
+    # --- Optional, one-way Google course calendar synchronization ---
+    google_calendar_enabled: bool = False
+    google_calendar_client_id: str | None = None
+    google_calendar_client_secret: SecretStr | None = None
+    google_calendar_redirect_uri: str | None = None
+    google_calendar_encryption_key: SecretStr | None = None
+    google_calendar_sync_seconds: int = Field(default=300, ge=60, le=86400)
 
     # --- One-time tokens (email verification, password reset) ---
     #: Verification links are low-risk and mailed once, so a day is generous
@@ -300,6 +322,50 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
+    def validate_google_calendar(self) -> Settings:
+        if not self.google_calendar_enabled:
+            return self
+        if not all(
+            (
+                self.google_calendar_client_id,
+                self.google_calendar_client_secret,
+                self.google_calendar_redirect_uri,
+                self.google_calendar_encryption_key,
+            )
+        ):
+            raise ValueError(
+                "Google Calendar requires client, redirect and encryption settings"
+            )
+        try:
+            key = urlsafe_b64decode(
+                self.google_calendar_encryption_key.get_secret_value()
+            )
+            uri = urlsplit(self.google_calendar_redirect_uri)
+            local = self.environment == "development" and uri.hostname in {
+                "localhost",
+                "127.0.0.1",
+            }
+            if (
+                len(key) != 32
+                or not uri.netloc
+                or uri.query
+                or uri.fragment
+                or uri.username
+                or uri.password
+            ):
+                raise ValueError
+            if uri.scheme != "https" and not (local and uri.scheme == "http"):
+                raise ValueError
+            if self.debug:
+                raise ValueError
+        except (ValueError, TypeError):
+            raise ValueError(
+                "Google Calendar requires a 32-byte base64 key, "
+                "a secure redirect URI and DEBUG=false"
+            ) from None
+        return self
+
+    @model_validator(mode="after")
     def keep_the_mail_catcher_in_development(self) -> Settings:
         """Refuse a mail catcher outside development.
 
@@ -327,9 +393,75 @@ class Settings(BaseSettings):
         return self
 
 
+class SecretsClient(Protocol):
+    """The one Secrets Manager call the loader makes (a boto3 client fits)."""
+
+    def get_secret_value(self, *, SecretId: str) -> dict[str, Any]:
+        """Return the secret, with its text under ``SecretString``."""
+        ...
+
+
+def load_deployed_secrets(
+    environ: MutableMapping[str, str] = os.environ,
+    client: SecretsClient | None = None,
+) -> list[str]:
+    """Copy the deployed secret into the environment, before :class:`Settings` reads it.
+
+    Deployed, secrets are not environment variables: the function is given only
+    :data:`APP_SECRETS_ARN`, and anyone who can read a Lambda's configuration
+    would otherwise read the database password too. This turns the secret back
+    into environment variables inside the process, so :class:`Settings` stays
+    the one place configuration is read and needs no AWS-specific source.
+
+    A variable that is already set wins over the secret's copy, the same way an
+    explicit value wins everywhere else in configuration.
+
+    Fails loudly: with :data:`APP_SECRETS_ARN` set, a secret that cannot be
+    fetched or parsed stops startup rather than letting the app run half
+    configured. No error message ever includes a secret's value.
+
+    Returns the names of the variables it set, never their values.
+    """
+    arn = environ.get(APP_SECRETS_ARN)
+    if not arn:
+        return []
+
+    if client is None:
+        # Imported lazily so only a deployed process, which has a secret to
+        # fetch, needs boto3 and AWS credentials; tests and local runs never
+        # import it (the same reasoning as the SES sender).
+        import boto3  # noqa: PLC0415 - see the comment above
+
+        client = boto3.client("secretsmanager")
+
+    text = client.get_secret_value(SecretId=arn)["SecretString"]
+    try:
+        secret = json.loads(text)
+    except json.JSONDecodeError:
+        # `from None`: the decode error carries the whole secret text.
+        raise ValueError(
+            f"The secret named by {APP_SECRETS_ARN} is not JSON."
+        ) from None
+    if not isinstance(secret, dict) or not all(
+        isinstance(value, str) for value in secret.values()
+    ):
+        raise ValueError(
+            f"The secret named by {APP_SECRETS_ARN} must be a JSON object of "
+            "string values."
+        )
+
+    loaded: list[str] = []
+    for name, value in secret.items():
+        if name not in environ:
+            environ[name] = value
+            loaded.append(name)
+    return loaded
+
+
 @lru_cache
 def get_settings() -> Settings:
-    """Return a cached :class:`Settings` instance."""
+    """Return a cached :class:`Settings` instance, loading deployed secrets first."""
+    load_deployed_secrets()
     return Settings()
 
 
