@@ -27,7 +27,7 @@ import uuid
 from collections.abc import Collection
 from datetime import date, datetime
 
-from sqlalchemy import func, select, union_all
+from sqlalchemy import delete, func, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.models.users import (
@@ -36,6 +36,7 @@ from cbpupsis_database.models.users import (
     FacultyProfile,
     StudentProfile,
     User,
+    UserAvatar,
     UserProfile,
 )
 
@@ -765,6 +766,33 @@ async def delete_emergency_contact(db: AsyncSession, contact: EmergencyContact) 
         DELETE FROM emergency_contacts WHERE id = :contact_id
     """
     await db.delete(contact)
+
+
+async def replace_avatar(
+    db: AsyncSession, *, user_id: uuid.UUID, content: bytes, content_type: str
+) -> UserAvatar:
+    """Stage ``user_id``'s profile picture, replacing any earlier one.
+
+    On commit::
+
+        DELETE FROM user_avatars WHERE user_id = :user_id
+        INSERT INTO user_avatars (id, user_id, content_type, content)
+        VALUES (:id, :user_id, :content_type, :content)
+    """
+    await db.execute(delete(UserAvatar).where(UserAvatar.user_id == user_id))
+    avatar = UserAvatar(user_id=user_id, content=content, content_type=content_type)
+    db.add(avatar)
+    return avatar
+
+
+async def get_avatar(db: AsyncSession, avatar_id: uuid.UUID) -> UserAvatar | None:
+    """Return one stored profile picture by id, or ``None``.
+
+    SQL::
+
+        SELECT * FROM user_avatars WHERE id = :avatar_id
+    """
+    return await db.get(UserAvatar, avatar_id)
 
 
 async def get_student_by_student_number(

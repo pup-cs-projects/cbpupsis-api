@@ -116,10 +116,13 @@ async def upload_student_avatar(
 )
 async def get_student_avatar(
     avatar_id: uuid.UUID,
-    _user: CurrentUser = Depends(require_student_session),
+    user: CurrentUser = Depends(require_student_session),
+    db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Stream the student profile picture by avatar ID (referenced by avatarUrl)."""
-    content, content_type = service.get_avatar_bytes(avatar_id)
+    """Stream the student's own profile picture by avatar ID (see avatarUrl)."""
+    content, content_type = await service.get_avatar_bytes(
+        db, actor_id=user.id, avatar_id=avatar_id
+    )
     return Response(
         content=content,
         media_type=content_type,

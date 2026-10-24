@@ -26,6 +26,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     SmallInteger,
     String,
     Text,
@@ -366,3 +367,20 @@ class EmergencyContact(UUIDMixin, Base):
     )
 
     __table_args__ = (Index("idx_fk_emergency_contacts_user_id", "user_id"),)
+
+
+class UserAvatar(UUIDMixin, TimestampMixin, Base):
+    """A user's current profile picture, stored after content inspection.
+
+    Kept in the database rather than in process memory or on local disk: the
+    apps run as several short-lived instances, so bytes held by one instance
+    are gone for the next request. One row per user; an upload replaces it.
+    """
+
+    __tablename__ = "user_avatars"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True
+    )
+    content_type: Mapped[str] = mapped_column(String(32))
+    content: Mapped[bytes] = mapped_column(LargeBinary)

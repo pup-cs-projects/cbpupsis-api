@@ -29,9 +29,6 @@ from cbpupsis_shared.domains.users import client as users_client
 
 logger = logging.getLogger(__name__)
 
-#: Verified avatar payloads keyed by avatar UUID for local/in-process serving.
-_AVATAR_STORE: dict[uuid.UUID, tuple[bytes, str, uuid.UUID]] = {}
-
 
 def inspect_image_content_type(content: bytes) -> str:
     """Determine JPEG or PNG content type by magic-byte and structure inspection.
@@ -87,11 +84,13 @@ async def upload_avatar(
     if user_profile is None or student_profile is None:
         raise ResourceNotFoundError
 
-    avatar_id = uuid.uuid4()
-    avatar_url = f"/api/v1/student/profile/avatar/{avatar_id}"
     prior_avatar = user_profile.avatar_url
 
     try:
+        avatar = await users_client.stage_replace_avatar(
+            db, actor_id, content=content, content_type=content_type
+        )
+        avatar_url = f"/api/v1/student/profile/avatar/{avatar.id}"
         await users_client.stage_update_user_profile(
             db, actor_id, avatar_url=avatar_url
         )
@@ -111,7 +110,6 @@ async def upload_avatar(
         await db.rollback()
         raise
 
-    _AVATAR_STORE[avatar_id] = (content, content_type, actor_id)
     return AvatarUploadRead(
         avatarUrl=avatar_url,
         url=avatar_url,
@@ -120,11 +118,16 @@ async def upload_avatar(
     )
 
 
-def get_avatar_bytes(avatar_id: uuid.UUID) -> tuple[bytes, str]:
-    """Return a stored, scanned avatar image by id, or raise 404."""
-    record = _AVATAR_STORE.get(avatar_id)
-    if record is None:
+async def get_avatar_bytes(
+    db: AsyncSession, *, actor_id: uuid.UUID, avatar_id: uuid.UUID
+) -> tuple[bytes, str]:
+    """Return the actor's own stored, scanned avatar image by id, or raise 404.
+
+    Another student's picture answers 404 like a missing one, so an id cannot
+    be used to tell whether someone else has a picture (RA 10173).
+    """
+    avatar = await users_client.get_avatar(db, avatar_id)
+    if avatar is None or avatar.user_id != actor_id:
         raise ResourceNotFoundError
-    content, content_type, _owner_id = record
-    scan_avatar_bytes(content)
-    return content, content_type
+    scan_avatar_bytes(avatar.content)
+    return avatar.content, avatar.content_type

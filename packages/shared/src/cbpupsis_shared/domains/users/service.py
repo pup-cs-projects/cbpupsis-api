@@ -56,6 +56,7 @@ from cbpupsis_shared.domains.users.exceptions import (
 from cbpupsis_shared.domains.users.schemas import (
     AccountCreate,
     AdminProfileRead,
+    AvatarRead,
     EmergencyContactRead,
     FacultyProfileRead,
     RecordIdentity,
@@ -694,6 +695,23 @@ async def stage_update_user_profile(
     repository.update_user_profile(profile, updated_at=datetime.now(UTC), **fields)
     await db.flush()
     return UserProfileRead.model_validate(profile)
+
+
+async def stage_replace_avatar(
+    db: AsyncSession, user_id: uuid.UUID, *, content: bytes, content_type: str
+) -> AvatarRead:
+    """Stage ``user_id``'s profile picture, replacing any earlier one."""
+    avatar = await repository.replace_avatar(
+        db, user_id=user_id, content=content, content_type=content_type
+    )
+    await db.flush()
+    return AvatarRead.model_validate(avatar)
+
+
+async def get_avatar(db: AsyncSession, avatar_id: uuid.UUID) -> AvatarRead | None:
+    """Return one stored profile picture as a DTO, or ``None``."""
+    row = await repository.get_avatar(db, avatar_id)
+    return None if row is None else AvatarRead.model_validate(row)
 
 
 async def list_emergency_contacts(

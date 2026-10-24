@@ -257,6 +257,17 @@ class StudentProfileRead(BaseModel):
     has_academic_hold: bool = False
 
 
+class AvatarRead(BaseModel):
+    """A stored profile picture and the account it belongs to."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    content_type: str
+    content: bytes
+
+
 class EmergencyContactRead(BaseModel):
     """One emergency contact belonging to a user."""
 
