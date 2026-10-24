@@ -1,5 +1,41 @@
 # User Stories and Acceptance Criteria: CBPUPSIS
 
+> **Notice, 2026-10-24: story ids now follow the CBPUPSIS board.**
+> All work is tracked on one board, [CBPUPSIS](https://github.com/orgs/pup-cs-projects/projects/4).
+> Stories are `US-<MODULE>-<NNN>` issues under an `FR-00N` parent, and their criteria are
+> `AC-<MODULE>-<NNN>.<n>` (for example `AC-STU-001.1`). See
+> [WRITING-ISSUES.md](../tech-book/WRITING-ISSUES.md). The story issue on the board is the source
+> of truth for its criteria. The ranged ids in this file (`US-101`, `AC-101.3`) are kept for
+> history only; do not file new ones. Old ids map to the board as follows.
+
+| Old id | Now | Issue |
+|---|---|---|
+| US-101, AC-101.n | US-AUTH-001, AC-AUTH-001.n | [#67](https://github.com/pup-cs-projects/cbpupsis-api/issues/67) |
+| US-102, AC-102.n | US-AUTH-002, AC-AUTH-002.n | [#68](https://github.com/pup-cs-projects/cbpupsis-api/issues/68) |
+| US-103, AC-103.n | US-AUTH-003, AC-AUTH-003.n | [#69](https://github.com/pup-cs-projects/cbpupsis-api/issues/69) |
+| US-104, AC-104.n | US-AUTH-004, AC-AUTH-004.n | [#70](https://github.com/pup-cs-projects/cbpupsis-api/issues/70) |
+| US-105, AC-105.n | US-AUTH-005, AC-AUTH-005.n | [#71](https://github.com/pup-cs-projects/cbpupsis-api/issues/71) |
+| US-001 (closed #31), US-002 (closed #32) | US-AUTH-001 | [#67](https://github.com/pup-cs-projects/cbpupsis-api/issues/67) |
+| US-003 (closed #55) | US-AUTH-002, US-AUTH-003 | [#68](https://github.com/pup-cs-projects/cbpupsis-api/issues/68), [#69](https://github.com/pup-cs-projects/cbpupsis-api/issues/69) |
+| US-004 (closed #33) | FR-001, and the permission model task | [#59](https://github.com/pup-cs-projects/cbpupsis-api/issues/59), [#30](https://github.com/pup-cs-projects/cbpupsis-api/issues/30) |
+| US-007 (closed #51) | US-FIN-001 | [#84](https://github.com/pup-cs-projects/cbpupsis-api/issues/84) |
+| US-008 (closed #52) | US-FIN-003 | [#86](https://github.com/pup-cs-projects/cbpupsis-api/issues/86) |
+| US-009 (closed #39) | US-ENRL-001 | [#76](https://github.com/pup-cs-projects/cbpupsis-api/issues/76) |
+| US-010 (closed #40) | US-ENRL-002 | [#77](https://github.com/pup-cs-projects/cbpupsis-api/issues/77) |
+| US-011 (closed #41) | US-ENRL-003 | [#78](https://github.com/pup-cs-projects/cbpupsis-api/issues/78) |
+| US-012 (closed #42) | US-ENRL-004 | [#79](https://github.com/pup-cs-projects/cbpupsis-api/issues/79) |
+| US-014 (closed #44) | US-FAC-001 | [#80](https://github.com/pup-cs-projects/cbpupsis-api/issues/80) |
+| US-015 (closed #45) | US-FAC-002 | [#81](https://github.com/pup-cs-projects/cbpupsis-api/issues/81) |
+| US-016 (closed #46) | US-STU-004 | [#75](https://github.com/pup-cs-projects/cbpupsis-api/issues/75) |
+| US-017 (closed #47) | US-FAC-003 | [#82](https://github.com/pup-cs-projects/cbpupsis-api/issues/82) |
+| US-018 (closed #53) | US-FIN-002 | [#85](https://github.com/pup-cs-projects/cbpupsis-api/issues/85) |
+| US-019 (closed #48) | US-ACAD-001 | [#83](https://github.com/pup-cs-projects/cbpupsis-api/issues/83) |
+| US-020 (closed #49) | US-FORM-001 | [#87](https://github.com/pup-cs-projects/cbpupsis-api/issues/87) |
+| US-022 (closed #54) | US-ADM-001 | [#88](https://github.com/pup-cs-projects/cbpupsis-api/issues/88) |
+| US-005 (closed #37), US-006 (closed #38), US-013 (closed #43), US-021 (closed #50) | no story on the board yet (curriculum versions, academic calendar, next enrollment period, filed forms) | product owner to decide |
+| Client US-001 (closed cbpupsis-client#26), US-002 (closed cbpupsis-client#27) | [WEB] US-AUTH-001 | [cbpupsis-client#32](https://github.com/pup-cs-projects/cbpupsis-client/issues/32) |
+
+
 <!--
 Stories describe BEHAVIOR the user can observe. They do not name endpoints,
 tables, or components; those belong in DESIGN.md.

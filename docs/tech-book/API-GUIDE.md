@@ -322,7 +322,7 @@ packages/                    # the shared kernel; every app depends on it
     exceptions.py            #     AppError hierarchy + handlers
     logging.py               #     JSON logs, request-id correlation
     pagination.py            #     Page[T] envelope
-    emails/                  #     EmailSender protocol, SES, console, and mail-catcher backends, bodies
+    emails/                  #     EmailSender protocol, Resend, console, and mail-catcher backends, bodies
     middleware/              #     correlation-id, request logging, CORS; @rate_limit
 
   database/src/cbpupsis_database/
@@ -730,15 +730,19 @@ and uniquely indexed, so several deletions would otherwise collide, and
 | Setting | Backend | Where the message goes |
 |---|---|---|
 | `DEV_SMTP_HOST` (development only) | `MailCatcherSender` | The compose stack's Mailpit; read it whole at <http://localhost:8025> |
-| `SES_FROM_EMAIL` | `SESEmailSender` | Real inboxes, through AWS SES |
+| `EMAIL_FROM` and `RESEND_API_KEY` | `ResendEmailSender` | Real inboxes, through Resend |
 | neither | `ConsoleEmailSender` | Nowhere: logs the recipient and subject only, never the body |
 
-Development and tests therefore need no AWS credentials and cannot mail a real
+Development and tests therefore need no provider key and cannot mail a real
 person by accident. The console backend never prints a body, because bodies carry
 reset links and temporary passwords; Mailpit is how you read them locally. Settings
-refuse `DEV_SMTP_HOST` unless `ENVIRONMENT=development`, because it wins over SES and
-would swallow real mail anywhere else. SMTP and boto3 are synchronous, so every send
-goes through `asyncio.to_thread`; calling them directly would block the event loop.
+refuse `DEV_SMTP_HOST` unless `ENVIRONMENT=development`, because it wins over Resend and
+would swallow real mail anywhere else. Resend is called with an async HTTP client;
+SMTP is synchronous, so the mail catcher sends through `asyncio.to_thread`. A Resend
+refusal raises `EmailDeliveryError` with only the status and Resend's error name,
+never its message, which can echo the reset link. Settings refuse `EMAIL_FROM`
+without `RESEND_API_KEY` (or the reverse), because half a configuration would quietly
+fall back to the console backend.
 
 **Sending never fails a request.** A user who registered but whose email bounced
 must still exist, so `send_email` logs the failure and returns `False`.
