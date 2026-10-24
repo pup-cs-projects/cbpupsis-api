@@ -640,3 +640,47 @@ async def list_taken_admin_employee_ids(
         return []
     column = AdminProfile.employee_id
     return list(await db.scalars(select(column).where(column.in_(employee_ids))))
+
+
+async def get_student_profile(
+    db: AsyncSession, user_id: uuid.UUID
+) -> StudentProfile | None:
+    """Return a user's Student profile, or ``None``.
+
+    SQL::
+
+        SELECT student_profiles.user_id, student_profiles.student_number,
+               student_profiles.program_id, student_profiles.curriculum_id,
+               student_profiles.year_level, student_profiles.section,
+               student_profiles.enrollment_status, student_profiles.fhe_qualified,
+               student_profiles.fhe_forfeited, student_profiles.fhe_forfeiture_reason,
+               student_profiles.is_graduating_senior,
+               student_profiles.has_financial_hold,
+               student_profiles.has_academic_hold
+        FROM student_profiles
+        WHERE student_profiles.user_id = :user_id
+    """
+    return await db.get(StudentProfile, user_id, populate_existing=True)
+
+
+async def get_student_by_student_number(
+    db: AsyncSession, student_number: str
+) -> StudentProfile | None:
+    """Return a student profile by student number.
+
+    SQL::
+
+        SELECT student_profiles.user_id, student_profiles.student_number,
+               student_profiles.program_id, student_profiles.curriculum_id,
+               student_profiles.year_level, student_profiles.section,
+               student_profiles.enrollment_status, student_profiles.fhe_qualified,
+               student_profiles.fhe_forfeited, student_profiles.fhe_forfeiture_reason,
+               student_profiles.is_graduating_senior,
+               student_profiles.has_financial_hold,
+               student_profiles.has_academic_hold
+        FROM student_profiles
+        WHERE student_profiles.student_number = :student_number
+    """
+    return await db.scalar(
+        select(StudentProfile).where(StudentProfile.student_number == student_number)
+    )

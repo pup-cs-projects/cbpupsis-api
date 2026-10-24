@@ -6,6 +6,9 @@ an app-owned domain until the first student feature replaces it.
 
 from __future__ import annotations
 
+from cbpupsis_api_student.domains.dashboard.router import (
+    router as dashboard_router,
+)
 from cbpupsis_api_student.domains.google_calendar.router import (
     router as google_calendar_router,
 )
@@ -19,6 +22,7 @@ from cbpupsis_shared.application import RouterMount
 from cbpupsis_shared.routes import COMMON_MOUNTS
 
 STUDENT_AUTH = RouterMount(student_auth_router, "/auth/student", "student-auth")
+STUDENT_DASHBOARD = RouterMount(dashboard_router, "/student", "student-dashboard")
 ITEMS = RouterMount(items_router, "/items", "items")
 GRADES = RouterMount(grades_router, "", "student-grades")
 
@@ -31,6 +35,7 @@ GOOGLE_CALENDAR = RouterMount(
 MOUNTS: tuple[RouterMount, ...] = (
     *COMMON_MOUNTS,
     STUDENT_AUTH,
+    STUDENT_DASHBOARD,
     ITEMS,
     GRADES,
     SCHEDULE,

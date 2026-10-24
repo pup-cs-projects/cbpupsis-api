@@ -777,6 +777,330 @@
         ]
       }
     },
+    "/api/v1/student/dashboard": {
+      "get": {
+        "tags": [
+          "student-dashboard"
+        ],
+        "summary": "Get Student Dashboard",
+        "description": "Return single aggregate dashboard for the authenticated student (US-101).",
+        "operationId": "get_student_dashboard",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Target semester name",
+              "title": "Semester"
+            },
+            "description": "Target semester name"
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Target academic year (YYYY-YYYY)",
+              "title": "Year"
+            },
+            "description": "Target academic year (YYYY-YYYY)"
+          },
+          {
+            "name": "announcementLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Announcementlimit"
+            }
+          },
+          {
+            "name": "eventLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Eventlimit"
+            }
+          },
+          {
+            "name": "activityLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Activitylimit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentDashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/student/me/dashboard": {
+      "get": {
+        "tags": [
+          "student-dashboard"
+        ],
+        "summary": "Get My Student Dashboard",
+        "description": "Alias for /dashboard serving caller's landing view (US-101).",
+        "operationId": "get_my_student_dashboard",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Target semester name",
+              "title": "Semester"
+            },
+            "description": "Target semester name"
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Target academic year (YYYY-YYYY)",
+              "title": "Year"
+            },
+            "description": "Target academic year (YYYY-YYYY)"
+          },
+          {
+            "name": "announcementLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Announcementlimit"
+            }
+          },
+          {
+            "name": "eventLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Eventlimit"
+            }
+          },
+          {
+            "name": "activityLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Activitylimit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentDashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/student/{student_id}/dashboard": {
+      "get": {
+        "tags": [
+          "student-dashboard"
+        ],
+        "summary": "Get Student Dashboard By Id",
+        "description": "Return dashboard by student ID with strict ownership enforcement.\n\nEnforces BR-AUTH-005 anti-probing rules.",
+        "operationId": "get_student_dashboard_by_id",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "student_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Student Id"
+            }
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Target semester name",
+              "title": "Semester"
+            },
+            "description": "Target semester name"
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Target academic year (YYYY-YYYY)",
+              "title": "Year"
+            },
+            "description": "Target academic year (YYYY-YYYY)"
+          },
+          {
+            "name": "announcementLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Announcementlimit"
+            }
+          },
+          {
+            "name": "eventLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Eventlimit"
+            }
+          },
+          {
+            "name": "activityLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Activitylimit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentDashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/items": {
       "get": {
         "tags": [
@@ -4582,6 +4906,99 @@
   },
   "components": {
     "schemas": {
+      "AcademicEventRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Starts At"
+          },
+          "ends_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ends At"
+          },
+          "is_multi_day": {
+            "type": "boolean",
+            "title": "Is Multi Day",
+            "default": false
+          },
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "default": "ACADEMIC_CALENDAR"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "starts_at",
+          "ends_at"
+        ],
+        "title": "AcademicEventRead",
+        "description": "An academic calendar event."
+      },
+      "AcademicPeriodRead": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "opens_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Opens At"
+          },
+          "closes_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Closes At"
+          },
+          "is_open": {
+            "type": "boolean",
+            "title": "Is Open"
+          },
+          "days_remaining": {
+            "type": "integer",
+            "title": "Days Remaining"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "label",
+          "opens_at",
+          "closes_at",
+          "is_open",
+          "days_remaining"
+        ],
+        "title": "AcademicPeriodRead",
+        "description": "An active or upcoming enrollment / adjustment period."
+      },
       "AcademicStanding": {
         "type": "string",
         "enum": [
@@ -4593,6 +5010,149 @@
           "University Dismissal"
         ],
         "title": "AcademicStanding"
+      },
+      "AcademicTermRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "academic_year": {
+            "type": "string",
+            "title": "Academic Year"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          },
+          "term_type": {
+            "type": "string",
+            "title": "Term Type",
+            "default": "REGULAR"
+          },
+          "is_current": {
+            "type": "boolean",
+            "title": "Is Current",
+            "default": false
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "early_enrollment_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Early Enrollment Start"
+          },
+          "early_enrollment_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Early Enrollment End"
+          },
+          "regular_enrollment_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regular Enrollment Start"
+          },
+          "regular_enrollment_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regular Enrollment End"
+          },
+          "late_enrollment_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Late Enrollment End"
+          },
+          "add_drop_deadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Add Drop Deadline"
+          },
+          "grade_submission_deadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grade Submission Deadline"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "academic_year",
+          "semester"
+        ],
+        "title": "AcademicTermRead",
+        "description": "An academic term and its key enrollment and grading dates."
       },
       "AccountCreate": {
         "properties": {
@@ -4923,6 +5483,58 @@
           "position"
         ],
         "title": "AdminTokenPair"
+      },
+      "AnnouncementRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "default": "ACADEMIC"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Published At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "is_pinned": {
+            "type": "boolean",
+            "title": "Is Pinned",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "body",
+          "published_at"
+        ],
+        "title": "AnnouncementRead",
+        "description": "An institution-wide or academic announcement."
       },
       "AttachPolicyRequest": {
         "properties": {
@@ -5338,6 +5950,107 @@
         ],
         "title": "EffectivePermissionsRead",
         "description": "Every action a user is effectively granted, and how they got it.\n\nThe two sources are reported separately rather than pre-merged because the\nquestion an admin screen actually asks is not \"what can they do?\" but \"why\ncan they do it, and what do I change to stop it?\" \u2014 and those have different\nanswers: a group grant is revoked by changing membership, a direct grant by\ndetaching the policy. ``effective`` is the union the guards actually check."
+      },
+      "EmptyStatesRead": {
+        "properties": {
+          "announcements": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Announcements"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events"
+          },
+          "recent_activity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recent Activity"
+          }
+        },
+        "type": "object",
+        "title": "EmptyStatesRead",
+        "description": "Explanatory empty states for zero-history panels."
+      },
+      "EnrollmentSummaryRead": {
+        "properties": {
+          "enrolled_units": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Enrolled Units"
+          },
+          "effective_ceiling": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Effective Ceiling"
+          },
+          "unit_ceiling": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Ceiling"
+          },
+          "prescribed_load": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Prescribed Load"
+          },
+          "approved_overload_units": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Approved Overload Units",
+            "default": "0"
+          },
+          "standing_reduction": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Standing Reduction",
+            "default": "0"
+          },
+          "enrolled_course_count": {
+            "type": "integer",
+            "title": "Enrolled Course Count",
+            "default": 0
+          },
+          "schedule_url": {
+            "type": "string",
+            "title": "Schedule Url",
+            "default": "/api/v1/student/schedule"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enrolled_units",
+          "effective_ceiling",
+          "prescribed_load"
+        ],
+        "title": "EnrollmentSummaryRead",
+        "description": "Enrolled load, limits, and schedule link for a term."
       },
       "FacultyEnrollmentResult": {
         "properties": {
@@ -5903,6 +6616,57 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HoldRead": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "office": {
+            "type": "string",
+            "title": "Office"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "amount_outstanding": {
+            "type": "string",
+            "title": "Amount Outstanding"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "default": "PHP"
+          },
+          "is_blocking": {
+            "type": "boolean",
+            "title": "Is Blocking",
+            "default": true
+          },
+          "blocks_enrollment": {
+            "type": "boolean",
+            "title": "Blocks Enrollment",
+            "default": true
+          },
+          "blocks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "office",
+          "description",
+          "amount_outstanding"
+        ],
+        "title": "HoldRead",
+        "description": "A student administrative or financial hold."
       },
       "ItemCreate": {
         "properties": {
@@ -7254,6 +8018,41 @@
         "title": "ScheduleTerm",
         "description": "Configured academic term selected for this schedule."
       },
+      "ScholasticStandingRead": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "unit_reduction": {
+            "type": "integer",
+            "title": "Unit Reduction",
+            "default": 0
+          },
+          "explanation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation"
+          },
+          "appeal_available": {
+            "type": "boolean",
+            "title": "Appeal Available",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "ScholasticStandingRead",
+        "description": "Scholastic standing evaluation and load impact."
+      },
       "SignInAttemptRead": {
         "properties": {
           "id": {
@@ -7339,6 +8138,133 @@
         "title": "SignInAttemptRead",
         "description": "One recorded sign-in attempt from any role's sign-in flow."
       },
+      "StudentDashboardData": {
+        "properties": {
+          "student": {
+            "$ref": "#/components/schemas/StudentIdentityRead"
+          },
+          "current_term": {
+            "$ref": "#/components/schemas/AcademicTermRead"
+          },
+          "holds": {
+            "items": {
+              "$ref": "#/components/schemas/HoldRead"
+            },
+            "type": "array",
+            "title": "Holds"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/ScholasticStandingRead"
+          },
+          "enrollment": {
+            "$ref": "#/components/schemas/EnrollmentSummaryRead"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicPeriodRead"
+            },
+            "type": "array",
+            "title": "Periods"
+          },
+          "announcements": {
+            "items": {
+              "$ref": "#/components/schemas/AnnouncementRead"
+            },
+            "type": "array",
+            "title": "Announcements"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicEventRead"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "recent_activity": {
+            "items": {
+              "$ref": "#/components/schemas/StudentRecentActivityRead"
+            },
+            "type": "array",
+            "title": "Recent Activity"
+          },
+          "empty_states": {
+            "$ref": "#/components/schemas/EmptyStatesRead"
+          }
+        },
+        "type": "object",
+        "required": [
+          "student",
+          "current_term",
+          "standing",
+          "enrollment",
+          "empty_states"
+        ],
+        "title": "StudentDashboardData",
+        "description": "Aggregated sections of the student landing dashboard."
+      },
+      "StudentDashboardResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/StudentDashboardData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "StudentDashboardResponse",
+        "description": "Root response envelope for the dashboard."
+      },
+      "StudentIdentityRead": {
+        "properties": {
+          "student_number": {
+            "type": "string",
+            "title": "Student Number"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "programme": {
+            "type": "string",
+            "title": "Programme"
+          },
+          "year_level": {
+            "type": "integer",
+            "title": "Year Level"
+          },
+          "enrollment_status": {
+            "type": "string",
+            "title": "Enrollment Status"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "student_number",
+          "name",
+          "programme",
+          "year_level",
+          "enrollment_status"
+        ],
+        "title": "StudentIdentityRead",
+        "description": "The authenticated student's identity block."
+      },
       "StudentLoginRequest": {
         "properties": {
           "student_number": {
@@ -7377,6 +8303,40 @@
         ],
         "title": "StudentLoginRequest",
         "description": "Student number, birthdate, and password.\n\nThe student number's format is checked by the service, not here, so a\nmalformed number answers ``AUTH_ID_FORMAT_INVALID`` like the other sign-in\nrules rather than a generic schema error."
+      },
+      "StudentRecentActivityRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "occurred_at": {
+            "type": "string",
+            "title": "Occurred At"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "occurred_at",
+          "type",
+          "severity",
+          "description"
+        ],
+        "title": "StudentRecentActivityRead",
+        "description": "A recent sign-in or security audit event shown on the dashboard."
       },
       "StudentSessionRead": {
         "properties": {

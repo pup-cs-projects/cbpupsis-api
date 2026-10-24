@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Collection, Iterable
+from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,3 +47,24 @@ async def active_programs_by_code(
     wanted = {code.strip().upper() for code in codes if code and code.strip()}
     rows = await repository.list_active_programs_by_code(db, wanted)
     return {row.code.upper(): ProgramRead.model_validate(row) for row in rows}
+
+
+async def get_program(db: AsyncSession, program_id: uuid.UUID) -> ProgramRead | None:
+    """Return an active program by id, or None."""
+    row = await repository.get_program_by_id(db, program_id)
+    if row is None:
+        return None
+    return ProgramRead.model_validate(row)
+
+
+async def get_prescribed_load(
+    db: AsyncSession,
+    *,
+    curriculum_id: uuid.UUID | None,
+    year_level: int,
+    semester: str,
+) -> Decimal:
+    """Return prescribed credit units for year level and semester."""
+    return await repository.get_prescribed_load(
+        db, curriculum_id=curriculum_id, year_level=year_level, semester=semester
+    )

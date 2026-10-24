@@ -23,6 +23,7 @@ from cbpupsis_shared.domains.users.schemas import (
     AdminProfileRead,
     FacultyProfileRead,
     ScheduleIdentity,
+    StudentProfileRead,
     UserRead,
 )
 from cbpupsis_shared.domains.users.service import (
@@ -34,6 +35,7 @@ from cbpupsis_shared.domains.users.service import (
 __all__ = [
     "AccountProblem",
     "SignInSubject",
+    "StudentProfileRead",
     "admin_scope",
     "find_account_problems",
     "get_active_user",
@@ -42,6 +44,8 @@ __all__ = [
     "get_faculty_profile",
     "get_faculty_sign_in",
     "get_session_version",
+    "get_student_by_number",
+    "get_student_profile",
     "get_student_sign_in",
     "get_user",
     "invalidate_role_sessions",
@@ -179,3 +183,17 @@ async def find_account_problems(
     """Check new accounts against each other and existing accounts."""
     problems, _program_ids = await service.find_account_problems(db, accounts)
     return problems
+
+
+async def get_student_profile(
+    db: AsyncSession, user_id: uuid.UUID
+) -> StudentProfileRead | None:
+    """Return a user's Student profile, or None."""
+    return await service.get_student_profile(db, user_id)
+
+
+async def get_student_by_number(
+    db: AsyncSession, student_number: str
+) -> StudentProfileRead | None:
+    """Return a student profile by student number, or None."""
+    return await service.get_student_by_number(db, student_number)
