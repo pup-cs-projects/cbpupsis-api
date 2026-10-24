@@ -10,8 +10,8 @@ Add the row in the same commit as the code that raises it.
 
 | | |
 |---|---|
-| **Last updated** | 2026-10-20 |
-| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications` in `packages/shared`; `items` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The student, faculty, and sections domains raise the shared `auth` classes and add none of their own; `curriculum` raises none. |
+| **Last updated** | 2026-10-23 |
+| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications` in `packages/shared`; `items` and `student_profile` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The `student_auth`, `faculty_auth`, and `sections` domains raise the shared `auth` classes and add none of their own; `curriculum` raises none. |
 
 ## Student academic records (US-STU-004)
 
@@ -217,6 +217,16 @@ and counts toward the lockout without issuing a session.
 |---|---|---|---|---|
 | 404 | | Item {id} not found | No live item with that id, **or** someone else's item without `ReadAllItem`. 404 rather than 403 on purpose: a 403 would confirm the id exists. | `items/exceptions.py` |
 | 403 | | You do not have access to this item | `PATCH` or `DELETE` on someone else's item by a caller who holds `ReadAllItem` (so may see it) but not `ModerateItem`. Without `ReadAllItem` the same request answers the 404 above. | `items/exceptions.py` |
+
+### student_profile
+
+| Status | Code | Message | When | Raised in |
+|---|---|---|---|---|
+| 403 | `PROFILE_FIELD_LOCKED` | One or more fields cannot be changed here. | `PATCH /student/profile` included one or more locked master fields (`firstName`, `lastName`, `middleName`, `birthdate`, `gender`, `civilStatus`, `studentId`, `program`, `catalogYear`, `yearLevel`, `enrollmentStatus`). Nothing is written. Extra field `details` (`lockedFields`, `petitionRoute`). | `student_profile/exceptions.py` |
+| 422 | `VALIDATION_ERROR` | Validation failed for ... | `PATCH /student/profile` or an emergency-contact write supplied an invalid email address or a phone number outside the Philippine mobile format (`+639XXXXXXXXX` or `09XXXXXXXXX`). Nothing is written. Extra fields `fields`, `errors`, `details`. | `student_profile/exceptions.py` |
+| 413 | `FILE_TOO_LARGE` | File exceeds the 5 MB limit. Upload a JPEG or PNG image up to 5 MB. | `POST /student/profile/avatar` received a file larger than 5 megabytes. | `student_profile/exceptions.py` |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | Unsupported file format. Accepted formats are JPEG and PNG up to 5 MB. | `POST /student/profile/avatar` received content whose magic bytes or structure are not JPEG or PNG, or whose content failed the upload security scan. | `student_profile/exceptions.py` |
+| 404 | `RESOURCE_NOT_FOUND` | Resource not found. | A profile or emergency contact requested by id does not exist or belongs to another student. | `auth/exceptions.py` (raised by `student_profile/service.py`) |
 
 ### audit
 

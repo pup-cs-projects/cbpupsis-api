@@ -12,12 +12,18 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.curriculum import service
-from cbpupsis_shared.domains.curriculum.schemas import ProgramRead, ScheduleCourse
+from cbpupsis_shared.domains.curriculum.schemas import (
+    CurriculumRead,
+    ProgramRead,
+    ScheduleCourse,
+)
 from cbpupsis_shared.domains.curriculum.service import record_courses
 
 __all__ = [
+    "CurriculumRead",
     "ProgramRead",
     "active_programs_by_code",
+    "get_curriculum",
     "get_prescribed_load",
     "get_program",
     "record_courses",
@@ -39,6 +45,12 @@ async def active_programs_by_code(
 
 async def get_program(db: AsyncSession, program_id: uuid.UUID) -> ProgramRead | None:
     return await service.get_program(db, program_id)
+
+
+async def get_curriculum(
+    db: AsyncSession, curriculum_id: uuid.UUID
+) -> CurriculumRead | None:
+    return await service.get_curriculum(db, curriculum_id)
 
 
 async def get_prescribed_load(

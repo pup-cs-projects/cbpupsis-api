@@ -20,6 +20,17 @@ class ProgramRead(BaseModel):
     is_active: bool
 
 
+class CurriculumRead(BaseModel):
+    """A versioned curriculum specification, as other domains see it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    program_id: uuid.UUID
+    curriculum_year: str
+    is_active: bool
+
+
 class RecordCourse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

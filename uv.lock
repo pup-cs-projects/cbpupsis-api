@@ -428,6 +428,7 @@ dependencies = [
     { name = "icalendar" },
     { name = "pydantic" },
     { name = "pyjwt" },
+    { name = "python-multipart" },
     { name = "reportlab" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn", extra = ["standard"] },
@@ -444,6 +445,7 @@ requires-dist = [
     { name = "icalendar", specifier = ">=6.3.0,<8" },
     { name = "pydantic" },
     { name = "pyjwt" },
+    { name = "python-multipart" },
     { name = "reportlab", specifier = ">=4.4.0,<5" },
     { name = "sqlalchemy", extras = ["asyncio"] },
     { name = "uvicorn", extras = ["standard"] },
@@ -479,6 +481,7 @@ source = { editable = "packages/database" }
 dependencies = [
     { name = "asyncpg" },
     { name = "cbpupsis-core" },
+    { name = "cryptography" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 
@@ -486,6 +489,7 @@ dependencies = [
 requires-dist = [
     { name = "asyncpg" },
     { name = "cbpupsis-core", editable = "packages/core" },
+    { name = "cryptography", specifier = ">=46.0.0" },
     { name = "sqlalchemy", extras = ["asyncio"] },
 ]
 

@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.curriculum import repository
 from cbpupsis_shared.domains.curriculum.schemas import (
+    CurriculumRead,
     ProgramRead,
     RecordCourse,
     ScheduleCourse,
@@ -50,11 +51,17 @@ async def active_programs_by_code(
 
 
 async def get_program(db: AsyncSession, program_id: uuid.UUID) -> ProgramRead | None:
-    """Return an active program by id, or None."""
-    row = await repository.get_program_by_id(db, program_id)
-    if row is None:
-        return None
-    return ProgramRead.model_validate(row)
+    """Return a program by id, or ``None``."""
+    row = await repository.get_program(db, program_id)
+    return None if row is None else ProgramRead.model_validate(row)
+
+
+async def get_curriculum(
+    db: AsyncSession, curriculum_id: uuid.UUID
+) -> CurriculumRead | None:
+    """Return a curriculum by id, or ``None``."""
+    row = await repository.get_curriculum(db, curriculum_id)
+    return None if row is None else CurriculumRead.model_validate(row)
 
 
 async def get_prescribed_load(

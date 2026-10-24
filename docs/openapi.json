@@ -777,6 +777,355 @@
         ]
       }
     },
+    "/api/v1/student/profile": {
+      "get": {
+        "tags": [
+          "student-profile"
+        ],
+        "summary": "Get Student Profile",
+        "description": "Return the signed-in student's full profile and minimised emergency contacts.",
+        "operationId": "get_student_profile",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentProfileRead"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "student-profile"
+        ],
+        "summary": "Update Student Profile",
+        "description": "Update editable contact fields (phone, email, addresses).\n\nReturns 403 PROFILE_FIELD_LOCKED if any locked master field is submitted.\nReturns 422 VALIDATION_ERROR if phone or email format is invalid.\nOn success, includes a human-readable confirmation message.",
+        "operationId": "update_student_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentProfileRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/student/profile/avatar": {
+      "post": {
+        "tags": [
+          "student-profile"
+        ],
+        "summary": "Upload Student Avatar",
+        "description": "Upload a JPEG or PNG profile picture after magic-byte and malware checks.\n\nReturns 413 FILE_TOO_LARGE if file exceeds 5 MB.\nReturns 415 UNSUPPORTED_MEDIA_TYPE if content is not JPEG/PNG or is malicious.\nOn success, returns the avatar URL and a confirmation message.",
+        "operationId": "upload_student_avatar",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_student_avatar"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvatarUploadRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/student/profile/avatar/{avatar_id}": {
+      "get": {
+        "tags": [
+          "student-profile"
+        ],
+        "summary": "Get Student Avatar Image",
+        "description": "Stream the student profile picture by avatar ID (referenced by avatarUrl).",
+        "operationId": "get_student_avatar",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "avatar_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Avatar Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Binary image stream of the profile picture.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "image/jpeg": {},
+              "image/png": {}
+            }
+          },
+          "404": {
+            "description": "Avatar not found."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/student/profile/emergency-contacts": {
+      "get": {
+        "tags": [
+          "student-profile"
+        ],
+        "summary": "List Emergency Contacts",
+        "description": "List emergency contacts with full details (including email and address).",
+        "operationId": "list_student_emergency_contacts",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EmergencyContactDetailRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Student Emergency Contacts"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "student-profile"
+        ],
+        "summary": "Create Emergency Contact",
+        "description": "Create a new emergency contact while maintaining one primary contact.\n\nReturns 422 VALIDATION_ERROR if name, relationship, or phone format is invalid.\nOn success, returns the created contact and a confirmation message.",
+        "operationId": "create_student_emergency_contact",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmergencyContactDetailRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/student/profile/emergency-contacts/{contact_id}": {
+      "patch": {
+        "tags": [
+          "student-profile"
+        ],
+        "summary": "Update Emergency Contact",
+        "description": "Update an emergency contact owned by the student.\n\nReturns 404 RESOURCE_NOT_FOUND if not owned by the student.\nReturns 422 VALIDATION_ERROR if phone, email, or address format is invalid.\nOn success, returns the updated contact and a confirmation message.",
+        "operationId": "update_student_emergency_contact",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "contact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Contact Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmergencyContactDetailRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "student-profile"
+        ],
+        "summary": "Delete Emergency Contact",
+        "description": "Delete an emergency contact owned by the student.\n\nReturns 404 RESOURCE_NOT_FOUND if not owned by the student.",
+        "operationId": "delete_student_emergency_contact",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "contact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Contact Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/student/dashboard": {
       "get": {
         "tags": [
@@ -5666,6 +6015,40 @@
         "title": "AuthorizationRead",
         "description": "Browser consent instructions, not a connection or delivery confirmation."
       },
+      "AvatarUploadRead": {
+        "properties": {
+          "avatarUrl": {
+            "type": "string",
+            "title": "Avatarurl"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "contentType": {
+            "type": "string",
+            "title": "Contenttype"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "title": "Sizebytes"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "Profile picture uploaded successfully."
+          }
+        },
+        "type": "object",
+        "required": [
+          "avatarUrl",
+          "url",
+          "contentType",
+          "sizeBytes"
+        ],
+        "title": "AvatarUploadRead",
+        "description": "Confirmation returned when a student uploads a valid profile picture."
+      },
       "Body_import_users_api_v1_users_import_post": {
         "properties": {
           "file": {
@@ -5680,6 +6063,21 @@
           "file"
         ],
         "title": "Body_import_users_api_v1_users_import_post"
+      },
+      "Body_upload_student_avatar": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "JPEG or PNG profile picture up to 5 MB"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_student_avatar"
       },
       "CalendarTargetRead": {
         "properties": {
@@ -5950,6 +6348,109 @@
         ],
         "title": "EffectivePermissionsRead",
         "description": "Every action a user is effectively granted, and how they got it.\n\nThe two sources are reported separately rather than pre-merged because the\nquestion an admin screen actually asks is not \"what can they do?\" but \"why\ncan they do it, and what do I change to stop it?\" \u2014 and those have different\nanswers: a group grant is revoked by changing membership, a direct grant by\ndetaching the policy. ``effective`` is the union the guards actually check."
+      },
+      "EmergencyContactDetailRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "relationship": {
+            "type": "string",
+            "title": "Relationship"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "isPrimary": {
+            "type": "boolean",
+            "title": "Isprimary"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "relationship",
+          "phone",
+          "isPrimary"
+        ],
+        "title": "EmergencyContactDetailRead",
+        "description": "Full emergency contact returned on the dedicated contact edit endpoints."
+      },
+      "EmergencyContactSummaryRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "relationship": {
+            "type": "string",
+            "title": "Relationship"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "isPrimary": {
+            "type": "boolean",
+            "title": "Isprimary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "relationship",
+          "phone",
+          "isPrimary"
+        ],
+        "title": "EmergencyContactSummaryRead",
+        "description": "Minimised emergency contact shown on the main profile read (BR-AUTH-007).\n\nDeliberately omits ``address`` and ``email``: those are served only on the\ndedicated emergency-contact edit endpoints."
       },
       "EmptyStatesRead": {
         "properties": {
@@ -7536,6 +8037,35 @@
         "title": "PolicyRead",
         "description": "Policy as returned by the API, including its resolved permissions."
       },
+      "ProfileFieldEntry": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "editable": {
+            "type": "boolean",
+            "title": "Editable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "editable"
+        ],
+        "title": "ProfileFieldEntry",
+        "description": "One profile field with its value and self-service editability flag."
+      },
       "RecordIdentity": {
         "properties": {
           "student_number": {
@@ -8303,6 +8833,63 @@
         ],
         "title": "StudentLoginRequest",
         "description": "Student number, birthdate, and password.\n\nThe student number's format is checked by the service, not here, so a\nmalformed number answers ``AUTH_ID_FORMAT_INVALID`` like the other sign-in\nrules rather than a generic schema error."
+      },
+      "StudentProfileRead": {
+        "properties": {
+          "studentId": {
+            "type": "string",
+            "title": "Studentid"
+          },
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatarurl"
+          },
+          "petitionRoute": {
+            "type": "string",
+            "title": "Petitionroute"
+          },
+          "fields": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProfileFieldEntry"
+            },
+            "type": "object",
+            "title": "Fields"
+          },
+          "emergencyContacts": {
+            "items": {
+              "$ref": "#/components/schemas/EmergencyContactSummaryRead"
+            },
+            "type": "array",
+            "title": "Emergencycontacts"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "studentId",
+          "petitionRoute",
+          "fields",
+          "emergencyContacts"
+        ],
+        "title": "StudentProfileRead",
+        "description": "Student profile response with per-field editability and minimised contacts."
       },
       "StudentRecentActivityRead": {
         "properties": {

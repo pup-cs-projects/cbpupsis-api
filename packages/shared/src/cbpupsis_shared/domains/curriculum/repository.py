@@ -12,7 +12,12 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_database.models.curriculum import Course, CurriculumCourse, Program
+from cbpupsis_database.models.curriculum import (
+    Course,
+    Curriculum,
+    CurriculumCourse,
+    Program,
+)
 
 
 async def list_record_courses(db: AsyncSession, ids: Collection[uuid.UUID]):
@@ -66,19 +71,26 @@ async def list_active_programs_by_code(
     return list(result)
 
 
-async def get_program_by_id(db: AsyncSession, program_id: uuid.UUID) -> Program | None:
-    """Return an active program by id, or None.
+async def get_program(db: AsyncSession, program_id: uuid.UUID) -> Program | None:
+    """Return a degree program by primary key, or ``None``.
 
     SQL::
 
-        SELECT programs.code, programs.name, programs.department,
-               programs.total_units_required, programs.is_active, programs.id
-        FROM programs
-        WHERE programs.id = :program_id AND programs.is_active IS true
+        SELECT * FROM programs WHERE id = :program_id
     """
-    return await db.scalar(
-        select(Program).where(Program.id == program_id, Program.is_active.is_(True))
-    )
+    return await db.get(Program, program_id)
+
+
+async def get_curriculum(
+    db: AsyncSession, curriculum_id: uuid.UUID
+) -> Curriculum | None:
+    """Return a curriculum version by primary key, or ``None``.
+
+    SQL::
+
+        SELECT * FROM curricula WHERE id = :curriculum_id
+    """
+    return await db.get(Curriculum, curriculum_id)
 
 
 async def get_prescribed_load(
