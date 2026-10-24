@@ -8,8 +8,10 @@ environment directly.
 
 from __future__ import annotations
 
+from base64 import urlsafe_b64decode
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,7 +34,9 @@ class Settings(BaseSettings):
     # the same values without duplicating them. There is deliberately no `.env`
     # fallback: two places to look for config is how a value gets changed in one
     # of them and nobody can explain why the app disagrees.
-    model_config = SettingsConfigDict(env_file="env/admin/env.dev", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file="env/admin/env.dev", extra="ignore", hide_input_in_errors=True
+    )
 
     # --- Application ---
     app_name: str = "CBPUPSIS API"
@@ -112,6 +116,14 @@ class Settings(BaseSettings):
     mfa_encryption_key: SecretStr | None = None
     webauthn_rp_id: str = "admin.cbpupsis"
     webauthn_origin: str = "https://admin.cbpupsis"
+
+    # --- Optional, one-way Google course calendar synchronization ---
+    google_calendar_enabled: bool = False
+    google_calendar_client_id: str | None = None
+    google_calendar_client_secret: SecretStr | None = None
+    google_calendar_redirect_uri: str | None = None
+    google_calendar_encryption_key: SecretStr | None = None
+    google_calendar_sync_seconds: int = Field(default=300, ge=60, le=86400)
 
     # --- One-time tokens (email verification, password reset) ---
     #: Verification links are low-risk and mailed once, so a day is generous
@@ -298,6 +310,50 @@ class Settings(BaseSettings):
                 'print(secrets.token_urlsafe(48))"'
             )
         return value
+
+    @model_validator(mode="after")
+    def validate_google_calendar(self) -> Settings:
+        if not self.google_calendar_enabled:
+            return self
+        if not all(
+            (
+                self.google_calendar_client_id,
+                self.google_calendar_client_secret,
+                self.google_calendar_redirect_uri,
+                self.google_calendar_encryption_key,
+            )
+        ):
+            raise ValueError(
+                "Google Calendar requires client, redirect and encryption settings"
+            )
+        try:
+            key = urlsafe_b64decode(
+                self.google_calendar_encryption_key.get_secret_value()
+            )
+            uri = urlsplit(self.google_calendar_redirect_uri)
+            local = self.environment == "development" and uri.hostname in {
+                "localhost",
+                "127.0.0.1",
+            }
+            if (
+                len(key) != 32
+                or not uri.netloc
+                or uri.query
+                or uri.fragment
+                or uri.username
+                or uri.password
+            ):
+                raise ValueError
+            if uri.scheme != "https" and not (local and uri.scheme == "http"):
+                raise ValueError
+            if self.debug:
+                raise ValueError
+        except (ValueError, TypeError):
+            raise ValueError(
+                "Google Calendar requires a 32-byte base64 key, "
+                "a secure redirect URI and DEBUG=false"
+            ) from None
+        return self
 
     @model_validator(mode="after")
     def keep_the_mail_catcher_in_development(self) -> Settings:

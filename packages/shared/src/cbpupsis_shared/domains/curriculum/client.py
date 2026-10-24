@@ -5,14 +5,21 @@ Other domains depend on this module, never on ``service.py`` directly.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.curriculum import service
-from cbpupsis_shared.domains.curriculum.schemas import ProgramRead
+from cbpupsis_shared.domains.curriculum.schemas import ProgramRead, ScheduleCourse
 
-__all__ = ["ProgramRead", "active_programs_by_code"]
+__all__ = ["ProgramRead", "active_programs_by_code", "schedule_courses"]
+
+
+async def schedule_courses(
+    db: AsyncSession, ids: list[uuid.UUID]
+) -> list[ScheduleCourse]:
+    return await service.schedule_courses(db, ids)
 
 
 async def active_programs_by_code(

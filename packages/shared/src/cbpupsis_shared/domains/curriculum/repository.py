@@ -5,12 +5,27 @@ Transactions belong to the service: nothing here commits.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Collection
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_database.models.curriculum import Program
+from cbpupsis_database.models.curriculum import Course, Program
+
+
+async def schedule_courses(
+    db: AsyncSession, ids: Collection[uuid.UUID]
+) -> list[Course]:
+    """Read catalog details for the selected sections, including inactive courses.
+
+    SQL::
+
+        SELECT * FROM courses WHERE id IN (:ids);
+    """
+    if not ids:
+        return []
+    return list(await db.scalars(select(Course).where(Course.id.in_(ids))))
 
 
 async def list_active_programs_by_code(

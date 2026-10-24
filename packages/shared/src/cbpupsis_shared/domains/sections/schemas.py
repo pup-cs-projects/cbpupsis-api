@@ -3,8 +3,30 @@
 from __future__ import annotations
 
 import uuid
+from datetime import time
 
 from pydantic import BaseModel, ConfigDict
+
+
+class MeetingSlot(BaseModel):
+    """Weekly meeting; weekdays use Python's Monday=0 convention."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    day_of_week: int
+    start_time: time
+    end_time: time
+    room: str | None
+    schedule_type: str
+
+
+class ScheduleSection(BaseModel):
+    id: uuid.UUID
+    academic_term_id: uuid.UUID
+    course_id: uuid.UUID
+    faculty_id: uuid.UUID | None
+    section_name: str
+    meetings: list[MeetingSlot]
 
 
 class CourseSectionRead(BaseModel):

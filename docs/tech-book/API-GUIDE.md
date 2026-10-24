@@ -921,6 +921,21 @@ each build creates its own.
 
 ## Conventions worth keeping
 
+Student schedule reads and exports follow the
+[US-STU-003 contract](STUDENT-SCHEDULE.md), including weekly contact-hour totals,
+snake_case fields, private documents, and durable calendar revisions. Schedule
+JSON is a direct object, consistent with existing resource endpoints. This
+user-approved naming alignment replaces the earlier draft's camelCase fields;
+see the schedule guide's client migration notes before updating a consumer.
+Use `/api/v1/students/me/schedule` and `/api/v1/students/me/schedule/export`;
+the earlier draft's deprecated `/api/v1/student/schedule` URLs were removed and
+now return 404. Scalar documents term selection, filtering, ownership, empty
+states, weekly totals, download formats and failure/retry behavior on these routes.
+
+The optional [Google Calendar connection](GOOGLE-CALENDAR.md) adds student-owned
+OAuth, per-term dedicated calendars and a separate student reconciliation worker.
+It is disabled by default and does not replace manual exports or SIS sign-in.
+
 - Money is `Numeric`/`Decimal`, never `float`.
 - Timestamps are timezone-aware, stored UTC.
 - Soft-delete important data via `deleted_at`; services filter it out so callers

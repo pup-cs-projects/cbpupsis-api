@@ -6,12 +6,22 @@ curriculum administration is its own epic.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.curriculum import repository
-from cbpupsis_shared.domains.curriculum.schemas import ProgramRead
+from cbpupsis_shared.domains.curriculum.schemas import ProgramRead, ScheduleCourse
+
+
+async def schedule_courses(
+    db: AsyncSession, ids: list[uuid.UUID]
+) -> list[ScheduleCourse]:
+    return [
+        ScheduleCourse.model_validate(row)
+        for row in await repository.schedule_courses(db, ids)
+    ]
 
 
 async def active_programs_by_code(

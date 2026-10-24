@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -17,3 +18,14 @@ class ProgramRead(BaseModel):
     name: str
     department: str
     is_active: bool
+
+
+class ScheduleCourse(BaseModel):
+    """Course catalog fields used by student schedules."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    course_code: str
+    title: str
+    lecture_units: Decimal
+    lab_units: Decimal
