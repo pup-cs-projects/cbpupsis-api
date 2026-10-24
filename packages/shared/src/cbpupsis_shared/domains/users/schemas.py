@@ -272,6 +272,23 @@ class EmergencyContactRead(BaseModel):
     is_primary: bool = False
 
 
+class StudentDashboardIdentity(BaseModel):
+    """The identity block the student dashboard renders."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: uuid.UUID
+    student_number: str
+    display_name: str
+    program_name: str
+    year_level: int
+    enrollment_status: str
+    curriculum_id: uuid.UUID | None = None
+    avatar_url: str | None = None
+    has_financial_hold: bool = False
+    has_academic_hold: bool = False
+
+
 class AccountCreate(BaseModel):
     """One account a Superadmin creates: a ``POST /users`` body or a CSV row.
 

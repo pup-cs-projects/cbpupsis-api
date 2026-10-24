@@ -61,3 +61,15 @@ def render_in_utc8(value: datetime) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return value.astimezone(timezone(timedelta(hours=8))).isoformat()
+
+
+class StudentRecentActivityRead(BaseModel):
+    """A recent sign-in or security audit event shown on the dashboard."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    occurred_at: str
+    type: str
+    severity: str
+    description: str

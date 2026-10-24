@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable
+from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +24,7 @@ __all__ = [
     "ProgramRead",
     "active_programs_by_code",
     "get_curriculum",
+    "get_prescribed_load",
     "get_program",
     "record_courses",
     "schedule_courses",
@@ -49,3 +51,15 @@ async def get_curriculum(
     db: AsyncSession, curriculum_id: uuid.UUID
 ) -> CurriculumRead | None:
     return await service.get_curriculum(db, curriculum_id)
+
+
+async def get_prescribed_load(
+    db: AsyncSession,
+    *,
+    curriculum_id: uuid.UUID | None,
+    year_level: int,
+    semester: str,
+) -> Decimal:
+    return await service.get_prescribed_load(
+        db, curriculum_id=curriculum_id, year_level=year_level, semester=semester
+    )

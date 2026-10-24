@@ -49,6 +49,7 @@ __all__ = [
     "get_faculty_profile",
     "get_faculty_sign_in",
     "get_session_version",
+    "get_student_by_number",
     "get_student_profile",
     "get_student_sign_in",
     "get_user",
@@ -258,3 +259,10 @@ async def find_account_problems(
     """Check new accounts against each other and existing accounts."""
     problems, _program_ids = await service.find_account_problems(db, accounts)
     return problems
+
+
+async def get_student_by_number(
+    db: AsyncSession, student_number: str
+) -> StudentProfileRead | None:
+    """Return a student profile by student number, or None."""
+    return await service.get_student_by_number(db, student_number)

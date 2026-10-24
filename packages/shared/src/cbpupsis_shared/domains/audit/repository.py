@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.models.audit import AuditEntry, AuthAuditLog
@@ -179,3 +179,75 @@ async def list_sign_in_attempts(
         .offset(offset)
     )
     return list(result.scalars().all()), total or 0
+
+
+async def list_student_auth_events(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    student_number: str,
+    limit: int = 10,
+) -> list[AuthAuditLog]:
+    """Return recent sign-in attempts for a student.
+
+    SQL::
+
+        SELECT auth_audit_logs.id, auth_audit_logs.user_id,
+               auth_audit_logs.attempted_id, auth_audit_logs.ip_address,
+               auth_audit_logs.user_agent, auth_audit_logs.success,
+               auth_audit_logs.failure_reason, auth_audit_logs.is_suspicious,
+               auth_audit_logs.mfa_used, auth_audit_logs.created_at
+        FROM auth_audit_logs
+        WHERE auth_audit_logs.user_id = :user_id
+           OR auth_audit_logs.attempted_id = :student_number
+        ORDER BY auth_audit_logs.created_at DESC
+        LIMIT :limit
+    """
+    stmt = (
+        select(AuthAuditLog)
+        .where(
+            or_(
+                AuthAuditLog.user_id == user_id,
+                AuthAuditLog.attempted_id == student_number,
+            )
+        )
+        .order_by(AuthAuditLog.created_at.desc())
+        .limit(limit)
+    )
+    result = await db.scalars(stmt)
+    return list(result)
+
+
+async def list_student_audit_entries(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    limit: int = 10,
+) -> list[AuditEntry]:
+    """Return recent audit entries where the student is the actor or target.
+
+    SQL::
+
+        SELECT audit_entries.id, audit_entries.action, audit_entries.actor_id,
+               audit_entries.target_type, audit_entries.target_id,
+               audit_entries.payload, audit_entries.prior_state,
+               audit_entries.new_state, audit_entries.occurred_at
+        FROM audit_entries
+        WHERE audit_entries.actor_id = :user_id
+           OR audit_entries.target_id = :target_id
+        ORDER BY audit_entries.occurred_at DESC
+        LIMIT :limit
+    """
+    stmt = (
+        select(AuditEntry)
+        .where(
+            or_(
+                AuditEntry.actor_id == user_id,
+                AuditEntry.target_id == str(user_id),
+            )
+        )
+        .order_by(AuditEntry.occurred_at.desc())
+        .limit(limit)
+    )
+    result = await db.scalars(stmt)
+    return list(result)

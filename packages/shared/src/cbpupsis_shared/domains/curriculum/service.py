@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Collection, Iterable
+from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -61,3 +62,16 @@ async def get_curriculum(
     """Return a curriculum by id, or ``None``."""
     row = await repository.get_curriculum(db, curriculum_id)
     return None if row is None else CurriculumRead.model_validate(row)
+
+
+async def get_prescribed_load(
+    db: AsyncSession,
+    *,
+    curriculum_id: uuid.UUID | None,
+    year_level: int,
+    semester: str,
+) -> Decimal:
+    """Return prescribed credit units for year level and semester."""
+    return await repository.get_prescribed_load(
+        db, curriculum_id=curriculum_id, year_level=year_level, semester=semester
+    )

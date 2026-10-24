@@ -1069,3 +1069,13 @@ def _stage_profiles(db: AsyncSession, user_id: uuid.UUID, item: NewAccount) -> N
             department=department,
             college=college,
         )
+
+
+async def get_student_by_number(
+    db: AsyncSession, student_number: str
+) -> StudentProfileRead | None:
+    """Return a student profile by institutional number as a DTO, or None."""
+    profile = await repository.get_student_by_student_number(db, student_number)
+    if profile is None:
+        return None
+    return StudentProfileRead.model_validate(profile)

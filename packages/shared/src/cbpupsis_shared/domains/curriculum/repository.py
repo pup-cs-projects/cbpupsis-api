@@ -7,11 +7,17 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Collection
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_database.models.curriculum import Course, Curriculum, Program
+from cbpupsis_database.models.curriculum import (
+    Course,
+    Curriculum,
+    CurriculumCourse,
+    Program,
+)
 
 
 async def list_record_courses(db: AsyncSession, ids: Collection[uuid.UUID]):
@@ -85,3 +91,37 @@ async def get_curriculum(
         SELECT * FROM curricula WHERE id = :curriculum_id
     """
     return await db.get(Curriculum, curriculum_id)
+
+
+async def get_prescribed_load(
+    db: AsyncSession,
+    *,
+    curriculum_id: uuid.UUID | None,
+    year_level: int,
+    semester: str,
+) -> Decimal:
+    """Compute prescribed units load for curriculum year level and semester.
+
+    SQL::
+
+        SELECT COALESCE(SUM(courses.lecture_units + courses.lab_units), 26)
+        FROM curriculum_courses
+        JOIN courses ON courses.id = curriculum_courses.course_id
+        WHERE curriculum_courses.curriculum_id = :curriculum_id
+          AND curriculum_courses.year_level = :year_level
+          AND curriculum_courses.semester = :semester
+    """
+    if curriculum_id is None:
+        return Decimal("26")
+    stmt = (
+        select(func.sum(Course.lecture_units + Course.lab_units))
+        .select_from(CurriculumCourse)
+        .join(Course, Course.id == CurriculumCourse.course_id)
+        .where(
+            CurriculumCourse.curriculum_id == curriculum_id,
+            CurriculumCourse.year_level == year_level,
+            CurriculumCourse.semester == semester,
+        )
+    )
+    units = await db.scalar(stmt)
+    return Decimal(str(units)) if units else Decimal("26")
