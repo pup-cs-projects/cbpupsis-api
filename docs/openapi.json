@@ -656,15 +656,40 @@
         "summary": "Student Refresh",
         "description": "Rotate the student session's refresh token.",
         "operationId": "student_refresh",
+        "parameters": [
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Data"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -1015,6 +1040,327 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/students/me/grades": {
+      "get": {
+        "tags": [
+          "student-grades"
+        ],
+        "summary": "Read Grades",
+        "description": "Read your finalized grades for one academic term (US-STU-004).\n\nRequires a live **student Bearer session** and the **ReadGrade**\npermission. `me` is resolved from the access token; no student number\nis needed. Other roles receive `404 RESOURCE_NOT_FOUND`.\n\nOmit both filters for the latest term containing posted marks, not\nnecessarily the current academic term. To select history, supply\n`year` and `semester` together, for example `year=2025-2026` and\n`semester=first`. Labels must match the stored term exactly; blank\nor unpaired filters return **422**.\n\nOnly finalized, locked, non-draft marks are visible. Each course has\nits code, title, units, final mark, status, posted date and any stored\nincomplete deadline. Decimal values are JSON **strings**. GWA is\nunit-weighted, excludes NSTP and nonnumeric marks, includes numeric\nfailures and rounds half-up to two places. No eligible numeric units\nmeans `gwa: null`.\n\nNo posted marks returns **200** with an explanatory empty state.\nStanding is read from a stored evaluation, never calculated here;\nmissing evaluation leaves standing and `unitReduction` null. This\nread does not submit/correct marks or convert expired incompletes.\nResponses use `Cache-Control: private, no-store`.",
+        "operationId": "read_grades_api_v1_students_me_grades_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Academic-year label exactly as stored. Supply together with semester, or omit both to select the latest term with posted marks.",
+              "examples": [
+                "2025-2026"
+              ],
+              "title": "Year"
+            },
+            "description": "Academic-year label exactly as stored. Supply together with semester, or omit both to select the latest term with posted marks."
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Semester label exactly as stored, including letter case. Required when year is supplied; blank or unpaired filters return 422.",
+              "examples": [
+                "first"
+              ],
+              "title": "Semester"
+            },
+            "description": "Semester label exactly as stored, including letter case. Required when year is supplied; blank or unpaired filters return 422."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GradesRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token, expired/revoked session, or inactive account. A live authenticated session is required."
+          },
+          "403": {
+            "description": "Missing the required read permission, or a temporary password must be changed (PASSWORD_CHANGE_REQUIRED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: the session is not a student session, no student record is available, or the supplied student number is not the signed-in student's own number."
+          },
+          "503": {
+            "description": "GRADE_RECORD_UNAVAILABLE: stored academic data cannot be safely read. No partial or fabricated record is returned."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/students/{student_number}/grades": {
+      "get": {
+        "tags": [
+          "student-grades"
+        ],
+        "summary": "Read Identified Grades",
+        "description": "Read your grades using an explicit student number (US-STU-004).\n\nRequires a live **student Bearer session** and **ReadGrade**. The\npath parameter must match the signed-in student's number exactly.\nThis is **not** a staff lookup or a way to read another student's\ngrades: foreign and unknown numbers both return\n`404 RESOURCE_NOT_FOUND` without confirming whether they exist.\n\nIn Scalar, enter your own student number in the path field, for\nexample `2021-00901-MN-0`, and use that same student's Bearer token.\nPrefer `/api/v1/students/me/grades` for normal frontend self-service.\n\nTerm selection, calculation rules, empty states and response fields\nare identical to the `me` endpoint. Omit both term filters for the\nlatest posted term, or supply `year` and `semester` together; blank\nor unpaired filters return **422**. Only finalized, non-draft marks\nare returned. Responses use `Cache-Control: private, no-store`.",
+        "operationId": "read_identified_grades_api_v1_students__student_number__grades_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "student_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The signed-in student's own institutional student number, not a user UUID. Another student's number and an unknown number both return 404 RESOURCE_NOT_FOUND.",
+              "examples": [
+                "2021-00901-MN-0"
+              ],
+              "title": "Student Number"
+            },
+            "description": "The signed-in student's own institutional student number, not a user UUID. Another student's number and an unknown number both return 404 RESOURCE_NOT_FOUND."
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Academic-year label exactly as stored. Supply together with semester, or omit both to select the latest term with posted marks.",
+              "examples": [
+                "2025-2026"
+              ],
+              "title": "Year"
+            },
+            "description": "Academic-year label exactly as stored. Supply together with semester, or omit both to select the latest term with posted marks."
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Semester label exactly as stored, including letter case. Required when year is supplied; blank or unpaired filters return 422.",
+              "examples": [
+                "first"
+              ],
+              "title": "Semester"
+            },
+            "description": "Semester label exactly as stored, including letter case. Required when year is supplied; blank or unpaired filters return 422."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GradesRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token, expired/revoked session, or inactive account. A live authenticated session is required."
+          },
+          "403": {
+            "description": "Missing the required read permission, or a temporary password must be changed (PASSWORD_CHANGE_REQUIRED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: the session is not a student session, no student record is available, or the supplied student number is not the signed-in student's own number."
+          },
+          "503": {
+            "description": "GRADE_RECORD_UNAVAILABLE: stored academic data cannot be safely read. No partial or fabricated record is returned."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/students/me/transcript": {
+      "get": {
+        "tags": [
+          "student-grades"
+        ],
+        "summary": "Read Transcript",
+        "description": "Read your academic history, paginated by term (US-STU-004).\n\nRequires a live **student Bearer session** and **ReadTranscript**.\nTerms containing finalized, non-draft marks are ordered newest first.\nPagination counts **terms**, not courses: `page` starts at 1 and\n`limit` defaults to 20 with a maximum of 100. Invalid values return\n**422**. `total` counts all available terms; `nextPage` is null when\nno later page exists.\n\nAll eligible attempts, including repeated courses and numeric\nfailures, contribute to GWA. NSTP and nonnumeric marks do not.\nCumulative GWA uses completed terms: their end date must be before\ntoday's Asia/Manila date. Ongoing terms remain visible but do not\ncontribute to cumulative GWA. Earned credits include posted passes,\nincluding ongoing terms, and count each catalog course only once.\n\nTop-level totals cover the **whole record**, independently of page\nand limit. Each term's running totals cover history through that\nterm. Decimal values are strings; averages round half-up to two\nplaces and are null when there are no eligible numeric units.\nNo posted marks returns **200** with empty terms and an explanation.\n\nUse `/api/v1/students/me/transcript/export` for a complete printable\nPDF, not just the current page. Responses are private and no-store.",
+        "operationId": "read_transcript_api_v1_students_me_transcript_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "One-based page of academic terms, newest first. A page beyond the last returns empty terms while preserving overall totals.",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "One-based page of academic terms, newest first. A page beyond the last returns empty terms while preserving overall totals."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum term blocks per page, not courses. Defaults to 20 and accepts 1 through 100; never changes cumulative totals.",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum term blocks per page, not courses. Defaults to 20 and accepts 1 through 100; never changes cumulative totals."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token, expired/revoked session, or inactive account. A live authenticated session is required."
+          },
+          "403": {
+            "description": "Missing the required read permission, or a temporary password must be changed (PASSWORD_CHANGE_REQUIRED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: the session is not a student session, no student record is available, or the supplied student number is not the signed-in student's own number."
+          },
+          "503": {
+            "description": "GRADE_RECORD_UNAVAILABLE: stored academic data cannot be safely read. No partial or fabricated record is returned."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/students/me/transcript/export": {
+      "get": {
+        "tags": [
+          "student-grades"
+        ],
+        "summary": "Export Transcript",
+        "description": "Download your complete unofficial transcript PDF (US-STU-004).\n\nRequires a live **student Bearer session** and **ReadTranscript**.\nThe PDF includes the university header, your identity, all posted\nterm tables, GWA/earned-unit totals and page numbers. It is labeled\n**Unofficial Transcript - Student Copy**, not an official registrar\ncertification. Table headings repeat when records span pages.\n\nExport always includes the **complete record**, regardless of JSON\npagination. This endpoint has no page/limit parameters or term\nfilters; supplying them does not narrow the PDF. No posted marks\nstill returns a valid PDF with an explanatory empty state.\n\nSuccess returns **200 application/pdf** with attachment filename\n`unofficial-transcript.pdf`, `Cache-Control: private, no-store`, and\n`X-Content-Type-Options: nosniff`. Use Scalar's response preview or\ndownload control; opening the URL in a new unauthenticated browser\ntab returns **401** because the Bearer token is not sent there.\n\nGeneration is in memory; no transcript file is stored by the API.\nRendering failure, timeout or inconsistent source data returns\n`503 GRADE_RECORD_UNAVAILABLE`, never a partial academic record.",
+        "operationId": "export_transcript_api_v1_students_me_transcript_export_get",
+        "responses": {
+          "200": {
+            "description": "Complete unofficial student transcript as a private PDF attachment, including an explanatory empty transcript if no finalized marks are available.",
+            "content": {
+              "application/pdf": {}
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token, expired/revoked session, or inactive account. A live authenticated session is required."
+          },
+          "403": {
+            "description": "Missing the required read permission, or a temporary password must be changed (PASSWORD_CHANGE_REQUIRED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: the session is not a student session, no student record is available, or the supplied student number is not the signed-in student's own number."
+          },
+          "503": {
+            "description": "GRADE_RECORD_UNAVAILABLE: academic data is inconsistent, or PDF rendering failed or exceeded its time limit."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/students/me/schedule": {
@@ -1849,15 +2195,40 @@
         "summary": "Faculty Refresh",
         "description": "Rotate the faculty session's refresh token.",
         "operationId": "faculty_refresh",
+        "parameters": [
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Data"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -2316,15 +2687,40 @@
         "summary": "Refresh Admin",
         "description": "Rotate an Admin session and renew its cookies.",
         "operationId": "refresh_admin_api_v1_auth_admin_refresh_post",
+        "parameters": [
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Data"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -3812,15 +4208,40 @@
         ],
         "summary": "Refresh Superadmin",
         "operationId": "refresh_superadmin_api_v1_auth_superadmin_refresh_post",
+        "parameters": [
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Data"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -4161,6 +4582,18 @@
   },
   "components": {
     "schemas": {
+      "AcademicStanding": {
+        "type": "string",
+        "enum": [
+          "Good Standing",
+          "Warning Level 1",
+          "Warning Level 2",
+          "Probation",
+          "College Dropping",
+          "University Dismissal"
+        ],
+        "title": "AcademicStanding"
+      },
       "AccountCreate": {
         "properties": {
           "first_name": {
@@ -5151,6 +5584,248 @@
         "title": "ForgotPasswordResponse",
         "description": "Uniform response for a password-reset request."
       },
+      "GradeCourse": {
+        "properties": {
+          "course_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Course Id",
+            "description": "Catalog course ID used to deduplicate credits."
+          },
+          "enrollment_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Enrollment Id",
+            "description": "Course-enrollment ID for this attempt."
+          },
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Catalog course code.",
+            "examples": [
+              "COMP101"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Catalog course title."
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units",
+            "description": "Lecture plus laboratory units, serialized as a Decimal string.",
+            "examples": [
+              "3.0"
+            ]
+          },
+          "final_grade": {
+            "type": "string",
+            "enum": [
+              "1.00",
+              "1.25",
+              "1.50",
+              "1.75",
+              "2.00",
+              "2.25",
+              "2.50",
+              "2.75",
+              "3.00",
+              "5.00",
+              "Inc",
+              "W"
+            ],
+            "title": "Final Grade",
+            "description": "Published final mark. Numeric marks have two places; Inc means incomplete and W means withdrawn.",
+            "examples": [
+              "1.25",
+              "Inc",
+              "W"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Passed",
+              "Failed",
+              "Incomplete",
+              "Withdrawn"
+            ],
+            "title": "Status",
+            "description": "Readable outcome for this attempt; Inc is not a numeric failure."
+          },
+          "posted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Posted At",
+            "description": "Stored final-submission timestamp in UTC."
+          },
+          "completion_deadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Deadline",
+            "description": "Stored UTC completion deadline for Inc; null for other marks. An expired deadline does not automatically change the mark on read."
+          }
+        },
+        "type": "object",
+        "required": [
+          "course_id",
+          "enrollment_id",
+          "code",
+          "title",
+          "units",
+          "final_grade",
+          "status",
+          "posted_at"
+        ],
+        "title": "GradeCourse",
+        "description": "One posted course attempt; draft marks are excluded."
+      },
+      "GradesRead": {
+        "properties": {
+          "student": {
+            "$ref": "#/components/schemas/RecordIdentity"
+          },
+          "term": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TermRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Selected term, or null when no matching term is found."
+          },
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/GradeCourse"
+            },
+            "type": "array",
+            "title": "Courses",
+            "description": "Posted attempts, sorted by course code."
+          },
+          "gwa": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gwa",
+            "description": "Unit-weighted term average as a two-place Decimal string. Excludes NSTP and nonnumeric marks, includes numeric failures; null when there are no eligible numeric units.",
+            "examples": [
+              "1.63"
+            ]
+          },
+          "units_earned": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units Earned",
+            "description": "Units of unique passed courses in this term, as a Decimal string. Failures, withdrawals and unresolved incompletes earn no units.",
+            "default": "0.0"
+          },
+          "academic_standing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcademicStanding"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stored selected-term evaluation, not recalculated from GWA. Null when not evaluated; Suspension is not an allowed standing."
+          },
+          "unitReduction": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unitreduction",
+            "description": "Standing-based unit reduction: 0 for Good Standing/Warning Level 1, 3 for Warning Level 2, 6 for Probation. Null when unevaluated or when dropping/dismissal requires the separate enrollment workflow."
+          },
+          "standing_state": {
+            "type": "string",
+            "enum": [
+              "evaluated",
+              "not_evaluated"
+            ],
+            "title": "Standing State",
+            "description": "Whether a stored term evaluation exists.",
+            "default": "not_evaluated"
+          },
+          "standing_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Message",
+            "description": "Explanation for unevaluated standing; null when evaluated.",
+            "default": "Academic standing has not yet been evaluated."
+          },
+          "standing_evaluated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Evaluated At",
+            "description": "Stored evaluation timestamp in UTC, or null."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "empty"
+            ],
+            "title": "State",
+            "description": "Whether the selection contains published marks.",
+            "default": "empty"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "Empty-selection explanation; null when marks are available.",
+            "default": "No finalized marks are available for this selection."
+          }
+        },
+        "type": "object",
+        "required": [
+          "student"
+        ],
+        "title": "GradesRead",
+        "description": "One student's selected term, published marks and stored standing.\n\nDecimal values are JSON strings. Averages use ROUND_HALF_UP to two\nplaces. Empty or wholly nonnumeric/NSTP results have a null GWA,\nnever a fabricated zero. Standing is not inferred from these marks."
+      },
       "GroupCreate": {
         "properties": {
           "name": {
@@ -6097,6 +6772,24 @@
         "title": "PolicyRead",
         "description": "Policy as returned by the API, including its resolved permissions."
       },
+      "RecordIdentity": {
+        "properties": {
+          "student_number": {
+            "type": "string",
+            "title": "Student Number"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "student_number",
+          "full_name"
+        ],
+        "title": "RecordIdentity"
+      },
       "RefreshRequest": {
         "properties": {
           "refresh_token": {
@@ -6848,6 +7541,42 @@
         ],
         "title": "SuperadminTokenPair"
       },
+      "TermRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "academic_year": {
+            "type": "string",
+            "title": "Academic Year"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "title": "End Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "academic_year",
+          "semester",
+          "start_date",
+          "end_date"
+        ],
+        "title": "TermRead"
+      },
       "TermSelection": {
         "properties": {
           "year": {
@@ -6969,6 +7698,172 @@
           "challenge_token"
         ],
         "title": "TotpEnrollmentRequest"
+      },
+      "TranscriptRead": {
+        "properties": {
+          "student": {
+            "$ref": "#/components/schemas/RecordIdentity"
+          },
+          "terms": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptTerm"
+            },
+            "type": "array",
+            "title": "Terms",
+            "description": "This page's term blocks, newest first."
+          },
+          "cumulative_gwa": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Gwa",
+            "description": "Whole-record completed-term GWA as a two-place Decimal string. Null with no eligible numeric units; independent of the requested page.",
+            "examples": [
+              "2.21"
+            ]
+          },
+          "total_units_earned": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Units Earned",
+            "description": "Whole-record earned units as a Decimal string, counting each passed catalog course once. Includes passes in ongoing terms.",
+            "default": "0.0"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "description": "Requested one-based term page."
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "description": "Requested term-page size, default 20 and maximum 100."
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Number of terms with published marks across all pages."
+          },
+          "nextPage": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextpage",
+            "description": "Next term page number, or null when no later page exists."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "empty"
+            ],
+            "title": "State",
+            "description": "Whole-record availability. Remains available for an out-of-range page when other pages contain marks.",
+            "default": "empty"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "Explanation when no posted marks exist anywhere in the record.",
+            "default": "No finalized marks are available."
+          }
+        },
+        "type": "object",
+        "required": [
+          "student",
+          "page",
+          "limit",
+          "total"
+        ],
+        "title": "TranscriptRead",
+        "description": "Paginated term history with whole-record totals.\n\nEvery finalized attempt remains visible. All eligible attempts count\ntoward GWA, but each passed catalog course earns cumulative credit\nonly once. Decimal values are strings, not floating-point numbers."
+      },
+      "TranscriptTerm": {
+        "properties": {
+          "term": {
+            "$ref": "#/components/schemas/TermRead"
+          },
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/GradeCourse"
+            },
+            "type": "array",
+            "title": "Courses"
+          },
+          "gwa": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gwa",
+            "description": "Term GWA using the same rules as grades."
+          },
+          "units_earned": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units Earned",
+            "description": "Unique passed-course units within this term."
+          },
+          "cumulative_gwa": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Gwa",
+            "description": "GWA from eligible attempts in completed terms up to this term; computed from unrounded totals, independently of pagination."
+          },
+          "total_units_earned": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Units Earned",
+            "description": "Running earned units through this term, counting each passed catalog course only once across history."
+          },
+          "completed": {
+            "type": "boolean",
+            "title": "Completed",
+            "description": "True when the term end date is before today's Asia/Manila date. Ongoing terms are visible but excluded from cumulative GWA."
+          }
+        },
+        "type": "object",
+        "required": [
+          "term",
+          "courses",
+          "gwa",
+          "units_earned",
+          "cumulative_gwa",
+          "total_units_earned",
+          "completed"
+        ],
+        "title": "TranscriptTerm",
+        "description": "One term's posted attempts and running totals through that term."
       },
       "UnreadCount": {
         "properties": {

@@ -167,7 +167,12 @@ async def _authenticate(
             db, claims, allow_password_change=allow_password_change
         )
         request.state.superadmin_audit = audit_client.begin_superadmin_request(
-            db, user.id, request.method, request.url.path
+            db,
+            user.id,
+            request.method,
+            getattr(request.scope.get("route"), "path", "private-record")
+            if getattr(request.state, "private_response", False)
+            else request.url.path,
         )
         db.info["audit_event_handler"] = audit_client.capture_event
         request.state.audit_db = db

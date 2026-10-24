@@ -51,15 +51,23 @@ def register_middleware(app: FastAPI) -> None:
         elapsed_ms = (time.perf_counter() - started) * 1000
 
         response.headers["X-Request-ID"] = request_id
-        if getattr(request.state, "private_response", False):
+        private = getattr(request.state, "private_response", False)
+        if private:
             response.headers["Cache-Control"] = "private, no-store"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+        path = request_log_path(request)
+        if private and response.status_code >= 400:
+            logger.warning(
+                "grades.request_refused",
+                extra={"path": path, "status_code": response.status_code},
+            )
         # Structured: a stable message plus queryable fields, rather than one
         # formatted string a log aggregator would have to parse.
         logger.info(
             "request.completed",
             extra={
                 "method": request.method,
-                "path": request_log_path(request),
+                "path": path,
                 "status_code": response.status_code,
                 "duration_ms": round(elapsed_ms, 1),
             },

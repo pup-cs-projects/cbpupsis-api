@@ -1,11 +1,26 @@
-"""SQL for calendar reads."""
+"""SQL for calendar and term metadata reads."""
 
 import uuid
+from collections.abc import Collection
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.models.academics import AcademicEvent, AcademicTerm
+
+
+async def list_terms(
+    db: AsyncSession, ids: Collection[uuid.UUID]
+) -> list[AcademicTerm]:
+    """Read only terms referenced by the caller's record.
+
+    SQL::
+
+        SELECT * FROM academic_terms WHERE id IN (:ids);
+    """
+    if not ids:
+        return []
+    return list(await db.scalars(select(AcademicTerm).where(AcademicTerm.id.in_(ids))))
 
 
 async def find_terms(db: AsyncSession, year: str | None, semester: str | None):

@@ -1,5 +1,9 @@
-"""Public calendar interface."""
+"""Public calendar and term metadata interface."""
 
-from cbpupsis_shared.domains.academics.service import holidays, resolve_term
+from cbpupsis_shared.domains.academics.service import (
+    holidays,
+    record_terms,
+    resolve_term,
+)
 
-__all__ = ["holidays", "resolve_term"]
+__all__ = ["holidays", "record_terms", "resolve_term"]

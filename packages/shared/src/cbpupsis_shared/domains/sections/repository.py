@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +32,20 @@ async def schedule_sections(db: AsyncSession, ids: list[uuid.UUID]):
         .limit(1001)
     )
     return list(sections), list(meetings)
+
+
+async def list_record_sections(db: AsyncSession, ids: Collection[uuid.UUID]):
+    """Read section-to-course/term identifiers in one batch.
+
+    SQL::
+
+        SELECT * FROM course_sections WHERE id IN (:ids);
+    """
+    if not ids:
+        return []
+    return list(
+        await db.scalars(select(CourseSection).where(CourseSection.id.in_(ids)))
+    )
 
 
 async def get_course_section(

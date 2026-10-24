@@ -64,6 +64,29 @@ def test_each_app_serves_exactly_its_routers(name: str) -> None:
     assert api_prefixes(APPS[name]) == EXPECTED_PREFIXES[name]
 
 
+@pytest.mark.parametrize("app", [student_app, main.app])
+def test_student_records_have_one_public_route_per_operation(app: FastAPI) -> None:
+    paths = {
+        (method, path)
+        for method, path in operations(app)
+        if path.startswith(("/api/v1/student/", "/api/v1/students/"))
+    }
+    assert paths == {
+        ("get", "/api/v1/students/me/grades"),
+        ("get", "/api/v1/students/me/transcript"),
+        ("get", "/api/v1/students/me/transcript/export"),
+        ("get", "/api/v1/students/{student_number}/grades"),
+        ("get", "/api/v1/students/me/schedule"),
+        ("get", "/api/v1/students/me/schedule/export"),
+        ("get", "/api/v1/students/{student_number}/schedule"),
+        ("get", "/api/v1/students/me/schedule/google-calendar"),
+        ("delete", "/api/v1/students/me/schedule/google-calendar"),
+        ("post", "/api/v1/students/me/schedule/google-calendar/authorization"),
+        ("post", "/api/v1/students/me/schedule/google-calendar/callback"),
+        ("post", "/api/v1/students/me/schedule/google-calendar/sync"),
+    }
+
+
 @pytest.mark.parametrize("name", sorted(APPS))
 def test_each_app_answers_the_probes(name: str) -> None:
     paths = {path for _, path in operations(APPS[name])}

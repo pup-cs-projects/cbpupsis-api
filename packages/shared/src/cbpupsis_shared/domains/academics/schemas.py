@@ -1,4 +1,4 @@
-"""Academic calendar DTOs."""
+"""Academic calendar and term metadata DTOs."""
 
 import uuid
 from datetime import date

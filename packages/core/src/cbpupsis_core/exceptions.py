@@ -244,4 +244,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "detail": "Internal server error",
                 "request_id": request_id_of(request),
             },
+            headers={"Cache-Control": "private, no-store"}
+            if getattr(request.state, "private_response", False)
+            else None,
         )

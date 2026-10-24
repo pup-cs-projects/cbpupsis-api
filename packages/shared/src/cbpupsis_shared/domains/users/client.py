@@ -25,7 +25,11 @@ from cbpupsis_shared.domains.users.schemas import (
     ScheduleIdentity,
     UserRead,
 )
-from cbpupsis_shared.domains.users.service import AccountProblem, SignInSubject
+from cbpupsis_shared.domains.users.service import (
+    AccountProblem,
+    SignInSubject,
+    record_identity,
+)
 
 __all__ = [
     "AccountProblem",
@@ -43,6 +47,7 @@ __all__ = [
     "invalidate_role_sessions",
     "lock_active_user",
     "lock_role_subject",
+    "record_identity",
     "save_admin_profile",
     "schedule_identity",
     "schedule_names",

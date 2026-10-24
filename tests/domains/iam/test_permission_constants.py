@@ -33,6 +33,7 @@ from cbpupsis_api_admin.domains.superadmin_ops import (
 from cbpupsis_api_student.domains.items import constants as items_constants
 from cbpupsis_api_student.domains.schedule import constants as schedule_constants
 from cbpupsis_shared.domains.auth import constants as auth_constants
+from cbpupsis_shared.domains.grading import constants as grading_constants
 from cbpupsis_shared.domains.iam import constants as iam_constants
 from cbpupsis_shared.domains.notifications import constants as notifications_constants
 from cbpupsis_shared.domains.sections import constants as sections_constants
@@ -48,6 +49,7 @@ DOMAIN_CONSTANTS: dict[str, ModuleType] = {
     "items": items_constants,
     "notifications": notifications_constants,
     "sections": sections_constants,
+    "grading": grading_constants,
     "schedule": schedule_constants,
     "superadmin_ops": superadmin_ops_constants,
 }

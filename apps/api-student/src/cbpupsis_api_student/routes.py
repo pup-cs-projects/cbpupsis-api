@@ -14,11 +14,13 @@ from cbpupsis_api_student.domains.schedule.router import router as schedule_rout
 from cbpupsis_api_student.domains.student_auth.router import (
     router as student_auth_router,
 )
+from cbpupsis_api_student.domains.student_grades.router import router as grades_router
 from cbpupsis_shared.application import RouterMount
 from cbpupsis_shared.routes import COMMON_MOUNTS
 
 STUDENT_AUTH = RouterMount(student_auth_router, "/auth/student", "student-auth")
 ITEMS = RouterMount(items_router, "/items", "items")
+GRADES = RouterMount(grades_router, "", "student-grades")
 
 SCHEDULE = RouterMount(schedule_router, "", "student-schedule")
 
@@ -30,6 +32,7 @@ MOUNTS: tuple[RouterMount, ...] = (
     *COMMON_MOUNTS,
     STUDENT_AUTH,
     ITEMS,
+    GRADES,
     SCHEDULE,
     GOOGLE_CALENDAR,
 )
