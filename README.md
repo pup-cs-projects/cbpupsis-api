@@ -112,5 +112,5 @@ docs/                      specifications and the tech book
 
 ## Contributing
 
-Branch from `dev`, follow Conventional Commits, and open a PR against `dev`. The full process,
+Branch each user story from its FR branch (for example `api-us-enrl-001` from `fr003`), follow Conventional Commits, and open the PR against that FR branch. The full process,
 including the definition of done, is in [CONTRIBUTING.md](CONTRIBUTING.md).
