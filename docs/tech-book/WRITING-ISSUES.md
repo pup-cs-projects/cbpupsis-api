@@ -288,7 +288,7 @@ Status follows one Kanban flow:
 | Ready | Acceptance criteria complete and dependencies closed | product owner |
 | In Progress | A developer is assigned and has a branch | the developer |
 | In Review | A pull request is open and linked with `Closes #N`, or the work is merged into an integration branch but not yet into `dev` | the developer |
-| Done | The pull request is merged into `dev`, or the issue is closed with a reason | automatic |
+| Done | The pull request is merged into its FR branch and the issue is closed, or the issue is closed with a reason | the developer |
 
 Pick work only from **Ready**, and keep at most two issues **In Progress** per person.
 
