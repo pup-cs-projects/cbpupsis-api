@@ -4,6 +4,7 @@ from cbpupsis_shared.domains.sections.service import (
     available_sections,
     get_section_roster,
     list_own_sections,
+    lock_for_enrollment,
     record_sections,
     schedule_sections,
 )
@@ -12,6 +13,7 @@ __all__ = [
     "available_sections",
     "get_section_roster",
     "list_own_sections",
+    "lock_for_enrollment",
     "record_sections",
     "schedule_sections",
 ]

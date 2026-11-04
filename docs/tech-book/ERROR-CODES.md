@@ -33,6 +33,11 @@ private/no-store. See [STUDENT-GRADES.md](STUDENT-GRADES.md).
 | 409 | `ENROLL_OVERLOAD_CAP_EXCEEDED` | The selected load is more than 9 units above the prescribed curriculum load. |
 | 409 | `ENROLL_SUMMER_SUBJECT_LIMIT` | A transferee, shiftee, returnee, or student taking a back subject selected more than two summer subjects. |
 | 409 | `ENROLL_SCHEDULE_CONFLICT` | Two selected sections overlap. `details` identifies both course codes and section IDs plus the overlapping day and time. |
+| 409 | `ENROLL_PERIOD_CLOSED` | Enrollment submission is outside the configured period. `details` includes its start and end. |
+| 409 | `ENROLL_FINANCIAL_HOLD` | An unresolved financial hold blocks submission. `details` includes the office and outstanding amount. |
+| 409 | `ENROLL_HOLD_ACTIVE` | An unresolved administrative or disciplinary hold blocks submission. `details` includes the office and hold type. |
+| 409 | `ENROLL_STANDING_BLOCKED` | Stored College Dropping or University Dismissal standing blocks submission. |
+| 409 | `ENROLL_SECTION_FULL` | A selected section had no seat at commit time. `details` includes the section id. |
 
 `GET /api/v1/student/enrollment/eligibility` reports holds, a closed period, blocked
 standing, and missing curriculum load as `isEligible: false` reasons in a 200

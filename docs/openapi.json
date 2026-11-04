@@ -2036,6 +2036,64 @@
         ]
       }
     },
+    "/api/v1/student/enrollment/submit": {
+      "post": {
+        "tags": [
+          "student-enrollment"
+        ],
+        "summary": "Submit Enrollment",
+        "operationId": "submit_student_enrollment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollmentSubmitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentSubmitRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A live student bearer session is required."
+          },
+          "403": {
+            "description": "CreateEnrollment permission is required."
+          },
+          "404": {
+            "description": "The term or a selected section is not available to the signed-in student's curriculum."
+          },
+          "409": {
+            "description": "The first failed enrollment check. Codes, in order: ENROLL_PERIOD_CLOSED, ENROLL_FINANCIAL_HOLD, ENROLL_HOLD_ACTIVE, ENROLL_STANDING_BLOCKED, the unit-ceiling codes, ENROLL_SCHEDULE_CONFLICT, prerequisite codes when enabled, and ENROLL_SECTION_FULL. No enrollment or seat is written."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/student/enrollment/available-courses": {
       "get": {
         "tags": [
@@ -6860,6 +6918,100 @@
           "isOpen"
         ],
         "title": "EnrollmentPeriodRead"
+      },
+      "EnrollmentSubmitRead": {
+        "properties": {
+          "enrollmentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Enrollmentid"
+          },
+          "status": {
+            "type": "string",
+            "const": "ENROLLED_PENDING",
+            "title": "Status"
+          },
+          "totalUnits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Totalunits"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/EnrollmentSubmitSectionRead"
+            },
+            "type": "array",
+            "title": "Sections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enrollmentId",
+          "status",
+          "totalUnits",
+          "sections"
+        ],
+        "title": "EnrollmentSubmitRead"
+      },
+      "EnrollmentSubmitRequest": {
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 3,
+            "title": "Term"
+          },
+          "sectionIds": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Sectionids"
+          },
+          "confirmation": {
+            "type": "boolean",
+            "const": true,
+            "title": "Confirmation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "term",
+          "sectionIds",
+          "confirmation"
+        ],
+        "title": "EnrollmentSubmitRequest"
+      },
+      "EnrollmentSubmitSectionRead": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "courseCode": {
+            "type": "string",
+            "title": "Coursecode"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectionId",
+          "courseCode",
+          "title",
+          "units"
+        ],
+        "title": "EnrollmentSubmitSectionRead"
       },
       "EnrollmentSummaryRead": {
         "properties": {

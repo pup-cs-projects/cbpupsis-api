@@ -25,6 +25,7 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     EnrollmentEligibilityRead,
     EnrollmentEligibilityReason,
     EnrollmentPeriodRead,
+    EnrollmentSubmitRead,
 )
 from cbpupsis_shared.domains.grading import client as grading
 from cbpupsis_shared.domains.users import client as users
@@ -73,6 +74,29 @@ async def get_available_courses(
     if term is None:
         raise ResourceNotFoundError
     return await enrollment.list_available_courses(db, student_id=student_id, term=term)
+
+
+async def submit_enrollment(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term_selector: str,
+    section_ids: list[uuid.UUID],
+    client_ip: str | None,
+    role: str,
+) -> EnrollmentSubmitRead:
+    academic_year, semester = _parse_term_selector(term_selector)
+    term = await academics.get_term(db, academic_year, semester)
+    if term is None:
+        raise ResourceNotFoundError
+    return await enrollment.submit_enrollment(
+        db,
+        student_id=student_id,
+        term=term,
+        section_ids=section_ids,
+        client_ip=client_ip,
+        role=role,
+    )
 
 
 async def get_eligibility(

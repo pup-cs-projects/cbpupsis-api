@@ -44,6 +44,11 @@ MESSAGES_BY_EVENT: dict[str, tuple[str, str]] = {
         "Your periodic summary",
         "Here is what happened since your last summary.",
     ),
+    "enrollment.confirmed": (
+        "Enrollment submitted",
+        "Your selected course sections have been reserved and are pending "
+        "finalization.",
+    ),
 }
 
 

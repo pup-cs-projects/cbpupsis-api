@@ -9,6 +9,7 @@ from cbpupsis_shared.domains.academics.schemas import AcademicTermRead
 from cbpupsis_shared.domains.enrollment import service
 from cbpupsis_shared.domains.enrollment.schemas import (
     AvailableCourseRead,
+    EnrollmentSubmitRead,
     EnrollmentSummaryRead,
     TermEnrollmentRead,
 )
@@ -22,6 +23,7 @@ from cbpupsis_shared.domains.enrollment.service import (
 
 __all__ = [
     "AvailableCourseRead",
+    "EnrollmentSubmitRead",
     "EnrollmentSummaryRead",
     "TermEnrollmentRead",
     "check_schedule_conflict",
@@ -33,6 +35,7 @@ __all__ = [
     "get_term_enrollment",
     "list_available_courses",
     "record_enrollments",
+    "submit_enrollment",
 ]
 
 
@@ -43,6 +46,25 @@ async def list_available_courses(
     term: AcademicTermRead,
 ) -> list[AvailableCourseRead]:
     return await service.list_available_courses(db, student_id=student_id, term=term)
+
+
+async def submit_enrollment(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term: AcademicTermRead,
+    section_ids: list[uuid.UUID],
+    client_ip: str | None,
+    role: str = "student",
+) -> EnrollmentSubmitRead:
+    return await service.submit_enrollment(
+        db,
+        student_id=student_id,
+        term=term,
+        section_ids=section_ids,
+        client_ip=client_ip,
+        role=role,
+    )
 
 
 async def get_term_enrollment(

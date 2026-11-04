@@ -18,6 +18,10 @@ from cbpupsis_database.models.enrollment import (
     StudentCourseEnrollment,
     TermEnrollment,
 )
+from cbpupsis_shared.domains.enrollment.constants import (
+    ACTIVE_COURSE_ENROLLMENT_STATUSES,
+    ACTIVE_TERM_ENROLLMENT_STATUSES,
+)
 
 
 async def get_term_enrollment(
@@ -158,7 +162,8 @@ async def enrolled_sections(
         JOIN term_enrollments AS te ON te.id = sce.term_enrollment_id
         WHERE te.student_id = :student_id AND te.academic_term_id = :term_id
           AND sce.academic_term_id = :term_id
-          AND te.enrollment_status = 'enrolled' AND sce.status = 'enrolled'
+          AND te.enrollment_status IN ('enrolled', 'ENROLLED_PENDING')
+          AND sce.status IN ('enrolled', 'ENROLLED_PENDING')
         ORDER BY sce.section_id LIMIT 101;
     """
     return list(
@@ -172,8 +177,8 @@ async def enrolled_sections(
                 TermEnrollment.student_id == student_id,
                 TermEnrollment.academic_term_id == term_id,
                 StudentCourseEnrollment.academic_term_id == term_id,
-                TermEnrollment.enrollment_status == "enrolled",
-                StudentCourseEnrollment.status == "enrolled",
+                TermEnrollment.enrollment_status.in_(ACTIVE_TERM_ENROLLMENT_STATUSES),
+                StudentCourseEnrollment.status.in_(ACTIVE_COURSE_ENROLLMENT_STATUSES),
             )
             .order_by(StudentCourseEnrollment.section_id)
             .limit(101)
@@ -194,8 +199,10 @@ async def count_active_section_enrollments(
         JOIN term_enrollments
           ON term_enrollments.id = student_course_enrollments.term_enrollment_id
         WHERE student_course_enrollments.section_id IN (:section_ids)
-          AND student_course_enrollments.status = 'enrolled'
-          AND term_enrollments.enrollment_status = 'enrolled'
+          AND student_course_enrollments.status
+              IN ('enrolled', 'ENROLLED_PENDING')
+          AND term_enrollments.enrollment_status
+              IN ('enrolled', 'ENROLLED_PENDING')
         GROUP BY student_course_enrollments.section_id;
     """
     if not section_ids:
@@ -211,9 +218,81 @@ async def count_active_section_enrollments(
         )
         .where(
             StudentCourseEnrollment.section_id.in_(section_ids),
-            StudentCourseEnrollment.status == "enrolled",
-            TermEnrollment.enrollment_status == "enrolled",
+            StudentCourseEnrollment.status.in_(ACTIVE_COURSE_ENROLLMENT_STATUSES),
+            TermEnrollment.enrollment_status.in_(ACTIVE_TERM_ENROLLMENT_STATUSES),
         )
         .group_by(StudentCourseEnrollment.section_id)
     )
     return {section_id: int(count) for section_id, count in result.all()}
+
+
+async def list_term_enrollment_sections(
+    db: AsyncSession, term_enrollment_id: uuid.UUID
+) -> list[StudentCourseEnrollment]:
+    """Return the seat rows belonging to one idempotent submission.
+
+    SQL::
+
+        SELECT * FROM student_course_enrollments
+        WHERE term_enrollment_id = :term_enrollment_id
+        ORDER BY section_id;
+    """
+    rows = await db.scalars(
+        select(StudentCourseEnrollment)
+        .where(StudentCourseEnrollment.term_enrollment_id == term_enrollment_id)
+        .order_by(StudentCourseEnrollment.section_id)
+    )
+    return list(rows)
+
+
+def add_term_enrollment(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    academic_term_id: uuid.UUID,
+    status: str,
+) -> TermEnrollment:
+    """Stage the unique student-term enrollment.
+
+    On the service's commit::
+
+        INSERT INTO term_enrollments
+            (student_id, academic_term_id, enrollment_status, id)
+        VALUES (:student_id, :academic_term_id, :status, :id);
+    """
+    row = TermEnrollment(
+        student_id=student_id,
+        academic_term_id=academic_term_id,
+        enrollment_status=status,
+    )
+    db.add(row)
+    return row
+
+
+def add_course_enrollments(
+    db: AsyncSession,
+    *,
+    term_enrollment_id: uuid.UUID,
+    academic_term_id: uuid.UUID,
+    section_ids: Collection[uuid.UUID],
+) -> list[StudentCourseEnrollment]:
+    """Stage the selected seat rows in the caller's transaction.
+
+    On the service's commit::
+
+        INSERT INTO student_course_enrollments
+            (term_enrollment_id, academic_term_id, section_id, status, id)
+        VALUES (:term_enrollment_id, :academic_term_id, :section_id,
+                'enrolled', :id);
+    """
+    rows = [
+        StudentCourseEnrollment(
+            term_enrollment_id=term_enrollment_id,
+            academic_term_id=academic_term_id,
+            section_id=section_id,
+            status="enrolled",
+        )
+        for section_id in section_ids
+    ]
+    db.add_all(rows)
+    return rows

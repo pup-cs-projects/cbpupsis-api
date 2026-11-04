@@ -1,6 +1,13 @@
 from decimal import Decimal
 
 READ_ENROLLMENT = "ReadEnrollment"
+CREATE_ENROLLMENT = "CreateEnrollment"
+
+ENROLLED_PENDING = "ENROLLED_PENDING"
+ACTIVE_TERM_ENROLLMENT_STATUSES = frozenset({"enrolled", ENROLLED_PENDING})
+ACTIVE_COURSE_ENROLLMENT_STATUSES = frozenset({"enrolled", ENROLLED_PENDING})
+ENROLLMENT_SUBMITTED_EVENT = "enrollment.confirmed"
+ENROLLMENT_SUBMITTED_ACTION = "enrollment.submitted"
 
 MAX_OVERLOAD_UNITS = Decimal("9")
 SUMMER_SUBJECT_CAP = 2

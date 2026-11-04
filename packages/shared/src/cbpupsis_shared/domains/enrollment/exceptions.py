@@ -94,3 +94,52 @@ class ScheduleConflictError(ConflictError):
                 }
             },
         )
+
+
+class EnrollmentPeriodClosedError(ConflictError):
+    code = "ENROLL_PERIOD_CLOSED"
+
+    def __init__(self, *, start: str, end: str) -> None:
+        super().__init__(
+            "Enrollment is outside the configured academic period.",
+            response_fields={"details": {"start": start, "end": end}},
+        )
+
+
+class EnrollmentFinancialHoldError(ConflictError):
+    code = "ENROLL_FINANCIAL_HOLD"
+
+    def __init__(self, *, office: str, amount: str) -> None:
+        super().__init__(
+            f"Resolve the financial hold with the {office} before enrolling.",
+            response_fields={
+                "details": {"office": office, "outstandingAmount": amount}
+            },
+        )
+
+
+class EnrollmentHoldActiveError(ConflictError):
+    code = "ENROLL_HOLD_ACTIVE"
+
+    def __init__(self, *, office: str, hold_type: str) -> None:
+        super().__init__(
+            f"Resolve the {hold_type.lower()} hold with the {office} before enrolling.",
+            response_fields={"details": {"office": office, "holdType": hold_type}},
+        )
+
+
+class EnrollmentStandingBlockedError(ConflictError):
+    code = "ENROLL_STANDING_BLOCKED"
+
+    def __init__(self, *, standing: str) -> None:
+        super().__init__(f"Academic standing {standing} blocks enrollment.")
+
+
+class EnrollmentSectionFullError(ConflictError):
+    code = "ENROLL_SECTION_FULL"
+
+    def __init__(self, *, section_id: uuid.UUID) -> None:
+        super().__init__(
+            "A selected section has no seat available.",
+            response_fields={"details": {"sectionId": str(section_id)}},
+        )

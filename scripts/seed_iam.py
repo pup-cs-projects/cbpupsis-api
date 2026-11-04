@@ -91,6 +91,7 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ReadTranscript", "Read and export your own transcript"),
     ("ReadSchedule", "Read and export your own student course schedule"),
     ("ReadEnrollment", "Read your own enrollment eligibility and unit ceiling"),
+    ("CreateEnrollment", "Submit your own enrollment section selections"),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -110,6 +111,7 @@ POLICIES: dict[str, list[str]] = {
     "TranscriptReader": ["ReadTranscript"],
     "ScheduleReader": ["ReadSchedule"],
     "EnrollmentReader": ["ReadEnrollment"],
+    "EnrollmentAuthor": ["CreateEnrollment"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
@@ -147,6 +149,7 @@ GROUPS: dict[str, list[str]] = {
         "TranscriptReader",
         "ScheduleReader",
         "EnrollmentReader",
+        "EnrollmentAuthor",
     ],
     SUPERADMIN_GROUP: list(POLICIES),
 }

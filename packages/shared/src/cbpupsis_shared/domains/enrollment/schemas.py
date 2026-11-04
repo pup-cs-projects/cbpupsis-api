@@ -176,3 +176,21 @@ class ConflictSection(BaseModel):
 
 class ScheduleConflictCheckRead(BaseModel):
     conflict_free: bool = True
+
+
+class EnrollmentSubmitSectionRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    section_id: uuid.UUID = Field(serialization_alias="sectionId")
+    course_code: str = Field(serialization_alias="courseCode")
+    title: str
+    units: Decimal
+
+
+class EnrollmentSubmitRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    enrollment_id: uuid.UUID = Field(serialization_alias="enrollmentId")
+    status: Literal["ENROLLED_PENDING"]
+    total_units: Decimal = Field(serialization_alias="totalUnits")
+    sections: list[EnrollmentSubmitSectionRead]
