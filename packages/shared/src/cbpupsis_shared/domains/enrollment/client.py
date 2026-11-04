@@ -1,5 +1,3 @@
-"""Internal client for the enrollment domain: the extraction swap point."""
-
 from __future__ import annotations
 
 import uuid
@@ -13,6 +11,8 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     TermEnrollmentRead,
 )
 from cbpupsis_shared.domains.enrollment.service import (
+    check_unit_ceiling,
+    compute_effective_ceiling,
     enrolled_sections,
     record_enrollments,
 )
@@ -20,7 +20,10 @@ from cbpupsis_shared.domains.enrollment.service import (
 __all__ = [
     "EnrollmentSummaryRead",
     "TermEnrollmentRead",
+    "check_unit_ceiling",
+    "compute_effective_ceiling",
     "enrolled_sections",
+    "get_approved_overload_units",
     "get_enrollment_summary",
     "get_term_enrollment",
     "record_enrollments",
@@ -47,4 +50,12 @@ async def get_enrollment_summary(
         academic_term_id=academic_term_id,
         prescribed_load=prescribed_load,
         standing_reduction=standing_reduction,
+    )
+
+
+async def get_approved_overload_units(
+    db: AsyncSession, *, student_id: uuid.UUID, academic_term_id: uuid.UUID
+) -> Decimal:
+    return await service.get_approved_overload_units(
+        db, student_id=student_id, academic_term_id=academic_term_id
     )

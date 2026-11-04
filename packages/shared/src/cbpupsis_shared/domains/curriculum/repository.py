@@ -104,7 +104,7 @@ async def get_prescribed_load(
 
     SQL::
 
-        SELECT COALESCE(SUM(courses.lecture_units + courses.lab_units), 26)
+        SELECT SUM(courses.lecture_units + courses.lab_units)
         FROM curriculum_courses
         JOIN courses ON courses.id = curriculum_courses.course_id
         WHERE curriculum_courses.curriculum_id = :curriculum_id
@@ -112,7 +112,7 @@ async def get_prescribed_load(
           AND curriculum_courses.semester = :semester
     """
     if curriculum_id is None:
-        return Decimal("26")
+        return Decimal("0")
     stmt = (
         select(func.sum(Course.lecture_units + Course.lab_units))
         .select_from(CurriculumCourse)
@@ -124,4 +124,4 @@ async def get_prescribed_load(
         )
     )
     units = await db.scalar(stmt)
-    return Decimal(str(units)) if units else Decimal("26")
+    return Decimal(str(units)) if units is not None else Decimal("0")

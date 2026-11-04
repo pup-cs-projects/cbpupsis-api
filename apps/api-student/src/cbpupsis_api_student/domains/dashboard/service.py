@@ -220,7 +220,7 @@ async def _resolve_enrollment_summary(
     standing: ScholasticStandingRead,
 ) -> EnrollmentSummaryRead:
     year_level = profile.year_level if profile else 1
-    prescribed_load = Decimal("26")
+    prescribed_load = Decimal("0")
     semester_name = term.semester if term else None
     try:
         curriculum_id = profile.curriculum_id if profile else None

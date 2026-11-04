@@ -10,8 +10,8 @@ Add the row in the same commit as the code that raises it.
 
 | | |
 |---|---|
-| **Last updated** | 2026-10-23 |
-| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications` in `packages/shared`; `items` and `student_profile` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The `student_auth`, `faculty_auth`, and `sections` domains raise the shared `auth` classes and add none of their own; `curriculum` raises none. |
+| **Last updated** | 2026-11-04 |
+| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications`, and `enrollment` in `packages/shared`; `items` and `student_profile` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The `student_auth`, `faculty_auth`, and `sections` domains raise the shared `auth` classes and add none of their own; `curriculum` raises none. |
 
 ## Student academic records (US-STU-004)
 
@@ -24,6 +24,19 @@ These routes preserve existing 401 authentication/session errors, 403
 `PASSWORD_CHANGE_REQUIRED`, 403 missing-permission responses (without a machine
 code), and 422 selector/pagination validation responses. Every response is
 private/no-store. See [STUDENT-GRADES.md](STUDENT-GRADES.md).
+
+## Enrollment eligibility (US-ENRL-001)
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 409 | `ENROLL_UNIT_CEILING_EXCEEDED` | The selected sections exceed the curriculum-derived effective ceiling. `details` includes the prescribed load, approved overload, standing reduction, effective ceiling, attempted units, and units remaining. |
+| 409 | `ENROLL_OVERLOAD_CAP_EXCEEDED` | The selected load is more than 9 units above the prescribed curriculum load. |
+| 409 | `ENROLL_SUMMER_SUBJECT_LIMIT` | A transferee, shiftee, returnee, or student taking a back subject selected more than two summer subjects. |
+
+`GET /api/v1/student/enrollment/eligibility` reports holds, a closed period, blocked
+standing, and missing curriculum load as `isEligible: false` reasons in a 200
+response. Those are state, not request errors. Missing `ReadEnrollment` remains
+the standard 403 missing-permission response.
 
 ## The envelope
 

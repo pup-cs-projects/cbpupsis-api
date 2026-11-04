@@ -903,7 +903,7 @@
           "student-profile"
         ],
         "summary": "Get Student Avatar Image",
-        "description": "Stream the student profile picture by avatar ID (referenced by avatarUrl).",
+        "description": "Stream the student's own profile picture by avatar ID (see avatarUrl).",
         "operationId": "get_student_avatar",
         "security": [
           {
@@ -2027,6 +2027,32 @@
           },
           "503": {
             "description": "GRADE_RECORD_UNAVAILABLE: academic data is inconsistent, or PDF rendering failed or exceeded its time limit."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/student/enrollment/eligibility": {
+      "get": {
+        "tags": [
+          "student-enrollment"
+        ],
+        "summary": "Get Enrollment Eligibility",
+        "operationId": "get_student_enrollment_eligibility",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentEligibilityRead"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6349,6 +6375,35 @@
         "title": "EffectivePermissionsRead",
         "description": "Every action a user is effectively granted, and how they got it.\n\nThe two sources are reported separately rather than pre-merged because the\nquestion an admin screen actually asks is not \"what can they do?\" but \"why\ncan they do it, and what do I change to stop it?\" \u2014 and those have different\nanswers: a group grant is revoked by changing membership, a direct grant by\ndetaching the policy. ``effective`` is the union the guards actually check."
       },
+      "EligibilityHoldRead": {
+        "properties": {
+          "office": {
+            "type": "string",
+            "title": "Office"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
+          },
+          "isBlocking": {
+            "type": "boolean",
+            "title": "Isblocking"
+          }
+        },
+        "type": "object",
+        "required": [
+          "office",
+          "type",
+          "amount",
+          "isBlocking"
+        ],
+        "title": "EligibilityHoldRead"
+      },
       "EmergencyContactDetailRead": {
         "properties": {
           "id": {
@@ -6491,6 +6546,136 @@
         "type": "object",
         "title": "EmptyStatesRead",
         "description": "Explanatory empty states for zero-history panels."
+      },
+      "EnrollmentEligibilityRead": {
+        "properties": {
+          "isEligible": {
+            "type": "boolean",
+            "title": "Iseligible"
+          },
+          "termType": {
+            "type": "string",
+            "enum": [
+              "REGULAR",
+              "SUMMER"
+            ],
+            "title": "Termtype"
+          },
+          "prescribedLoad": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Prescribedload"
+          },
+          "approvedOverloadUnits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Approvedoverloadunits"
+          },
+          "standingReduction": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Standingreduction"
+          },
+          "effectiveCeiling": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Effectiveceiling"
+          },
+          "academicStanding": {
+            "type": "string",
+            "title": "Academicstanding"
+          },
+          "overloadEligible": {
+            "type": "boolean",
+            "title": "Overloadeligible"
+          },
+          "summerSubjectCap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summersubjectcap"
+          },
+          "holds": {
+            "items": {
+              "$ref": "#/components/schemas/EligibilityHoldRead"
+            },
+            "type": "array",
+            "title": "Holds"
+          },
+          "academicPeriod": {
+            "$ref": "#/components/schemas/EnrollmentPeriodRead"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/EnrollmentEligibilityReason"
+            },
+            "type": "array",
+            "title": "Reasons"
+          }
+        },
+        "type": "object",
+        "required": [
+          "isEligible",
+          "termType",
+          "prescribedLoad",
+          "approvedOverloadUnits",
+          "standingReduction",
+          "effectiveCeiling",
+          "academicStanding",
+          "overloadEligible",
+          "summerSubjectCap",
+          "academicPeriod"
+        ],
+        "title": "EnrollmentEligibilityRead",
+        "description": "Student enrollment state and the inputs behind the effective ceiling."
+      },
+      "EnrollmentEligibilityReason": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "EnrollmentEligibilityReason"
+      },
+      "EnrollmentPeriodRead": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          },
+          "isOpen": {
+            "type": "boolean",
+            "title": "Isopen"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "isOpen"
+        ],
+        "title": "EnrollmentPeriodRead"
       },
       "EnrollmentSummaryRead": {
         "properties": {

@@ -17,6 +17,7 @@ class ProgramRead(BaseModel):
     code: str
     name: str
     department: str
+    total_units_required: Decimal
     is_active: bool
 
 
