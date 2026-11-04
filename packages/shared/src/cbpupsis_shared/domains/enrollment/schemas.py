@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, time
 from decimal import Decimal
 from typing import Literal
 
@@ -114,3 +114,65 @@ class EnrollmentEligibilityRead(BaseModel):
     holds: list[EligibilityHoldRead] = Field(default_factory=list)
     academic_period: EnrollmentPeriodRead = Field(serialization_alias="academicPeriod")
     reasons: list[EnrollmentEligibilityReason] = Field(default_factory=list)
+
+
+class AvailableCourseScheduleRead(BaseModel):
+    """One weekly meeting for an available section."""
+
+    day: int = Field(ge=0, le=6, description="Meeting day; Monday=0 and Sunday=6.")
+    start: time = Field(description="Meeting start time in Asia/Manila.")
+    end: time = Field(description="Meeting end time in Asia/Manila.")
+    room: str | None = Field(description="Assigned room, or null when unassigned.")
+
+
+class AvailableCourseRead(BaseModel):
+    """One curriculum and term section the signed-in student may consider."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    section_id: uuid.UUID = Field(serialization_alias="sectionId")
+    course_code: str = Field(serialization_alias="courseCode")
+    title: str
+    units: Decimal
+    schedule: list[AvailableCourseScheduleRead] = Field(default_factory=list)
+    faculty: str | None
+    capacity: int = Field(ge=0)
+    available_slots: int = Field(
+        ge=0,
+        serialization_alias="availableSlots",
+        description=(
+            "Advisory seat availability at read time; it can be stale by submit."
+        ),
+    )
+    prerequisites_satisfied: bool = Field(
+        default=True, serialization_alias="prerequisitesSatisfied"
+    )
+    block_reason: str | None = Field(default=None, serialization_alias="blockReason")
+    conflicts_with: list[uuid.UUID] = Field(
+        default_factory=list, serialization_alias="conflictsWith"
+    )
+
+
+class ConflictStudent(BaseModel):
+    student_id: uuid.UUID
+
+
+class ConflictTerm(BaseModel):
+    academic_term_id: uuid.UUID
+
+
+class ConflictMeeting(BaseModel):
+    day: int = Field(ge=0, le=6)
+    start: time
+    end: time
+
+
+class ConflictSection(BaseModel):
+    section_id: uuid.UUID
+    course_code: str
+    academic_term_id: uuid.UUID
+    schedule: list[ConflictMeeting] = Field(default_factory=list)
+
+
+class ScheduleConflictCheckRead(BaseModel):
+    conflict_free: bool = True

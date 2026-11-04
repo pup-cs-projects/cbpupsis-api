@@ -32,6 +32,7 @@ private/no-store. See [STUDENT-GRADES.md](STUDENT-GRADES.md).
 | 409 | `ENROLL_UNIT_CEILING_EXCEEDED` | The selected sections exceed the curriculum-derived effective ceiling. `details` includes the prescribed load, approved overload, standing reduction, effective ceiling, attempted units, and units remaining. |
 | 409 | `ENROLL_OVERLOAD_CAP_EXCEEDED` | The selected load is more than 9 units above the prescribed curriculum load. |
 | 409 | `ENROLL_SUMMER_SUBJECT_LIMIT` | A transferee, shiftee, returnee, or student taking a back subject selected more than two summer subjects. |
+| 409 | `ENROLL_SCHEDULE_CONFLICT` | Two selected sections overlap. `details` identifies both course codes and section IDs plus the overlapping day and time. |
 
 `GET /api/v1/student/enrollment/eligibility` reports holds, a closed period, blocked
 standing, and missing curriculum load as `isEligible: false` reasons in a 200

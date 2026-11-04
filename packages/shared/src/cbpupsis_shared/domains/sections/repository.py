@@ -34,6 +34,60 @@ async def schedule_sections(db: AsyncSession, ids: list[uuid.UUID]):
     return list(sections), list(meetings)
 
 
+async def list_available_sections(
+    db: AsyncSession,
+    *,
+    academic_term_id: uuid.UUID,
+    course_ids: Collection[uuid.UUID],
+):
+    """Read open offerings and their meetings for a term and course set.
+
+    SQL::
+
+        SELECT * FROM course_sections
+        WHERE academic_term_id = :academic_term_id
+          AND course_id IN (:course_ids)
+          AND lower(status) = 'open'
+        ORDER BY course_id, section_name, id LIMIT 1001;
+
+        SELECT * FROM section_schedules
+        WHERE section_id IN (:section_ids)
+        ORDER BY section_id, day_of_week, start_time, id LIMIT 1001;
+    """
+    if not course_ids:
+        return [], []
+    sections = list(
+        await db.scalars(
+            select(CourseSection)
+            .where(
+                CourseSection.academic_term_id == academic_term_id,
+                CourseSection.course_id.in_(course_ids),
+                func.lower(CourseSection.status) == "open",
+            )
+            .order_by(
+                CourseSection.course_id,
+                CourseSection.section_name,
+                CourseSection.id,
+            )
+            .limit(1001)
+        )
+    )
+    if not sections:
+        return [], []
+    meetings = await db.scalars(
+        select(SectionSchedule)
+        .where(SectionSchedule.section_id.in_([row.id for row in sections]))
+        .order_by(
+            SectionSchedule.section_id,
+            SectionSchedule.day_of_week,
+            SectionSchedule.start_time,
+            SectionSchedule.id,
+        )
+        .limit(1001)
+    )
+    return sections, list(meetings)
+
+
 async def list_record_sections(db: AsyncSession, ids: Collection[uuid.UUID]):
     """Read section-to-course/term identifiers in one batch.
 

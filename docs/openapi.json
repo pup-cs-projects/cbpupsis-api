@@ -2036,6 +2036,60 @@
         ]
       }
     },
+    "/api/v1/student/enrollment/available-courses": {
+      "get": {
+        "tags": [
+          "student-enrollment"
+        ],
+        "summary": "Get Available Courses",
+        "operationId": "list_student_enrollment_available_courses",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "term",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "description": "Stored academic year and semester joined by a hyphen, for example 2026-2027-First Semester.",
+              "title": "Term"
+            },
+            "description": "Stored academic year and semester joined by a hyphen, for example 2026-2027-First Semester."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AvailableCourseRead"
+                  },
+                  "title": "Response List Student Enrollment Available Courses"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/student/enrollment/eligibility": {
       "get": {
         "tags": [
@@ -6041,6 +6095,137 @@
         "title": "AuthorizationRead",
         "description": "Browser consent instructions, not a connection or delivery confirmation."
       },
+      "AvailableCourseRead": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "courseCode": {
+            "type": "string",
+            "title": "Coursecode"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units"
+          },
+          "schedule": {
+            "items": {
+              "$ref": "#/components/schemas/AvailableCourseScheduleRead"
+            },
+            "type": "array",
+            "title": "Schedule"
+          },
+          "faculty": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Faculty"
+          },
+          "capacity": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Capacity"
+          },
+          "availableSlots": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Availableslots",
+            "description": "Advisory seat availability at read time; it can be stale by submit."
+          },
+          "prerequisitesSatisfied": {
+            "type": "boolean",
+            "title": "Prerequisitessatisfied",
+            "default": true
+          },
+          "blockReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blockreason"
+          },
+          "conflictsWith": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Conflictswith"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectionId",
+          "courseCode",
+          "title",
+          "units",
+          "faculty",
+          "capacity",
+          "availableSlots"
+        ],
+        "title": "AvailableCourseRead",
+        "description": "One curriculum and term section the signed-in student may consider."
+      },
+      "AvailableCourseScheduleRead": {
+        "properties": {
+          "day": {
+            "type": "integer",
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Day",
+            "description": "Meeting day; Monday=0 and Sunday=6."
+          },
+          "start": {
+            "type": "string",
+            "format": "time",
+            "title": "Start",
+            "description": "Meeting start time in Asia/Manila."
+          },
+          "end": {
+            "type": "string",
+            "format": "time",
+            "title": "End",
+            "description": "Meeting end time in Asia/Manila."
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room",
+            "description": "Assigned room, or null when unassigned."
+          }
+        },
+        "type": "object",
+        "required": [
+          "day",
+          "start",
+          "end",
+          "room"
+        ],
+        "title": "AvailableCourseScheduleRead",
+        "description": "One weekly meeting for an available section."
+      },
       "AvatarUploadRead": {
         "properties": {
           "avatarUrl": {
@@ -6631,8 +6816,7 @@
           "summerSubjectCap",
           "academicPeriod"
         ],
-        "title": "EnrollmentEligibilityRead",
-        "description": "Student enrollment state and the inputs behind the effective ceiling."
+        "title": "EnrollmentEligibilityRead"
       },
       "EnrollmentEligibilityReason": {
         "properties": {

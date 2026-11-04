@@ -50,3 +50,15 @@ class ScheduleCourse(BaseModel):
     title: str
     lecture_units: Decimal
     lab_units: Decimal
+
+
+class EnrollmentCourse(BaseModel):
+    """Curriculum course fields used while composing enrollment choices."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    course_code: str
+    title: str
+    lecture_units: Decimal
+    lab_units: Decimal

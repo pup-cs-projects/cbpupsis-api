@@ -125,3 +125,46 @@ async def get_prescribed_load(
     )
     units = await db.scalar(stmt)
     return Decimal(str(units)) if units is not None else Decimal("0")
+
+
+async def list_enrollment_courses(
+    db: AsyncSession,
+    *,
+    curriculum_id: uuid.UUID | None,
+    program_id: uuid.UUID,
+    year_level: int,
+    semester: str,
+) -> list[Course]:
+    """Return courses in the student's curriculum template for one term.
+
+    SQL::
+
+        SELECT courses.*
+        FROM courses
+        JOIN curriculum_courses
+          ON curriculum_courses.course_id = courses.id
+        JOIN curricula
+          ON curricula.id = curriculum_courses.curriculum_id
+        WHERE curricula.id = :curriculum_id
+          AND curricula.program_id = :program_id
+          AND curriculum_courses.year_level = :year_level
+          AND curriculum_courses.semester = :semester
+          AND courses.is_active IS true
+        ORDER BY courses.course_code, courses.id;
+    """
+    if curriculum_id is None:
+        return []
+    result = await db.scalars(
+        select(Course)
+        .join(CurriculumCourse, CurriculumCourse.course_id == Course.id)
+        .join(Curriculum, Curriculum.id == CurriculumCourse.curriculum_id)
+        .where(
+            Curriculum.id == curriculum_id,
+            Curriculum.program_id == program_id,
+            CurriculumCourse.year_level == year_level,
+            CurriculumCourse.semester == semester,
+            Course.is_active.is_(True),
+        )
+        .order_by(Course.course_code, Course.id)
+    )
+    return list(result)

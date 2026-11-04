@@ -5,12 +5,15 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cbpupsis_shared.domains.academics.schemas import AcademicTermRead
 from cbpupsis_shared.domains.enrollment import service
 from cbpupsis_shared.domains.enrollment.schemas import (
+    AvailableCourseRead,
     EnrollmentSummaryRead,
     TermEnrollmentRead,
 )
 from cbpupsis_shared.domains.enrollment.service import (
+    check_schedule_conflict,
     check_unit_ceiling,
     compute_effective_ceiling,
     enrolled_sections,
@@ -18,16 +21,28 @@ from cbpupsis_shared.domains.enrollment.service import (
 )
 
 __all__ = [
+    "AvailableCourseRead",
     "EnrollmentSummaryRead",
     "TermEnrollmentRead",
+    "check_schedule_conflict",
     "check_unit_ceiling",
     "compute_effective_ceiling",
     "enrolled_sections",
     "get_approved_overload_units",
     "get_enrollment_summary",
     "get_term_enrollment",
+    "list_available_courses",
     "record_enrollments",
 ]
+
+
+async def list_available_courses(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term: AcademicTermRead,
+) -> list[AvailableCourseRead]:
+    return await service.list_available_courses(db, student_id=student_id, term=term)
 
 
 async def get_term_enrollment(

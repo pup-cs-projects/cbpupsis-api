@@ -1,6 +1,7 @@
 """Public section reads for faculty, schedule, and record composition."""
 
 from cbpupsis_shared.domains.sections.service import (
+    available_sections,
     get_section_roster,
     list_own_sections,
     record_sections,
@@ -8,6 +9,7 @@ from cbpupsis_shared.domains.sections.service import (
 )
 
 __all__ = [
+    "available_sections",
     "get_section_roster",
     "list_own_sections",
     "record_sections",

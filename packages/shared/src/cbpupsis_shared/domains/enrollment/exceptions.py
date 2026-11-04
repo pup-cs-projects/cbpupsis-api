@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+from datetime import time
 from decimal import Decimal
 
 from cbpupsis_core.exceptions import ConflictError
@@ -60,4 +62,35 @@ class SummerSubjectLimitError(ConflictError):
             "Students in this admission category or taking back subjects may "
             f"enroll in at most {subject_cap} subjects during the summer term.",
             response_fields={"details": {"summerSubjectCap": subject_cap}},
+        )
+
+
+class ScheduleConflictError(ConflictError):
+    code = "ENROLL_SCHEDULE_CONFLICT"
+
+    def __init__(
+        self,
+        *,
+        first_section_id: uuid.UUID,
+        first_course_code: str,
+        second_section_id: uuid.UUID,
+        second_course_code: str,
+        day: int,
+        start: time,
+        end: time,
+    ) -> None:
+        super().__init__(
+            f"{first_course_code} and {second_course_code} overlap on day {day} "
+            f"from {start.isoformat()} to {end.isoformat()}.",
+            response_fields={
+                "details": {
+                    "courseCodes": [first_course_code, second_course_code],
+                    "sectionIds": [str(first_section_id), str(second_section_id)],
+                    "overlap": {
+                        "day": day,
+                        "start": start.isoformat(),
+                        "end": end.isoformat(),
+                    },
+                }
+            },
         )

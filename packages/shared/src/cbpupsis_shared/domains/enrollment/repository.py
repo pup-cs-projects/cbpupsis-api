@@ -7,6 +7,7 @@ and course registrations.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
 from decimal import Decimal
 
 from sqlalchemy import Uuid, bindparam, func, select, text
@@ -178,3 +179,41 @@ async def enrolled_sections(
             .limit(101)
         )
     )
+
+
+async def count_active_section_enrollments(
+    db: AsyncSession, section_ids: Collection[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """Count occupied seats without exposing any student's selection.
+
+    SQL::
+
+        SELECT student_course_enrollments.section_id,
+               count(student_course_enrollments.id)
+        FROM student_course_enrollments
+        JOIN term_enrollments
+          ON term_enrollments.id = student_course_enrollments.term_enrollment_id
+        WHERE student_course_enrollments.section_id IN (:section_ids)
+          AND student_course_enrollments.status = 'enrolled'
+          AND term_enrollments.enrollment_status = 'enrolled'
+        GROUP BY student_course_enrollments.section_id;
+    """
+    if not section_ids:
+        return {}
+    result = await db.execute(
+        select(
+            StudentCourseEnrollment.section_id,
+            func.count(StudentCourseEnrollment.id),
+        )
+        .join(
+            TermEnrollment,
+            TermEnrollment.id == StudentCourseEnrollment.term_enrollment_id,
+        )
+        .where(
+            StudentCourseEnrollment.section_id.in_(section_ids),
+            StudentCourseEnrollment.status == "enrolled",
+            TermEnrollment.enrollment_status == "enrolled",
+        )
+        .group_by(StudentCourseEnrollment.section_id)
+    )
+    return {section_id: int(count) for section_id, count in result.all()}

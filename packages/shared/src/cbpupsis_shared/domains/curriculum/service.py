@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cbpupsis_shared.domains.curriculum import repository
 from cbpupsis_shared.domains.curriculum.schemas import (
     CurriculumRead,
+    EnrollmentCourse,
     ProgramRead,
     RecordCourse,
     ScheduleCourse,
@@ -75,3 +76,23 @@ async def get_prescribed_load(
     return await repository.get_prescribed_load(
         db, curriculum_id=curriculum_id, year_level=year_level, semester=semester
     )
+
+
+async def enrollment_courses(
+    db: AsyncSession,
+    *,
+    curriculum_id: uuid.UUID | None,
+    program_id: uuid.UUID,
+    year_level: int,
+    semester: str,
+) -> list[EnrollmentCourse]:
+    return [
+        EnrollmentCourse.model_validate(row)
+        for row in await repository.list_enrollment_courses(
+            db,
+            curriculum_id=curriculum_id,
+            program_id=program_id,
+            year_level=year_level,
+            semester=semester,
+        )
+    ]

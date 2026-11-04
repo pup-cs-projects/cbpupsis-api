@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cbpupsis_core.exceptions import ValidationError
 from cbpupsis_shared.domains.academics import client as academics
 from cbpupsis_shared.domains.academics.schemas import AcademicTermRead
 from cbpupsis_shared.domains.auth.exceptions import ResourceNotFoundError
@@ -18,6 +19,7 @@ from cbpupsis_shared.domains.enrollment.constants import (
     SUMMER_SUBJECT_CAP,
 )
 from cbpupsis_shared.domains.enrollment.schemas import (
+    AvailableCourseRead,
     CeilingStudent,
     EligibilityHoldRead,
     EnrollmentEligibilityRead,
@@ -48,6 +50,29 @@ def _period(term: AcademicTermRead, *, as_of: datetime) -> EnrollmentPeriodRead:
         end=end_utc,
         is_open=start_utc <= as_of <= end_utc,
     )
+
+
+def _parse_term_selector(value: str) -> tuple[str, str]:
+    academic_year, separator, semester = value.strip().rpartition("-")
+    if not separator or not academic_year.strip() or not semester.strip():
+        raise ValidationError(
+            "Term must use <academic-year>-<semester>, for example "
+            "2026-2027-First Semester."
+        )
+    return academic_year.strip(), semester.strip()
+
+
+async def get_available_courses(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term_selector: str,
+) -> list[AvailableCourseRead]:
+    academic_year, semester = _parse_term_selector(term_selector)
+    term = await academics.get_term(db, academic_year, semester)
+    if term is None:
+        raise ResourceNotFoundError
+    return await enrollment.list_available_courses(db, student_id=student_id, term=term)
 
 
 async def get_eligibility(
