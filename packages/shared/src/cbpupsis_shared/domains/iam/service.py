@@ -19,7 +19,7 @@ policies) and unioning the results.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,7 +28,10 @@ from cbpupsis_core.exceptions import ConflictError
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.models.iam import Group, Permission, Policy
 from cbpupsis_shared.domains.iam import repository
-from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
+from cbpupsis_shared.domains.iam.constants import (
+    ADMIN_GROUPS,
+    SUPERADMIN_GROUP,
+)
 from cbpupsis_shared.domains.iam.exceptions import (
     GroupNotFoundError,
     PermissionNotFoundError,
@@ -77,7 +80,7 @@ async def get_effective_permissions(db: AsyncSession, user_id: uuid.UUID) -> set
     source of truth so permission changes take effect immediately.
     """
     if await is_user_in_group(db, user_id, SUPERADMIN_GROUP):
-        if await is_user_in_group(db, user_id, ADMIN_GROUP):
+        if await is_user_in_any_group(db, user_id, ADMIN_GROUPS):
             return set()
         return await repository.all_permission_actions(db)
     from_groups = await repository.list_group_permission_actions_for_user(db, user_id)
@@ -99,6 +102,48 @@ async def is_user_in_group(
     request.
     """
     return await repository.is_user_in_group_named(db, user_id, group_name)
+
+
+async def is_user_in_any_group(
+    db: AsyncSession, user_id: uuid.UUID, group_names: Iterable[str]
+) -> bool:
+    """Return whether the user currently belongs to any group in ``group_names``."""
+    return await repository.is_user_in_any_group_named(db, user_id, group_names)
+
+
+async def get_user_group_names(db: AsyncSession, user_id: uuid.UUID) -> set[str]:
+    """Return all group names that ``user_id`` belongs to."""
+    return await repository.get_user_group_names(db, user_id)
+
+
+async def get_user_primary_group(db: AsyncSession, user_id: uuid.UUID) -> str | None:
+    """Return the primary role or position group for ``user_id``, or None.
+
+    Checks priority position groups first (Advisor, Chair, Dean, Registrar, Finance),
+    then Superadmins, Admins, Faculty, Students, or the first alphabetical group.
+    """
+    names = await repository.get_user_group_names(db, user_id)
+    if not names:
+        return None
+    for priority_group in (
+        "Advisor",
+        "Chair",
+        "Dean",
+        "Registrar",
+        "Finance",
+        "Superadmins",
+        "Admins",
+        "Faculty",
+        "Students",
+    ):
+        if priority_group in names:
+            return priority_group
+    return sorted(names)[0]
+
+
+async def get_group_id_by_name(db: AsyncSession, name: str) -> int | None:
+    """Return the ID of the group named ``name``, or None."""
+    return await repository.get_group_id_by_name(db, name)
 
 
 # --------------------------------------------------------------------------- #
@@ -221,17 +266,22 @@ async def add_user_to_group(
     """
     await users_client.get_user(db, user_id)
     group = await get_group(db, group_id)
-    if group.name in {ADMIN_GROUP, SUPERADMIN_GROUP}:
+    if group.name in ADMIN_GROUPS or group.name == SUPERADMIN_GROUP:
         await users_client.lock_role_subject(db, user_id)
-        opposite = SUPERADMIN_GROUP if group.name == ADMIN_GROUP else ADMIN_GROUP
-        if await is_user_in_group(db, user_id, opposite):
+        if group.name == SUPERADMIN_GROUP:
+            if await is_user_in_any_group(db, user_id, ADMIN_GROUPS):
+                raise ConflictError(
+                    "Admin and Superadmin memberships are mutually exclusive",
+                    code="AUTH_ROLE_CONFLICT",
+                )
+        elif await is_user_in_group(db, user_id, SUPERADMIN_GROUP):
             raise ConflictError(
                 "Admin and Superadmin memberships are mutually exclusive",
                 code="AUTH_ROLE_CONFLICT",
             )
     if await repository.exists_user_group(db, user_id, group_id):
         return
-    if group.name in {ADMIN_GROUP, SUPERADMIN_GROUP}:
+    if group.name in ADMIN_GROUPS or group.name == SUPERADMIN_GROUP:
         await users_client.invalidate_role_sessions(db, user_id)
     repository.add_user_group(db, user_id, group_id)
     stage_audit_event(
@@ -274,7 +324,7 @@ async def remove_user_from_group(
 ) -> None:
     """Remove a user from a group. Takes effect on their next request."""
     group = await get_group(db, group_id)
-    if group.name in {ADMIN_GROUP, SUPERADMIN_GROUP}:
+    if group.name in ADMIN_GROUPS or group.name == SUPERADMIN_GROUP:
         await users_client.lock_role_subject(db, user_id)
         await users_client.invalidate_role_sessions(db, user_id)
     await repository.delete_user_group(db, user_id, group_id)

@@ -30,6 +30,7 @@ from cbpupsis_database.models.users import AdminPosition, User
 from cbpupsis_database.session import AsyncSessionLocal
 from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
+from cbpupsis_shared.domains.users.constants import POSITION_GROUPS
 
 #: Re-exported so existing callers (and tests) can keep importing it from here.
 #: The value itself lives in the IAM domain because seed_iam creates the group
@@ -58,10 +59,15 @@ async def bootstrap_admin(
             )
             return 1
 
-        group = await session.scalar(select(Group).where(Group.name == ADMIN_GROUP))
+        target_group_name = POSITION_GROUPS.get(position, ADMIN_GROUP)
+        group = await session.scalar(
+            select(Group).where(Group.name == target_group_name)
+        )
+        if group is None:
+            group = await session.scalar(select(Group).where(Group.name == ADMIN_GROUP))
         if group is None:
             print(
-                f"No {ADMIN_GROUP!r} group found.\n"
+                f"No {target_group_name!r} group found.\n"
                 "Run the seed first: uv run python -m scripts.seed_iam",
                 file=sys.stderr,
             )
@@ -77,7 +83,7 @@ async def bootstrap_admin(
         )
 
         granted = await iam_service.get_effective_permissions(session, user.id)
-        print(f"{email} added to {ADMIN_GROUP}.")
+        print(f"{email} added to {group.name}.")
         print(f"Effective permissions: {sorted(granted)}")
         return 0
 

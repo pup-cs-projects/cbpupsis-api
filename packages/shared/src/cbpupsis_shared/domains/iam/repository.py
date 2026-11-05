@@ -23,7 +23,7 @@ where a server-generated id is needed before the transaction ends.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -285,6 +285,53 @@ async def is_user_in_group_named(
         .limit(1)
     )
     return result is not None
+
+
+async def is_user_in_any_group_named(
+    db: AsyncSession, user_id: uuid.UUID, group_names: Iterable[str]
+) -> bool:
+    """Return whether ``user_id`` belongs to any group in ``group_names``.
+
+    SQL::
+
+        SELECT user_groups.user_id
+        FROM user_groups
+        JOIN groups ON groups.id = user_groups.group_id
+        WHERE user_groups.user_id = :user_id::UUID
+          AND groups.name IN (:names)
+        LIMIT 1
+    """
+    names_list = list(group_names)
+    if not names_list:
+        return False
+    result = await db.scalar(
+        select(UserGroup.user_id)
+        .join(Group, Group.id == UserGroup.group_id)
+        .where(UserGroup.user_id == user_id, Group.name.in_(names_list))
+        .limit(1)
+    )
+    return result is not None
+
+
+async def get_user_group_names(db: AsyncSession, user_id: uuid.UUID) -> set[str]:
+    """Return all group names that ``user_id`` belongs to.
+
+    SQL::
+
+        SELECT groups.name
+        FROM user_groups
+        JOIN groups ON groups.id = user_groups.group_id
+        WHERE user_groups.user_id = :user_id::UUID
+    """
+    rows = (
+        await db.scalars(
+            select(Group.name)
+            .select_from(UserGroup)
+            .join(Group, Group.id == UserGroup.group_id)
+            .where(UserGroup.user_id == user_id)
+        )
+    ).all()
+    return set(rows)
 
 
 async def get_group_id_by_name(db: AsyncSession, name: str) -> int | None:

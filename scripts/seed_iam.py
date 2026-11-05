@@ -30,7 +30,12 @@ from cbpupsis_database.models.iam import (
 from cbpupsis_database.session import AsyncSessionLocal
 from cbpupsis_shared.domains.iam.constants import (
     ADMIN_GROUP,
+    ADVISOR_GROUP,
+    CHAIR_GROUP,
+    DEAN_GROUP,
     FACULTY_GROUP,
+    FINANCE_GROUP,
+    REGISTRAR_GROUP,
     STUDENT_GROUP,
     SUPERADMIN_GROUP,
 )
@@ -90,6 +95,24 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ReadGrade", "Read your own finalized grades"),
     ("ReadTranscript", "Read and export your own transcript"),
     ("ReadSchedule", "Read and export your own student course schedule"),
+    # Domain capabilities split across the admin groups (BR-AUTH-005).
+    ("ManageBilling", "Manage student billing, fees, and payments"),
+    ("ModerateGrade", "Submit or correct student grades"),
+    ("ModerateCourseSection", "Manage and approve department course sections"),
+    (
+        "ModerateCurriculum",
+        "Approve curriculum and program changes at the college level",
+    ),
+    ("ReadAdvisingRecord", "View advising records for assigned students"),
+    # Domain capabilities split across the admin groups (BR-AUTH-005).
+    ("ManageBilling", "Manage student billing, fees, and payments"),
+    ("ModerateGrade", "Submit or correct student grades"),
+    ("ModerateCourseSection", "Manage and approve department course sections"),
+    (
+        "ModerateCurriculum",
+        "Approve curriculum and program changes at the college level",
+    ),
+    ("ReadAdvisingRecord", "View advising records for assigned students"),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -108,6 +131,11 @@ POLICIES: dict[str, list[str]] = {
     "GradeReader": ["ReadGrade"],
     "TranscriptReader": ["ReadTranscript"],
     "ScheduleReader": ["ReadSchedule"],
+    "BillingAdmin": ["ManageBilling"],
+    "GradeModerator": ["ModerateGrade"],
+    "CourseSectionModerator": ["ModerateCourseSection"],
+    "CurriculumModerator": ["ModerateCurriculum"],
+    "AdvisingRecordReader": ["ReadAdvisingRecord"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
@@ -133,10 +161,12 @@ GROUPS: dict[str, list[str]] = {
         "UserModerator",
         "NotificationModerator",
     ],
-    # Admin is one authenticated role whose position controls data scope. Its
-    # product permissions (Home, Calendar, Courses, Enrollment) will be attached
-    # by those domains. User administration, IAM, and audit reading belong to
-    # the separate Superadmin story and must not leak through this seed.
+    # Split admin position groups with their distinct policies (BR-AUTH-005):
+    ADVISOR_GROUP: ["AdvisingRecordReader"],
+    CHAIR_GROUP: ["CourseSectionModerator"],
+    DEAN_GROUP: ["CurriculumModerator"],
+    REGISTRAR_GROUP: ["GradeModerator"],
+    FINANCE_GROUP: ["BillingAdmin"],
     ADMIN_GROUP: [],
     FACULTY_GROUP: ["CourseSectionReader"],
     # Superadmin-created student accounts join this group.

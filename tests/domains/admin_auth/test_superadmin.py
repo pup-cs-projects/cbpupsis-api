@@ -276,9 +276,8 @@ async def test_ac_104_8_read_and_legacy_mutation_each_audited_once(
 
 
 async def test_user_creation_is_superadmin_only_and_signup_is_gone(
-    client, db, superadmin_headers
+    client, superadmin_headers, role_groups
 ):
-    await iam_service.create_group(db, name=ADMIN_GROUP)
     data = {
         "first_name": "New",
         "surname": "Registrar",
