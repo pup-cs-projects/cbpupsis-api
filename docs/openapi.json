@@ -903,7 +903,7 @@
           "student-profile"
         ],
         "summary": "Get Student Avatar Image",
-        "description": "Stream the student profile picture by avatar ID (referenced by avatarUrl).",
+        "description": "Stream the student's own profile picture by avatar ID (see avatarUrl).",
         "operationId": "get_student_avatar",
         "security": [
           {
@@ -2027,6 +2027,193 @@
           },
           "503": {
             "description": "GRADE_RECORD_UNAVAILABLE: academic data is inconsistent, or PDF rendering failed or exceeded its time limit."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/student/enrollment/overload": {
+      "post": {
+        "tags": [
+          "student-enrollment"
+        ],
+        "summary": "Create Overload Request",
+        "operationId": "create_student_overload_request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverloadRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverloadRequestFiledRead"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ENROLL_OVERLOAD_NOT_ELIGIBLE or ENROLL_OVERLOAD_CAP_EXCEEDED."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/student/enrollment/submit": {
+      "post": {
+        "tags": [
+          "student-enrollment"
+        ],
+        "summary": "Submit Enrollment",
+        "operationId": "submit_student_enrollment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollmentSubmitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentSubmitRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A live student bearer session is required."
+          },
+          "403": {
+            "description": "CreateEnrollment permission is required."
+          },
+          "404": {
+            "description": "The term or a selected section is not available to the signed-in student's curriculum."
+          },
+          "409": {
+            "description": "The first failed enrollment check. Codes, in order: ENROLL_PERIOD_CLOSED, ENROLL_FINANCIAL_HOLD, ENROLL_HOLD_ACTIVE, ENROLL_STANDING_BLOCKED, the unit-ceiling codes, ENROLL_SCHEDULE_CONFLICT, prerequisite codes when enabled, and ENROLL_SECTION_FULL. No enrollment or seat is written."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/student/enrollment/available-courses": {
+      "get": {
+        "tags": [
+          "student-enrollment"
+        ],
+        "summary": "Get Available Courses",
+        "operationId": "list_student_enrollment_available_courses",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "term",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "description": "Stored academic year and semester joined by a hyphen, for example 2026-2027-First Semester.",
+              "title": "Term"
+            },
+            "description": "Stored academic year and semester joined by a hyphen, for example 2026-2027-First Semester."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AvailableCourseRead"
+                  },
+                  "title": "Response List Student Enrollment Available Courses"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/student/enrollment/eligibility": {
+      "get": {
+        "tags": [
+          "student-enrollment"
+        ],
+        "summary": "Get Enrollment Eligibility",
+        "operationId": "get_student_enrollment_eligibility",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentEligibilityRead"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3479,6 +3666,93 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/admin/overload-requests": {
+      "get": {
+        "tags": [
+          "admin-overload-requests"
+        ],
+        "summary": "List Overload Requests",
+        "operationId": "list_admin_overload_requests",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OverloadRequestRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Admin Overload Requests"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/overload-requests/{overload_request_id}": {
+      "patch": {
+        "tags": [
+          "admin-overload-requests"
+        ],
+        "summary": "Decide Overload Request",
+        "operationId": "decide_admin_overload_request",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "overload_request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Overload Request Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverloadDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverloadRequestRead"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when outside the Dean's college."
+          },
+          "409": {
+            "description": "REQUEST_ALREADY_DECIDED."
+          },
+          "422": {
+            "description": "DECISION_REMARKS_REQUIRED for a blank rejection."
+          }
+        }
       }
     },
     "/api/v1/iam/permissions": {
@@ -6015,6 +6289,137 @@
         "title": "AuthorizationRead",
         "description": "Browser consent instructions, not a connection or delivery confirmation."
       },
+      "AvailableCourseRead": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "courseCode": {
+            "type": "string",
+            "title": "Coursecode"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units"
+          },
+          "schedule": {
+            "items": {
+              "$ref": "#/components/schemas/AvailableCourseScheduleRead"
+            },
+            "type": "array",
+            "title": "Schedule"
+          },
+          "faculty": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Faculty"
+          },
+          "capacity": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Capacity"
+          },
+          "availableSlots": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Availableslots",
+            "description": "Advisory seat availability at read time; it can be stale by submit."
+          },
+          "prerequisitesSatisfied": {
+            "type": "boolean",
+            "title": "Prerequisitessatisfied",
+            "default": true
+          },
+          "blockReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blockreason"
+          },
+          "conflictsWith": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Conflictswith"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectionId",
+          "courseCode",
+          "title",
+          "units",
+          "faculty",
+          "capacity",
+          "availableSlots"
+        ],
+        "title": "AvailableCourseRead",
+        "description": "One curriculum and term section the signed-in student may consider."
+      },
+      "AvailableCourseScheduleRead": {
+        "properties": {
+          "day": {
+            "type": "integer",
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Day",
+            "description": "Meeting day; Monday=0 and Sunday=6."
+          },
+          "start": {
+            "type": "string",
+            "format": "time",
+            "title": "Start",
+            "description": "Meeting start time in Asia/Manila."
+          },
+          "end": {
+            "type": "string",
+            "format": "time",
+            "title": "End",
+            "description": "Meeting end time in Asia/Manila."
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room",
+            "description": "Assigned room, or null when unassigned."
+          }
+        },
+        "type": "object",
+        "required": [
+          "day",
+          "start",
+          "end",
+          "room"
+        ],
+        "title": "AvailableCourseScheduleRead",
+        "description": "One weekly meeting for an available section."
+      },
       "AvatarUploadRead": {
         "properties": {
           "avatarUrl": {
@@ -6349,6 +6754,35 @@
         "title": "EffectivePermissionsRead",
         "description": "Every action a user is effectively granted, and how they got it.\n\nThe two sources are reported separately rather than pre-merged because the\nquestion an admin screen actually asks is not \"what can they do?\" but \"why\ncan they do it, and what do I change to stop it?\" \u2014 and those have different\nanswers: a group grant is revoked by changing membership, a direct grant by\ndetaching the policy. ``effective`` is the union the guards actually check."
       },
+      "EligibilityHoldRead": {
+        "properties": {
+          "office": {
+            "type": "string",
+            "title": "Office"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
+          },
+          "isBlocking": {
+            "type": "boolean",
+            "title": "Isblocking"
+          }
+        },
+        "type": "object",
+        "required": [
+          "office",
+          "type",
+          "amount",
+          "isBlocking"
+        ],
+        "title": "EligibilityHoldRead"
+      },
       "EmergencyContactDetailRead": {
         "properties": {
           "id": {
@@ -6491,6 +6925,229 @@
         "type": "object",
         "title": "EmptyStatesRead",
         "description": "Explanatory empty states for zero-history panels."
+      },
+      "EnrollmentEligibilityRead": {
+        "properties": {
+          "isEligible": {
+            "type": "boolean",
+            "title": "Iseligible"
+          },
+          "termType": {
+            "type": "string",
+            "enum": [
+              "REGULAR",
+              "SUMMER"
+            ],
+            "title": "Termtype"
+          },
+          "prescribedLoad": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Prescribedload"
+          },
+          "approvedOverloadUnits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Approvedoverloadunits"
+          },
+          "standingReduction": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Standingreduction"
+          },
+          "effectiveCeiling": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Effectiveceiling"
+          },
+          "academicStanding": {
+            "type": "string",
+            "title": "Academicstanding"
+          },
+          "overloadEligible": {
+            "type": "boolean",
+            "title": "Overloadeligible"
+          },
+          "summerSubjectCap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summersubjectcap"
+          },
+          "holds": {
+            "items": {
+              "$ref": "#/components/schemas/EligibilityHoldRead"
+            },
+            "type": "array",
+            "title": "Holds"
+          },
+          "academicPeriod": {
+            "$ref": "#/components/schemas/EnrollmentPeriodRead"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/EnrollmentEligibilityReason"
+            },
+            "type": "array",
+            "title": "Reasons"
+          }
+        },
+        "type": "object",
+        "required": [
+          "isEligible",
+          "termType",
+          "prescribedLoad",
+          "approvedOverloadUnits",
+          "standingReduction",
+          "effectiveCeiling",
+          "academicStanding",
+          "overloadEligible",
+          "summerSubjectCap",
+          "academicPeriod"
+        ],
+        "title": "EnrollmentEligibilityRead"
+      },
+      "EnrollmentEligibilityReason": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "EnrollmentEligibilityReason"
+      },
+      "EnrollmentPeriodRead": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          },
+          "isOpen": {
+            "type": "boolean",
+            "title": "Isopen"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "isOpen"
+        ],
+        "title": "EnrollmentPeriodRead"
+      },
+      "EnrollmentSubmitRead": {
+        "properties": {
+          "enrollmentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Enrollmentid"
+          },
+          "status": {
+            "type": "string",
+            "const": "ENROLLED_PENDING",
+            "title": "Status"
+          },
+          "totalUnits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Totalunits"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/EnrollmentSubmitSectionRead"
+            },
+            "type": "array",
+            "title": "Sections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enrollmentId",
+          "status",
+          "totalUnits",
+          "sections"
+        ],
+        "title": "EnrollmentSubmitRead"
+      },
+      "EnrollmentSubmitRequest": {
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 3,
+            "title": "Term"
+          },
+          "sectionIds": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Sectionids"
+          },
+          "confirmation": {
+            "type": "boolean",
+            "const": true,
+            "title": "Confirmation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "term",
+          "sectionIds",
+          "confirmation"
+        ],
+        "title": "EnrollmentSubmitRequest"
+      },
+      "EnrollmentSubmitSectionRead": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "courseCode": {
+            "type": "string",
+            "title": "Coursecode"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectionId",
+          "courseCode",
+          "title",
+          "units"
+        ],
+        "title": "EnrollmentSubmitSectionRead"
       },
       "EnrollmentSummaryRead": {
         "properties": {
@@ -7552,6 +8209,202 @@
         ],
         "title": "OAuthCallback",
         "description": "Forward only the new redirect's decoded state/code using the same SIS session.\n\nEach value must be URL-decoded once locally, not via an online decoder.\nDo not paste the entire redirect URL. Attempts expire after ten minutes and\nare single-use; never log, share or replay these values."
+      },
+      "OverloadDecisionRequest": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVE",
+              "REJECT"
+            ],
+            "title": "Decision"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "title": "OverloadDecisionRequest"
+      },
+      "OverloadRequestCreate": {
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 3,
+            "title": "Term"
+          },
+          "requestedUnits": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Requestedunits"
+          },
+          "justification": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Justification"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "term",
+          "requestedUnits",
+          "justification"
+        ],
+        "title": "OverloadRequestCreate"
+      },
+      "OverloadRequestFiledRead": {
+        "properties": {
+          "overloadRequestId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Overloadrequestid"
+          },
+          "state": {
+            "type": "string",
+            "const": "PENDING_DEAN",
+            "title": "State"
+          }
+        },
+        "type": "object",
+        "required": [
+          "overloadRequestId",
+          "state"
+        ],
+        "title": "OverloadRequestFiledRead"
+      },
+      "OverloadRequestRead": {
+        "properties": {
+          "overloadRequestId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Overloadrequestid"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "studentName": {
+            "type": "string",
+            "title": "Studentname"
+          },
+          "programCode": {
+            "type": "string",
+            "title": "Programcode"
+          },
+          "department": {
+            "type": "string",
+            "title": "Department"
+          },
+          "college": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "College"
+          },
+          "term": {
+            "type": "string",
+            "title": "Term"
+          },
+          "requestedUnits": {
+            "type": "integer",
+            "title": "Requestedunits"
+          },
+          "justification": {
+            "type": "string",
+            "title": "Justification"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING_DEAN",
+              "APPROVED",
+              "REJECTED"
+            ],
+            "title": "State"
+          },
+          "reviewedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedby"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "reviewedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "overloadRequestId",
+          "studentId",
+          "studentNumber",
+          "studentName",
+          "programCode",
+          "department",
+          "college",
+          "term",
+          "requestedUnits",
+          "justification",
+          "state",
+          "createdAt"
+        ],
+        "title": "OverloadRequestRead"
       },
       "OverrideRequest": {
         "properties": {

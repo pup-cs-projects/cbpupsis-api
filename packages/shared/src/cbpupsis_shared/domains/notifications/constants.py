@@ -81,6 +81,10 @@ NOTIFICATION_TYPES: dict[str, NotificationTypeSpec] = {
     #: is a convenience, and a user who does not want one should be able to say
     #: so.
     "notifications.digest": NotificationTypeSpec(default_channels=(Channel.EMAIL,)),
+    "enrollment.confirmed": NotificationTypeSpec(default_channels=(Channel.IN_APP,)),
+    "enrollment.overload_decided": NotificationTypeSpec(
+        default_channels=(Channel.IN_APP,)
+    ),
 }
 
 #: The outbox event names this domain handles. Registered by subscribers.py, and

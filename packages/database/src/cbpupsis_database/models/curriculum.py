@@ -28,6 +28,7 @@ class Program(UUIDMixin, Base):
     code: Mapped[str] = mapped_column(String(20), unique=True)
     name: Mapped[str] = mapped_column(String(255))
     department: Mapped[str] = mapped_column(String(100))
+    college: Mapped[str | None] = mapped_column(String(100), default=None)
     total_units_required: Mapped[Decimal] = mapped_column(Numeric(precision=5, scale=1))
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true"

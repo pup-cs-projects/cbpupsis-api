@@ -36,6 +36,7 @@ from cbpupsis_api_student.domains.student_profile import (
     constants as student_profile_constants,
 )
 from cbpupsis_shared.domains.auth import constants as auth_constants
+from cbpupsis_shared.domains.enrollment import constants as enrollment_constants
 from cbpupsis_shared.domains.grading import constants as grading_constants
 from cbpupsis_shared.domains.iam import constants as iam_constants
 from cbpupsis_shared.domains.notifications import constants as notifications_constants
@@ -54,6 +55,7 @@ DOMAIN_CONSTANTS: dict[str, ModuleType] = {
     "sections": sections_constants,
     "student_profile": student_profile_constants,
     "grading": grading_constants,
+    "enrollment": enrollment_constants,
     "schedule": schedule_constants,
     "superadmin_ops": superadmin_ops_constants,
 }

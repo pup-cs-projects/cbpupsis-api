@@ -17,6 +17,9 @@ from cbpupsis_api_student.domains.schedule.router import router as schedule_rout
 from cbpupsis_api_student.domains.student_auth.router import (
     router as student_auth_router,
 )
+from cbpupsis_api_student.domains.student_enrollment.router import (
+    router as enrollment_router,
+)
 from cbpupsis_api_student.domains.student_grades.router import router as grades_router
 from cbpupsis_api_student.domains.student_profile.router import (
     router as student_profile_router,
@@ -31,6 +34,7 @@ STUDENT_PROFILE = RouterMount(
 STUDENT_DASHBOARD = RouterMount(dashboard_router, "/student", "student-dashboard")
 ITEMS = RouterMount(items_router, "/items", "items")
 GRADES = RouterMount(grades_router, "", "student-grades")
+ENROLLMENT = RouterMount(enrollment_router, "/student/enrollment", "student-enrollment")
 
 SCHEDULE = RouterMount(schedule_router, "", "student-schedule")
 
@@ -45,6 +49,7 @@ MOUNTS: tuple[RouterMount, ...] = (
     STUDENT_DASHBOARD,
     ITEMS,
     GRADES,
+    ENROLLMENT,
     SCHEDULE,
     GOOGLE_CALENDAR,
 )
