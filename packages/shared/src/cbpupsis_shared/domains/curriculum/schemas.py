@@ -17,6 +17,7 @@ class ProgramRead(BaseModel):
     code: str
     name: str
     department: str
+    college: str | None = None
     is_active: bool
 
 

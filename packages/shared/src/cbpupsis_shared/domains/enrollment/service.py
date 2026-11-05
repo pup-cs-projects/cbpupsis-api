@@ -72,3 +72,25 @@ async def enrolled_sections(
         EnrolledSection.model_validate(row)
         for row in await repository.enrolled_sections(db, student_id, term_id)
     ]
+
+
+async def get_enrollment_report_counts(
+    db: AsyncSession,
+    *,
+    term_id: uuid.UUID,
+    group_by: str,
+    program_code: str | None = None,
+    status: str | None = None,
+    department: str | None = None,
+    college: str | None = None,
+) -> list[tuple[str, int]]:
+    """Return aggregated enrollment counts grouped by the selected field."""
+    return await repository.get_enrollment_report_counts(
+        db,
+        term_id=term_id,
+        group_by=group_by,
+        program_code=program_code,
+        status=status,
+        department=department,
+        college=college,
+    )

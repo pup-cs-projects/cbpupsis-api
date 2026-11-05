@@ -178,3 +178,79 @@ async def enrolled_sections(
             .limit(101)
         )
     )
+
+
+async def get_enrollment_report_counts(
+    db: AsyncSession,
+    *,
+    term_id: uuid.UUID,
+    group_by: str,
+    program_code: str | None = None,
+    status: str | None = None,
+    department: str | None = None,
+    college: str | None = None,
+) -> list[tuple[str, int]]:
+    """Return counts of enrolled students for a term, grouped by the selected field.
+
+    SQL::
+
+        SELECT COALESCE(p.code, 'Unknown') AS group_name, COUNT(*) AS count
+        FROM term_enrollments te
+        JOIN student_profiles sp ON sp.user_id = te.student_id
+        JOIN programs p ON p.id = sp.program_id
+        LEFT JOIN user_profiles up ON up.user_id = te.student_id
+        WHERE te.academic_term_id = :term_id
+          AND (:program_code IS NULL OR lower(p.code) = lower(:program_code))
+          AND (:status IS NULL OR lower(te.enrollment_status) = lower(:status))
+          AND (:department IS NULL OR p.department = :department)
+          AND (:college IS NULL OR p.college = :college)
+        GROUP BY group_name
+        ORDER BY group_name ASC;
+    """
+    if group_by == "program":
+        group_expr = "COALESCE(p.code, 'Unknown')"
+    elif group_by == "status":
+        group_expr = "COALESCE(te.enrollment_status, 'unknown')"
+    elif group_by in ("yearLevel", "year_level"):
+        group_expr = "COALESCE(CAST(sp.year_level AS TEXT), 'Unassigned')"
+    elif group_by == "sex":
+        group_expr = "COALESCE(up.gender, 'Unspecified')"
+    elif group_by == "section":
+        group_expr = "COALESCE(sp.section, 'Unassigned')"
+    else:
+        raise ValueError(f"Unsupported group_by: {group_by}")
+
+    query_parts = [
+        f"SELECT {group_expr} AS group_name, COUNT(*) AS count",
+        "FROM term_enrollments te",
+        "JOIN student_profiles sp ON sp.user_id = te.student_id",
+        "JOIN programs p ON p.id = sp.program_id",
+        "LEFT JOIN user_profiles up ON up.user_id = te.student_id",
+        "WHERE te.academic_term_id = :term_id",
+    ]
+    params: dict[str, object] = {"term_id": term_id}
+
+    if program_code:
+        query_parts.append("AND lower(p.code) = lower(:program_code)")
+        params["program_code"] = program_code
+
+    if status:
+        query_parts.append("AND lower(te.enrollment_status) = lower(:status)")
+        params["status"] = status
+
+    if department:
+        query_parts.append("AND p.department = :department")
+        params["department"] = department
+
+    if college:
+        query_parts.append("AND p.college = :college")
+        params["college"] = college
+
+    query_parts.append(f"GROUP BY {group_expr}")
+    query_parts.append(f"ORDER BY {group_expr} ASC")
+
+    stmt = text("\n".join(query_parts)).bindparams(
+        bindparam("term_id", type_=Uuid),
+    )
+    result = await db.execute(stmt, params)
+    return [(str(row[0]), int(row[1])) for row in result.all()]

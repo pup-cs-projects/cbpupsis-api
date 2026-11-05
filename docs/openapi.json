@@ -903,7 +903,7 @@
           "student-profile"
         ],
         "summary": "Get Student Avatar Image",
-        "description": "Stream the student profile picture by avatar ID (referenced by avatarUrl).",
+        "description": "Stream the student's own profile picture by avatar ID (see avatarUrl).",
         "operationId": "get_student_avatar",
         "security": [
           {
@@ -3479,6 +3479,208 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/admin/reports/enrollment": {
+      "get": {
+        "tags": [
+          "admin-reports"
+        ],
+        "summary": "Get Enrollment Report",
+        "description": "Return enrollment counts grouped by field, filtered to caller's role scope.",
+        "operationId": "get_admin_enrollment_report",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "termId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Termid"
+            }
+          },
+          {
+            "name": "programCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Programcode"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "groupBy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "program",
+              "title": "Groupby"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentReportRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/reports/enrollment/export": {
+      "get": {
+        "tags": [
+          "admin-reports"
+        ],
+        "summary": "Export Enrollment Report",
+        "description": "Export enrollment report numbers as a downloadable CSV or PDF file.",
+        "operationId": "export_admin_enrollment_report",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "termId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Termid"
+            }
+          },
+          {
+            "name": "programCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Programcode"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "groupBy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "program",
+              "title": "Groupby"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "csv",
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/iam/permissions": {
@@ -6491,6 +6693,47 @@
         "type": "object",
         "title": "EmptyStatesRead",
         "description": "Explanatory empty states for zero-history panels."
+      },
+      "EnrollmentReportRead": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/EnrollmentReportRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rows",
+          "total"
+        ],
+        "title": "EnrollmentReportRead",
+        "description": "Enrollment report counts by group and total."
+      },
+      "EnrollmentReportRow": {
+        "properties": {
+          "group": {
+            "type": "string",
+            "title": "Group"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group",
+          "count"
+        ],
+        "title": "EnrollmentReportRow",
+        "description": "An aggregated group count in the enrollment statistics report."
       },
       "EnrollmentSummaryRead": {
         "properties": {

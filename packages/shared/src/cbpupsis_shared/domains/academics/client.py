@@ -25,6 +25,7 @@ __all__ = [
     "AcademicTermRead",
     "get_current_term",
     "get_term",
+    "get_term_by_id",
     "get_term_periods",
     "holidays",
     "list_upcoming_events",
@@ -41,6 +42,12 @@ async def get_term(
     db: AsyncSession, academic_year: str, semester: str
 ) -> AcademicTermRead | None:
     return await service.get_term(db, academic_year, semester)
+
+
+async def get_term_by_id(
+    db: AsyncSession, term_id: uuid.UUID
+) -> AcademicTermRead | None:
+    return await service.get_term_by_id(db, term_id)
 
 
 def get_term_periods(
