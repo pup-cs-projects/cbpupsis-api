@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -6,6 +8,8 @@ from cbpupsis_api_student.domains.student_auth.dependencies import (
 )
 from cbpupsis_api_student.domains.student_enrollment import service
 from cbpupsis_api_student.domains.student_enrollment.schemas import (
+    AddDropRequestCreate,
+    AddDropRequestRead,
     AvailableCourseRead,
     EnrollmentEligibilityRead,
     EnrollmentSubmitRead,
@@ -17,8 +21,10 @@ from cbpupsis_core.middleware import client_ip_or_none
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.auth.dependencies import CurrentUser
 from cbpupsis_shared.domains.enrollment.constants import (
+    CREATE_ADD_DROP_REQUEST,
     CREATE_ENROLLMENT,
     CREATE_OVERLOAD_REQUEST,
+    READ_ADD_DROP_REQUEST,
     READ_ENROLLMENT,
 )
 from cbpupsis_shared.domains.iam.dependencies import require_permission
@@ -128,3 +134,74 @@ async def get_enrollment_eligibility(
     db: AsyncSession = Depends(get_db),
 ) -> EnrollmentEligibilityRead:
     return await service.get_eligibility(db, student_id=user.id)
+
+
+@router.post(
+    "/add-drop",
+    response_model=AddDropRequestRead,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="create_student_add_drop_request",
+    responses={
+        401: {"description": "A live student bearer session is required."},
+        403: {"description": "CreateAddDropRequest permission is required."},
+        404: {"description": "Resource not found."},
+        409: {
+            "description": (
+                "Filing refusal: closed period, below minimum load, "
+                "section full, schedule conflict, unit ceiling exceeded, "
+                "or prerequisite unmet."
+            )
+        },
+    },
+)
+async def create_add_drop_request(
+    body: AddDropRequestCreate,
+    request: Request,
+    user: CurrentUser = Depends(require_student_session),
+    _authorized: CurrentUser = Depends(require_permission(CREATE_ADD_DROP_REQUEST)),
+    db: AsyncSession = Depends(get_db),
+) -> AddDropRequestRead:
+    return await service.file_add_drop_request(
+        db,
+        student_id=user.id,
+        request_data=body,
+        client_ip=client_ip_or_none(request),
+    )
+
+
+@router.get(
+    "/add-drop",
+    response_model=list[AddDropRequestRead],
+    operation_id="list_student_add_drop_requests",
+    responses={
+        401: {"description": "A live student bearer session is required."},
+        403: {"description": "ReadAddDropRequest permission is required."},
+    },
+)
+async def list_add_drop_requests(
+    user: CurrentUser = Depends(require_student_session),
+    _authorized: CurrentUser = Depends(require_permission(READ_ADD_DROP_REQUEST)),
+    db: AsyncSession = Depends(get_db),
+) -> list[AddDropRequestRead]:
+    return await service.list_student_add_drop_requests(db, student_id=user.id)
+
+
+@router.get(
+    "/add-drop/{request_id}",
+    response_model=AddDropRequestRead,
+    operation_id="get_student_add_drop_request",
+    responses={
+        401: {"description": "A live student bearer session is required."},
+        403: {"description": "ReadAddDropRequest permission is required."},
+        404: {"description": "Resource not found."},
+    },
+)
+async def get_add_drop_request(
+    request_id: uuid.UUID,
+    user: CurrentUser = Depends(require_student_session),
+    _authorized: CurrentUser = Depends(require_permission(READ_ADD_DROP_REQUEST)),
+    db: AsyncSession = Depends(get_db),
+) -> AddDropRequestRead:
+    return await service.get_student_add_drop_request(
+        db, student_id=user.id, request_id=request_id
+    )

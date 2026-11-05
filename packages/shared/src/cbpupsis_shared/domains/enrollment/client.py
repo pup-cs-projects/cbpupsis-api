@@ -8,6 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cbpupsis_shared.domains.academics.schemas import AcademicTermRead
 from cbpupsis_shared.domains.enrollment import service
 from cbpupsis_shared.domains.enrollment.schemas import (
+    AddDropDecisionRequest,
+    AddDropRequestCreate,
+    AddDropRequestRead,
+    AdminAddDropRequestRead,
     AvailableCourseRead,
     EnrollmentSubmitRead,
     EnrollmentSummaryRead,
@@ -25,6 +29,10 @@ from cbpupsis_shared.domains.enrollment.service import (
 )
 
 __all__ = [
+    "AddDropDecisionRequest",
+    "AddDropRequestCreate",
+    "AddDropRequestRead",
+    "AdminAddDropRequestRead",
     "AvailableCourseRead",
     "EnrollmentSubmitRead",
     "EnrollmentSummaryRead",
@@ -35,14 +43,19 @@ __all__ = [
     "check_schedule_conflict",
     "check_unit_ceiling",
     "compute_effective_ceiling",
+    "decide_add_drop_request",
     "decide_overload_request",
     "enrolled_sections",
+    "file_add_drop_request",
     "file_overload_request",
     "get_approved_overload_units",
     "get_enrollment_summary",
+    "get_student_add_drop_request",
     "get_term_enrollment",
+    "list_admin_add_drop_requests",
     "list_available_courses",
     "list_overload_requests",
+    "list_student_add_drop_requests",
     "record_enrollments",
     "submit_enrollment",
 ]
@@ -165,4 +178,85 @@ async def get_approved_overload_units(
 ) -> Decimal:
     return await service.get_approved_overload_units(
         db, student_id=student_id, academic_term_id=academic_term_id
+    )
+
+
+async def file_add_drop_request(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    request_data: AddDropRequestCreate,
+    client_ip: str | None = None,
+) -> AddDropRequestRead:
+    return await service.file_add_drop_request(
+        db,
+        student_id=student_id,
+        request_data=request_data,
+        client_ip=client_ip,
+    )
+
+
+async def get_student_add_drop_request(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    request_id: uuid.UUID,
+) -> AddDropRequestRead:
+    return await service.get_student_add_drop_request(
+        db,
+        student_id=student_id,
+        request_id=request_id,
+    )
+
+
+async def list_student_add_drop_requests(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+) -> list[AddDropRequestRead]:
+    return await service.list_student_add_drop_requests(
+        db,
+        student_id=student_id,
+    )
+
+
+async def list_admin_add_drop_requests(
+    db: AsyncSession,
+    *,
+    position: str,
+    department: str | None,
+    college: str | None,
+) -> list[AdminAddDropRequestRead]:
+    return await service.list_admin_add_drop_requests(
+        db,
+        position=position,
+        department=department,
+        college=college,
+    )
+
+
+async def decide_add_drop_request(
+    db: AsyncSession,
+    *,
+    request_id: uuid.UUID,
+    decision: str,
+    remarks: str | None,
+    reviewer_id: uuid.UUID,
+    position: str,
+    department: str | None,
+    college: str | None,
+    client_ip: str | None = None,
+    version: int = 1,
+) -> AdminAddDropRequestRead:
+    return await service.decide_add_drop_request(
+        db,
+        request_id=request_id,
+        decision=decision,
+        remarks=remarks,
+        reviewer_id=reviewer_id,
+        position=position,
+        department=department,
+        college=college,
+        client_ip=client_ip,
+        version=version,
     )

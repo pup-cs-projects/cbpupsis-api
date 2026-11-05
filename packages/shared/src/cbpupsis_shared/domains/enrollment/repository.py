@@ -6,14 +6,21 @@ and course registrations.
 
 from __future__ import annotations
 
+import hashlib
+import secrets
 import uuid
 from collections.abc import Collection
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import Uuid, bindparam, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from cbpupsis_database.models.enrollment import (
+    AddDropRequest,
+    AddDropRequestItem,
+    CorIssuance,
     OverloadRequest,
     StudentCourseEnrollment,
     TermEnrollment,
@@ -45,6 +52,31 @@ async def get_term_enrollment(
             TermEnrollment.student_id == student_id,
             TermEnrollment.academic_term_id == academic_term_id,
         )
+        .limit(1)
+    )
+    return await db.scalar(stmt)
+
+
+async def get_latest_term_enrollment(
+    db: AsyncSession, student_id: uuid.UUID
+) -> TermEnrollment | None:
+    """Return the most recent active term enrollment for a student.
+
+    SQL::
+
+        SELECT * FROM term_enrollments
+        WHERE student_id = :student_id
+          AND enrollment_status IN ('enrolled', 'ENROLLED_PENDING')
+        ORDER BY enrolled_at DESC, id DESC
+        LIMIT 1;
+    """
+    stmt = (
+        select(TermEnrollment)
+        .where(
+            TermEnrollment.student_id == student_id,
+            TermEnrollment.enrollment_status.in_(ACTIVE_TERM_ENROLLMENT_STATUSES),
+        )
+        .order_by(TermEnrollment.enrolled_at.desc(), TermEnrollment.id.desc())
         .limit(1)
     )
     return await db.scalar(stmt)
@@ -378,3 +410,204 @@ def add_course_enrollments(
     ]
     db.add_all(rows)
     return rows
+
+
+def add_add_drop_request(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    academic_term_id: uuid.UUID,
+    comments: str | None,
+    units_before: Decimal,
+    units_after: Decimal,
+    add_section_ids: list[uuid.UUID],
+    drop_sections: list[tuple[uuid.UUID, str]],
+) -> AddDropRequest:
+    """Stage one composite add and drop request with individual item rows.
+
+    On the service's commit::
+
+        INSERT INTO add_drop_requests
+            (id, student_id, academic_term_id, comments,
+             units_before, units_after, state, version)
+        VALUES
+            (:id, :student_id, :academic_term_id, :comments,
+             :units_before, :units_after, 'PENDING', 1);
+
+        INSERT INTO add_drop_request_items
+            (id, request_id, section_id, action, reason)
+        VALUES
+            (:id, :request_id, :section_id, :action, :reason);
+    """
+    request = AddDropRequest(
+        student_id=student_id,
+        academic_term_id=academic_term_id,
+        comments=comments,
+        units_before=units_before,
+        units_after=units_after,
+        state="PENDING",
+        version=1,
+    )
+    db.add(request)
+    for section_id in add_section_ids:
+        item = AddDropRequestItem(
+            request=request,
+            section_id=section_id,
+            action="ADD",
+            reason=None,
+        )
+        db.add(item)
+    for section_id, reason in drop_sections:
+        item = AddDropRequestItem(
+            request=request,
+            section_id=section_id,
+            action="DROP",
+            reason=reason,
+        )
+        db.add(item)
+    return request
+
+
+async def get_add_drop_request(
+    db: AsyncSession, request_id: uuid.UUID
+) -> AddDropRequest | None:
+    """Read one add/drop request with items eagerly loaded.
+
+    SQL::
+
+        SELECT * FROM add_drop_requests
+        WHERE id = :request_id;
+    """
+    stmt = (
+        select(AddDropRequest)
+        .options(selectinload(AddDropRequest.items))
+        .where(AddDropRequest.id == request_id)
+    )
+    return await db.scalar(stmt)
+
+
+async def get_add_drop_request_for_update(
+    db: AsyncSession, request_id: uuid.UUID
+) -> AddDropRequest | None:
+    """Lock one add/drop request for decision review.
+
+    SQL::
+
+        SELECT * FROM add_drop_requests
+        WHERE id = :request_id
+        FOR UPDATE;
+    """
+    stmt = (
+        select(AddDropRequest)
+        .options(selectinload(AddDropRequest.items))
+        .where(AddDropRequest.id == request_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return await db.scalar(stmt)
+
+
+async def list_student_add_drop_requests(
+    db: AsyncSession, student_id: uuid.UUID
+) -> list[AddDropRequest]:
+    """List caller's own add/drop requests, newest first.
+
+    SQL::
+
+        SELECT * FROM add_drop_requests
+        WHERE student_id = :student_id
+        ORDER BY created_at DESC, id DESC;
+    """
+    stmt = (
+        select(AddDropRequest)
+        .options(selectinload(AddDropRequest.items))
+        .where(AddDropRequest.student_id == student_id)
+        .order_by(AddDropRequest.created_at.desc(), AddDropRequest.id.desc())
+    )
+    return list(await db.scalars(stmt))
+
+
+async def list_all_add_drop_requests(db: AsyncSession) -> list[AddDropRequest]:
+    """List all add/drop requests for admin scope filtering.
+
+    SQL::
+
+        SELECT * FROM add_drop_requests
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1001;
+    """
+    stmt = (
+        select(AddDropRequest)
+        .options(selectinload(AddDropRequest.items))
+        .order_by(AddDropRequest.created_at.desc(), AddDropRequest.id.desc())
+        .limit(1001)
+    )
+    return list(await db.scalars(stmt))
+
+
+async def get_student_course_enrollment(
+    db: AsyncSession, term_enrollment_id: uuid.UUID, section_id: uuid.UUID
+) -> StudentCourseEnrollment | None:
+    """Fetch one section enrollment record for a student term.
+
+    SQL::
+
+        SELECT * FROM student_course_enrollments
+        WHERE term_enrollment_id = :term_enrollment_id
+          AND section_id = :section_id;
+    """
+    stmt = select(StudentCourseEnrollment).where(
+        StudentCourseEnrollment.term_enrollment_id == term_enrollment_id,
+        StudentCourseEnrollment.section_id == section_id,
+    )
+    return await db.scalar(stmt)
+
+
+async def supersede_and_issue_cor(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term_enrollment_id: uuid.UUID,
+    now: datetime,
+) -> CorIssuance:
+    """Supersede existing CURRENT certificate and issue a fresh one.
+
+    SQL::
+
+        SELECT * FROM cor_issuances
+        WHERE term_enrollment_id = :term_enrollment_id
+          AND status = 'CURRENT';
+
+    On the service's commit::
+
+        UPDATE cor_issuances
+        SET status = 'SUPERSEDED', superseded_at = :now
+        WHERE id = :id;
+
+        INSERT INTO cor_issuances
+            (id, student_id, term_enrollment_id,
+             verification_token_hash, status, issued_at)
+        VALUES
+            (:id, :student_id, :term_enrollment_id,
+             :hash, 'CURRENT', :now);
+    """
+    existing = await db.scalars(
+        select(CorIssuance).where(
+            CorIssuance.term_enrollment_id == term_enrollment_id,
+            CorIssuance.status == "CURRENT",
+        )
+    )
+    for cor in existing:
+        cor.status = "SUPERSEDED"
+        cor.superseded_at = now
+
+    token_hash = hashlib.sha256(secrets.token_bytes(32)).hexdigest()
+    new_cor = CorIssuance(
+        student_id=student_id,
+        term_enrollment_id=term_enrollment_id,
+        verification_token_hash=token_hash,
+        status="CURRENT",
+        issued_at=now,
+    )
+    db.add(new_cor)
+    return new_cor

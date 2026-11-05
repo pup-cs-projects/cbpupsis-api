@@ -85,6 +85,9 @@ NOTIFICATION_TYPES: dict[str, NotificationTypeSpec] = {
     "enrollment.overload_decided": NotificationTypeSpec(
         default_channels=(Channel.IN_APP,)
     ),
+    "enrollment.add_drop_decided": NotificationTypeSpec(
+        default_channels=(Channel.IN_APP,)
+    ),
 }
 
 #: The outbox event names this domain handles. Registered by subscribers.py, and

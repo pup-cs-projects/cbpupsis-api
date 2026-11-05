@@ -6,6 +6,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from cbpupsis_shared.domains.enrollment.schemas import (
+    AddDropCourseRead,
+    AddDropRequestCreate,
+    AddDropRequestRead,
     AvailableCourseRead,
     EnrollmentEligibilityRead,
     EnrollmentSubmitRead,
@@ -47,6 +50,9 @@ class OverloadRequestCreate(BaseModel):
 
 
 __all__ = [
+    "AddDropCourseRead",
+    "AddDropRequestCreate",
+    "AddDropRequestRead",
     "AvailableCourseRead",
     "EnrollmentEligibilityRead",
     "EnrollmentSubmitRead",

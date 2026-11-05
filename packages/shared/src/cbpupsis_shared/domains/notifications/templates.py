@@ -53,6 +53,10 @@ MESSAGES_BY_EVENT: dict[str, tuple[str, str]] = {
         "Overload request decided",
         "A College Dean has decided your overload request.",
     ),
+    "enrollment.add_drop_decided": (
+        "Add and drop request decided",
+        "Your add and drop request has been decided.",
+    ),
 }
 
 
@@ -61,11 +65,12 @@ def render(event: Event) -> RenderedNotification:
     title, body = MESSAGES_BY_EVENT.get(
         event.name, ("Notification", f"Something happened: {event.name}")
     )
-    if event.name == "enrollment.overload_decided":
+    if event.name in {"enrollment.overload_decided", "enrollment.add_drop_decided"}:
+        entity = "overload" if "overload" in event.name else "add and drop"
         state = str(event.payload.get("state", "DECIDED")).replace("_", " ").title()
         remarks = event.payload.get("remarks")
-        title = f"Overload request {state.lower()}"
-        body = f"Your overload request was {state.lower()}."
+        title = f"{entity.capitalize()} request {state.lower()}"
+        body = f"Your {entity} request was {state.lower()}."
         if remarks:
             body += f" Remarks: {remarks}"
     return RenderedNotification(

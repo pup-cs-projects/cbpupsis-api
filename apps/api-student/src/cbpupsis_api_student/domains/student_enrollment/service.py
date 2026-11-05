@@ -19,6 +19,8 @@ from cbpupsis_shared.domains.enrollment.constants import (
     SUMMER_SUBJECT_CAP,
 )
 from cbpupsis_shared.domains.enrollment.schemas import (
+    AddDropRequestCreate,
+    AddDropRequestRead,
     AvailableCourseRead,
     CeilingStudent,
     EligibilityHoldRead,
@@ -242,4 +244,43 @@ async def get_eligibility(
         holds=holds,
         academic_period=current_period,
         reasons=reasons,
+    )
+
+
+async def file_add_drop_request(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    request_data: AddDropRequestCreate,
+    client_ip: str | None,
+) -> AddDropRequestRead:
+    return await enrollment.file_add_drop_request(
+        db,
+        student_id=student_id,
+        request_data=request_data,
+        client_ip=client_ip,
+    )
+
+
+async def get_student_add_drop_request(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    request_id: uuid.UUID,
+) -> AddDropRequestRead:
+    return await enrollment.get_student_add_drop_request(
+        db,
+        student_id=student_id,
+        request_id=request_id,
+    )
+
+
+async def list_student_add_drop_requests(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+) -> list[AddDropRequestRead]:
+    return await enrollment.list_student_add_drop_requests(
+        db,
+        student_id=student_id,
     )

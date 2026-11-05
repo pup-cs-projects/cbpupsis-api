@@ -42,6 +42,16 @@ async def get_term(
     return AcademicTermRead.model_validate(row)
 
 
+async def get_academic_term(
+    db: AsyncSession, term_id: uuid.UUID
+) -> AcademicTermRead | None:
+    """Return the academic term matching the term ID, or None."""
+    rows = await repository.list_terms(db, [term_id])
+    if not rows:
+        return None
+    return AcademicTermRead.model_validate(rows[0])
+
+
 def get_term_periods(
     term: AcademicTermRead, as_of: datetime | None = None
 ) -> list[AcademicPeriodRead]:
