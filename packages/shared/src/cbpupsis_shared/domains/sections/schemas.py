@@ -214,6 +214,7 @@ class AdminSectionRead(BaseModel):
     section_name: str = Field(serialization_alias="sectionName")
     capacity: int
     enrolled: int = 0
+    seats_left: int = Field(default=0, serialization_alias="seatsLeft")
     room: str | None = None
     status: str
     meetings: list[SectionMeetingRead] = Field(default_factory=list)

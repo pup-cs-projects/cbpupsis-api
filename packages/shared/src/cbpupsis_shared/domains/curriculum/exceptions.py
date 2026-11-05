@@ -18,8 +18,9 @@ class PrerequisiteCycleError(CatalogError, ValidationError):
 
     def __init__(self, cycle: Sequence[str]) -> None:
         cycle_list = list(cycle)
+        cycle_path = " -> ".join(cycle_list)
         super().__init__(
-            "Prerequisite or co-requisite configuration forms a cycle.",
+            f"Prerequisite or co-requisite configuration forms a cycle: {cycle_path}.",
             response_fields={"details": {"cycle": cycle_list}},
         )
         self.cycle = cycle_list

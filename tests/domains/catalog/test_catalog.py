@@ -293,6 +293,11 @@ async def catalog_env(db: AsyncSession):
         email="registrar@pup.edu.ph",
         position="registrar",
     )
+    finance_user, finance_headers = await _make_admin(
+        db,
+        email="finance@pup.edu.ph",
+        position="finance",
+    )
     faculty = await _make_faculty(
         db,
         email="prof.santos@pup.edu.ph",
@@ -320,6 +325,8 @@ async def catalog_env(db: AsyncSession):
         "dean_headers": dean_headers,
         "registrar_user": registrar_user,
         "registrar_headers": registrar_headers,
+        "finance_user": finance_user,
+        "finance_headers": finance_headers,
         "faculty": faculty,
     }
 
@@ -340,6 +347,7 @@ async def test_ac_enrl_005_1_course_create_and_edit(
             "units": 3.0,
             "lectureHours": 2,
             "labHours": 3,
+            "termOffered": "First Semester",
         },
     )
     assert create_resp.status_code == 201, create_resp.text
@@ -349,6 +357,7 @@ async def test_ac_enrl_005_1_course_create_and_edit(
     assert float(created["units"]) == 3.0
     assert created["lectureHours"] == 2
     assert created["labHours"] == 3
+    assert created["termOffered"] == "First Semester"
     assert created["department"] == catalog_env["dcis"]
     assert created["college"] == catalog_env["ccis"]
     assert created["isActive"] is True
@@ -408,6 +417,7 @@ async def test_ac_enrl_005_2_prerequisite_and_corequisite_cycle_refusal(
     self_ref_body = self_ref_resp.json()
     assert self_ref_body["code"] == "CATALOG_PREREQUISITE_CYCLE"
     assert self_ref_body["details"]["cycle"] == ["CS101", "CS101"]
+    assert "CS101" in self_ref_body["message"]
 
     # 2. Direct self-reference via co-requisite on course create
     self_coreq_resp = await client.post(
@@ -460,6 +470,8 @@ async def test_ac_enrl_005_2_prerequisite_and_corequisite_cycle_refusal(
     assert len(cycle_codes) == 4
     assert cycle_codes[0] == cycle_codes[-1]
     assert set(cycle_codes) == {"CS101", "CS102", "CS103"}
+    for c_code in ("CS101", "CS102", "CS103"):
+        assert c_code in cycle_body["message"]
 
 
 async def test_ac_enrl_005_3_publish_curriculum_version_preserves_earlier_student_load(
@@ -704,6 +716,7 @@ async def test_ac_enrl_005_5_section_create_edit_and_capacity_below_enrolled(
     assert section_body["room"] == "S501"
     assert section_body["capacity"] == 40
     assert section_body["enrolled"] == 0
+    assert section_body["seatsLeft"] == 40
     assert len(section_body["meetings"]) == 2
 
     # Enroll 3 students in this section
@@ -740,6 +753,7 @@ async def test_ac_enrl_005_5_section_create_edit_and_capacity_below_enrolled(
     low_cap_body = low_cap_resp.json()
     assert low_cap_body["code"] == "SECTION_CAPACITY_BELOW_ENROLLED"
     assert low_cap_body["details"]["enrolled"] == 3
+    assert "3" in low_cap_body["message"]
 
     # Editing capacity to 35 (>= 3 enrolled) and updating room/meetings returns 200
     edit_resp = await client.patch(
@@ -763,6 +777,7 @@ async def test_ac_enrl_005_5_section_create_edit_and_capacity_below_enrolled(
     assert edited["capacity"] == 35
     assert edited["room"] == "S503"
     assert edited["enrolled"] == 3
+    assert edited["seatsLeft"] == 32
     assert len(edited["meetings"]) == 1
     assert edited["meetings"][0]["dayOfWeek"] == 1
 
@@ -1011,10 +1026,15 @@ async def test_ac_enrl_005_8_dean_registrar_and_student_scope_and_write_refusals
     assert "COMP 601" in reg_codes
     assert "ACCO 601" in reg_codes
 
-    # 3. Student scope: GET on admin catalog route returns 403 AUTH_INSUFFICIENT_ROLE
+    # 3. Student and Finance admin scope: GET on admin catalog route returns 403
     stu_list = await client.get(f"{ADMIN_CATALOG}/courses", headers=student_headers)
     assert stu_list.status_code == 403, stu_list.text
     assert stu_list.json()["code"] == "AUTH_INSUFFICIENT_ROLE"
+
+    finance_headers = catalog_env["finance_headers"]
+    fin_list = await client.get(f"{ADMIN_CATALOG}/courses", headers=finance_headers)
+    assert fin_list.status_code == 403, fin_list.text
+    assert fin_list.json()["code"] == "AUTH_INSUFFICIENT_ROLE"
 
     # 4. Every write returns 403 AUTH_INSUFFICIENT_ROLE for Dean, Registrar, Student
     write_calls = [
@@ -1073,6 +1093,7 @@ async def test_ac_enrl_005_8_dean_registrar_and_student_scope_and_write_refusals
     for role_name, hdrs in [
         ("dean", dean_headers),
         ("registrar", registrar_headers),
+        ("finance", finance_headers),
         ("student", student_headers),
     ]:
         for method, path, payload in write_calls:

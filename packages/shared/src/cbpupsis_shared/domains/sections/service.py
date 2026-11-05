@@ -135,6 +135,7 @@ async def _build_admin_section_read(
         section_name=section.section_name,
         capacity=section.capacity,
         enrolled=enrolled,
+        seats_left=max(0, section.capacity - enrolled),
         room=primary_room,
         status=section.status,
         meetings=[SectionMeetingRead.model_validate(s) for s in schedules],

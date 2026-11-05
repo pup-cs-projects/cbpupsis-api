@@ -6395,6 +6395,11 @@
             "title": "Enrolled",
             "default": 0
           },
+          "seatsLeft": {
+            "type": "integer",
+            "title": "Seatsleft",
+            "default": 0
+          },
           "room": {
             "anyOf": [
               {
@@ -6980,6 +6985,18 @@
             "title": "Isactive",
             "default": true
           },
+          "termOffered": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Termoffered"
+          },
           "college": {
             "anyOf": [
               {
@@ -7118,6 +7135,17 @@
             "type": "string",
             "title": "Gradingmode",
             "default": "NUMERIC"
+          },
+          "termOffered": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Termoffered"
           },
           "isActive": {
             "type": "boolean",
@@ -7284,6 +7312,18 @@
               }
             ],
             "title": "Isactive"
+          },
+          "termOffered": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Termoffered"
           },
           "prerequisiteIds": {
             "anyOf": [

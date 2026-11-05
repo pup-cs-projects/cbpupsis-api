@@ -40,7 +40,6 @@ MOUNTS: tuple[RouterMount, ...] = (
     *COMMON_MOUNTS,
     ADMIN_AUTH,
     ADMIN,
-    ADMIN_CATALOG,
     IAM,
     AUDIT,
     # After COMMON_MOUNTS, so /users/me resolves before /users/{user_id}.
@@ -51,6 +50,7 @@ MOUNTS: tuple[RouterMount, ...] = (
     # Beside the shared users router, at the same prefix: only this app parses
     # multipart uploads.
     RouterMount(user_import_router, "/users", "users"),
+    ADMIN_CATALOG,
 )
 
 # SQLAdmin bypasses service-layer MFA, justification, and immutable audit staging.

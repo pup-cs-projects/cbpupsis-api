@@ -42,6 +42,7 @@ from cbpupsis_shared.domains.enrollment import client as enrollment_client
 from cbpupsis_shared.domains.users import client as users_client
 
 _COURSE_HOURS: dict[uuid.UUID, tuple[int, int]] = {}
+_COURSE_TERM_OFFERED: dict[uuid.UUID, str | None] = {}
 
 
 async def record_courses(db: AsyncSession, ids: Collection[uuid.UUID]):
@@ -181,6 +182,7 @@ def _build_course_reads(
                 lab_hours=lab_hours,
                 total_units=total,
                 grading_mode=course.grading_mode,
+                term_offered=_COURSE_TERM_OFFERED.get(course.id),
                 is_active=course.is_active,
                 prerequisite_ids=p_ids,
                 corequisite_ids=c_ids,
@@ -417,6 +419,9 @@ async def create_catalog_course(
             else int(course.lab_units or 0),
         )
 
+    if payload.term_offered is not None:
+        _COURSE_TERM_OFFERED[course.id] = payload.term_offered
+
     occurred_at = datetime.now(UTC)
     new_state = {
         "id": str(course.id),
@@ -427,6 +432,7 @@ async def create_catalog_course(
         "college": course.college,
         "lectureUnits": str(course.lecture_units),
         "labUnits": str(course.lab_units),
+        "termOffered": _COURSE_TERM_OFFERED.get(course.id),
         "isActive": course.is_active,
         "prerequisiteIds": [str(i) for i in prereq_ids],
         "corequisiteIds": [str(i) for i in coreq_ids],
@@ -573,6 +579,9 @@ async def update_catalog_course(
             payload.lab_hours if payload.lab_hours is not None else prev_lab,
         )
 
+    if "term_offered" in payload.model_fields_set:
+        _COURSE_TERM_OFFERED[course.id] = payload.term_offered
+
     await db.flush()
     occurred_at = datetime.now(UTC)
     new_state = {
@@ -584,6 +593,7 @@ async def update_catalog_course(
         "department": course_dept,
         "lectureUnits": str(course.lecture_units),
         "labUnits": str(course.lab_units),
+        "termOffered": _COURSE_TERM_OFFERED.get(course.id),
         "gradingMode": course.grading_mode,
         "isActive": course.is_active,
         "prerequisiteIds": [str(i) for i in prereq_ids],

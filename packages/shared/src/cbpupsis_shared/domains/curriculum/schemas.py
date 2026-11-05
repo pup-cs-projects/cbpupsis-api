@@ -101,6 +101,13 @@ class CatalogCourseCreate(BaseModel):
         default=True,
         validation_alias=AliasChoices("isActive", "is_active"),
     )
+    term_offered: str | None = Field(
+        default=None,
+        max_length=50,
+        validation_alias=AliasChoices(
+            "termOffered", "term_offered", "semesterOffered", "semester"
+        ),
+    )
     college: str | None = None
     prerequisite_ids: list[uuid.UUID | str] = Field(
         default_factory=list,
@@ -173,6 +180,13 @@ class CatalogCourseUpdate(BaseModel):
         default=None,
         validation_alias=AliasChoices("isActive", "is_active"),
     )
+    term_offered: str | None = Field(
+        default=None,
+        max_length=50,
+        validation_alias=AliasChoices(
+            "termOffered", "term_offered", "semesterOffered", "semester"
+        ),
+    )
     prerequisite_ids: list[uuid.UUID | str] | None = Field(
         default=None,
         validation_alias=AliasChoices(
@@ -214,6 +228,7 @@ class CatalogCourseRead(BaseModel):
     lab_hours: int = Field(default=0, serialization_alias="labHours")
     total_units: Decimal = Field(serialization_alias="totalUnits")
     grading_mode: str = Field(default="NUMERIC", serialization_alias="gradingMode")
+    term_offered: str | None = Field(default=None, serialization_alias="termOffered")
     is_active: bool = Field(default=True, serialization_alias="isActive")
     prerequisite_ids: list[uuid.UUID] = Field(
         default_factory=list, serialization_alias="prerequisiteIds"

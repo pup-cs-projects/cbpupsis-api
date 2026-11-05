@@ -16,7 +16,8 @@ class SectionCapacityBelowEnrolledError(SectionError, ConflictError):
 
     def __init__(self, enrolled: int) -> None:
         super().__init__(
-            "Section capacity cannot be set below the currently enrolled count.",
+            "Section capacity cannot be set below the currently enrolled count "
+            f"({enrolled}).",
             response_fields={"details": {"enrolled": enrolled}},
         )
         self.enrolled = enrolled
