@@ -582,7 +582,8 @@ class TestRepositoryDocstrings:
 
     def test_the_sql_blocks_are_not_empty(self) -> None:
         """A ``SQL::`` heading with nothing under it reads as documented and is not."""
-        keywords = ("SELECT", "INSERT", "UPDATE", "DELETE")
+        # Snapshot control statements are SQL too, not empty query placeholders.
+        keywords = ("SELECT", "INSERT", "UPDATE", "DELETE", "SET TRANSACTION", "SHOW ")
         empty = [
             f"{rel(path)}:{node.lineno} {node.name}()"
             for path, node in _public_repository_functions()

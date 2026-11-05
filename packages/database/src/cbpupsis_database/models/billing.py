@@ -7,6 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Computed,
     Date,
@@ -79,6 +80,8 @@ class StudentBillingAccount(UUIDMixin, Base):
     """Term billing summary, FHE subsidy deductions, and net balance."""
 
     __tablename__ = "student_billing_accounts"
+
+    assessment_snapshot: Mapped[dict | None] = mapped_column(JSON, default=None)
 
     student_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE")

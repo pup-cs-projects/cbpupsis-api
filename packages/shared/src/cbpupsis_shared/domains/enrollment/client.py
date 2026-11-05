@@ -8,6 +8,20 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.enrollment import service
+from cbpupsis_shared.domains.enrollment.certificate import (
+    issue_certificate,
+    read_assessment,
+    read_certificate,
+    stage_reissue,
+    verify_certificate,
+)
+from cbpupsis_shared.domains.enrollment.certificate_schemas import (
+    CertificateMetadata,
+    CertificateRead,
+    IssueCertificate,
+    VerificationRead,
+)
+from cbpupsis_shared.domains.enrollment.repository import begin_certificate_snapshot
 from cbpupsis_shared.domains.enrollment.schemas import (
     EnrollmentSummaryRead,
     TermEnrollmentRead,
@@ -18,12 +32,22 @@ from cbpupsis_shared.domains.enrollment.service import (
 )
 
 __all__ = [
+    "CertificateMetadata",
+    "CertificateRead",
     "EnrollmentSummaryRead",
+    "IssueCertificate",
     "TermEnrollmentRead",
+    "VerificationRead",
+    "begin_certificate_snapshot",
     "enrolled_sections",
     "get_enrollment_summary",
     "get_term_enrollment",
+    "issue_certificate",
+    "read_assessment",
+    "read_certificate",
     "record_enrollments",
+    "stage_reissue",
+    "verify_certificate",
 ]
 
 

@@ -6,12 +6,56 @@ Only this module builds SQL or calls into the session for billing models.
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_database.models.billing import StudentBillingAccount
+from cbpupsis_database.models.billing import FeeStructure, StudentBillingAccount
+
+
+async def get_fee_structure(db, program_id, term_id):
+    """Read the configured fee schedule, never inventing fallback fees.
+
+    SQL::
+
+        SELECT * FROM fee_structures WHERE program_id=:p AND academic_term_id=:t;
+    """
+    return await db.scalar(
+        select(FeeStructure).where(
+            FeeStructure.program_id == program_id,
+            FeeStructure.academic_term_id == term_id,
+        )
+    )
+
+
+async def store_assessment(db, stored, due_date: date):
+    """Stage inputs; caller already owns the parent enrollment row lock.
+
+    SQL::
+
+        INSERT INTO student_billing_accounts (student_id, academic_term_id,
+            gross_amount, fhe_subsidy_amount, assessment_snapshot, due_date)
+        VALUES (:student, :term, :gross, :subsidy, :snapshot, :due);
+        -- Existing accounts instead update assessment fields, preserving payments:
+        UPDATE student_billing_accounts SET gross_amount=:gross,
+            fhe_subsidy_amount=:subsidy, assessment_snapshot=:snapshot WHERE id=:id;
+    """
+    row = await get_student_billing_account(
+        db, stored.inputs.student_id, stored.inputs.term_id
+    )
+    if row is None:
+        row = StudentBillingAccount(
+            student_id=stored.inputs.student_id,
+            academic_term_id=stored.inputs.term_id,
+            due_date=due_date,
+        )
+        db.add(row)
+    row.gross_amount = Decimal(stored.assessment.amountAssessed)
+    row.fhe_subsidy_amount = Decimal(stored.assessment.subsidyApplied)
+    row.assessment_snapshot = stored.model_dump(mode="json")
+    await db.flush()
 
 
 async def get_student_billing_account(
