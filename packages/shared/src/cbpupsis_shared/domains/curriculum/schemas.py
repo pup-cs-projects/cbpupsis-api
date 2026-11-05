@@ -17,6 +17,7 @@ class ProgramRead(BaseModel):
     code: str
     name: str
     department: str
+    college: str | None = None
     total_units_required: Decimal
     is_active: bool
 

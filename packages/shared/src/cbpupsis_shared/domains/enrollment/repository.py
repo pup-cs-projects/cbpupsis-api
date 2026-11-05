@@ -121,6 +121,88 @@ async def get_approved_overload_units(
     return Decimal(str(val)) if val is not None else Decimal("0")
 
 
+def add_overload_request(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    academic_term_id: uuid.UUID,
+    requested_units: int,
+    justification: str,
+    state: str,
+) -> OverloadRequest:
+    """Stage one student overload request in the caller's transaction.
+
+    SQL::
+
+        INSERT INTO overload_requests
+            (student_id, academic_term_id, requested_units, justification,
+             state, id)
+        VALUES (:student_id, :academic_term_id, :requested_units,
+                :justification, :state, :id);
+    """
+    row = OverloadRequest(
+        student_id=student_id,
+        academic_term_id=academic_term_id,
+        requested_units=requested_units,
+        justification=justification,
+        state=state,
+    )
+    db.add(row)
+    return row
+
+
+async def list_overload_requests(db: AsyncSession) -> list[OverloadRequest]:
+    """List overload requests for service-side identity and scope composition.
+
+    SQL::
+
+        SELECT * FROM overload_requests
+        ORDER BY created_at DESC, id DESC LIMIT 1001;
+    """
+    return list(
+        await db.scalars(
+            select(OverloadRequest)
+            .order_by(OverloadRequest.created_at.desc(), OverloadRequest.id.desc())
+            .limit(1001)
+            .execution_options(populate_existing=True)
+        )
+    )
+
+
+async def get_overload_request_for_update(
+    db: AsyncSession,
+    *,
+    overload_request_id: uuid.UUID,
+) -> OverloadRequest | None:
+    """Lock one overload request through the caller's transaction.
+
+    SQL::
+
+        SELECT * FROM overload_requests
+        WHERE id = :overload_request_id FOR UPDATE;
+    """
+    return await db.scalar(
+        select(OverloadRequest)
+        .where(OverloadRequest.id == overload_request_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
+async def get_overload_request(
+    db: AsyncSession, overload_request_id: uuid.UUID
+) -> OverloadRequest | None:
+    """Read one overload request by id.
+
+    SQL::
+
+        SELECT * FROM overload_requests WHERE id = :overload_request_id;
+    """
+    return await db.scalar(
+        select(OverloadRequest).where(OverloadRequest.id == overload_request_id)
+    )
+
+
 async def list_record_enrollments(db: AsyncSession, student_id: uuid.UUID):
     """Retain historical attempts, including withdrawn courses with posted marks.
 

@@ -9,6 +9,7 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     AvailableCourseRead,
     EnrollmentEligibilityRead,
     EnrollmentSubmitRead,
+    OverloadRequestFiledRead,
 )
 
 
@@ -28,9 +29,28 @@ class EnrollmentSubmitRequest(BaseModel):
         return self
 
 
+class OverloadRequestCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    term: str = Field(min_length=3)
+    requested_units: int = Field(
+        gt=0, serialization_alias="requestedUnits", validation_alias="requestedUnits"
+    )
+    justification: str = Field(min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def justification_is_not_blank(self) -> OverloadRequestCreate:
+        self.justification = self.justification.strip()
+        if not self.justification:
+            raise ValueError("justification must not be blank")
+        return self
+
+
 __all__ = [
     "AvailableCourseRead",
     "EnrollmentEligibilityRead",
     "EnrollmentSubmitRead",
     "EnrollmentSubmitRequest",
+    "OverloadRequestCreate",
+    "OverloadRequestFiledRead",
 ]

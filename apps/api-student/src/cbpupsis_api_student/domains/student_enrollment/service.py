@@ -26,6 +26,7 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     EnrollmentEligibilityReason,
     EnrollmentPeriodRead,
     EnrollmentSubmitRead,
+    OverloadRequestFiledRead,
 )
 from cbpupsis_shared.domains.grading import client as grading
 from cbpupsis_shared.domains.users import client as users
@@ -94,6 +95,31 @@ async def submit_enrollment(
         student_id=student_id,
         term=term,
         section_ids=section_ids,
+        client_ip=client_ip,
+        role=role,
+    )
+
+
+async def file_overload_request(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term_selector: str,
+    requested_units: int,
+    justification: str,
+    client_ip: str | None,
+    role: str,
+) -> OverloadRequestFiledRead:
+    academic_year, semester = _parse_term_selector(term_selector)
+    term = await academics.get_term(db, academic_year, semester)
+    if term is None:
+        raise ResourceNotFoundError
+    return await enrollment.file_overload_request(
+        db,
+        student_id=student_id,
+        term=term,
+        requested_units=requested_units,
+        justification=justification,
         client_ip=client_ip,
         role=role,
     )
@@ -187,21 +213,16 @@ async def get_eligibility(
             )
         )
 
-    completion_ratio = (
-        transcript.total_units_earned / program.total_units_required
-        if program is not None and program.total_units_required > 0
-        else Decimal("0")
+    last_regular_gwa = await grading.get_previous_regular_term_gwa(
+        db, student_id=student_id, before=term.start_date
     )
-    last_regular_gwa = next(
-        (
-            block.gwa
-            for block in transcript.terms
-            if "summer" not in block.term.semester.lower() and block.gwa is not None
+    overload_assessment = enrollment.assess_overload_eligibility(
+        total_units_earned=transcript.total_units_earned,
+        total_units_required=(
+            program.total_units_required if program is not None else Decimal("0")
         ),
-        None,
-    )
-    overload_eligible = completion_ratio >= Decimal("0.85") or bool(
-        last_regular_gwa is not None and last_regular_gwa <= Decimal("1.75")
+        gwa=last_regular_gwa,
+        stored_graduating=profile.is_graduating_senior,
     )
     restricted_summer = (
         term_type == "SUMMER"
@@ -216,7 +237,7 @@ async def get_eligibility(
         standing_reduction=ceiling_student.standing_reduction,
         effective_ceiling=effective_ceiling,
         academic_standing=standing.value,
-        overload_eligible=overload_eligible,
+        overload_eligible=overload_assessment.eligible,
         summer_subject_cap=SUMMER_SUBJECT_CAP if restricted_summer else None,
         holds=holds,
         academic_period=current_period,

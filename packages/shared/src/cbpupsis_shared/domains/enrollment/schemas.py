@@ -194,3 +194,39 @@ class EnrollmentSubmitRead(BaseModel):
     status: Literal["ENROLLED_PENDING"]
     total_units: Decimal = Field(serialization_alias="totalUnits")
     sections: list[EnrollmentSubmitSectionRead]
+
+
+class OverloadEligibilityRead(BaseModel):
+    eligible: bool
+    is_graduating: bool
+    gwa: Decimal | None
+    required_gwa: Decimal = Field(serialization_alias="requiredGwa")
+
+
+class OverloadRequestFiledRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    overload_request_id: uuid.UUID = Field(serialization_alias="overloadRequestId")
+    state: Literal["PENDING_DEAN"]
+
+
+class OverloadRequestRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    overload_request_id: uuid.UUID = Field(serialization_alias="overloadRequestId")
+    student_id: uuid.UUID = Field(serialization_alias="studentId")
+    student_number: str = Field(serialization_alias="studentNumber")
+    student_name: str = Field(serialization_alias="studentName")
+    program_code: str = Field(serialization_alias="programCode")
+    department: str
+    college: str | None
+    term: str
+    requested_units: int = Field(serialization_alias="requestedUnits")
+    justification: str
+    state: Literal["PENDING_DEAN", "APPROVED", "REJECTED"]
+    reviewed_by: uuid.UUID | None = Field(
+        default=None, serialization_alias="reviewedBy"
+    )
+    remarks: str | None = None
+    created_at: datetime = Field(serialization_alias="createdAt")
+    reviewed_at: datetime | None = Field(default=None, serialization_alias="reviewedAt")

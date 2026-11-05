@@ -2036,6 +2036,55 @@
         ]
       }
     },
+    "/api/v1/student/enrollment/overload": {
+      "post": {
+        "tags": [
+          "student-enrollment"
+        ],
+        "summary": "Create Overload Request",
+        "operationId": "create_student_overload_request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverloadRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverloadRequestFiledRead"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ENROLL_OVERLOAD_NOT_ELIGIBLE or ENROLL_OVERLOAD_CAP_EXCEEDED."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/student/enrollment/submit": {
       "post": {
         "tags": [
@@ -3617,6 +3666,93 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/admin/overload-requests": {
+      "get": {
+        "tags": [
+          "admin-overload-requests"
+        ],
+        "summary": "List Overload Requests",
+        "operationId": "list_admin_overload_requests",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OverloadRequestRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Admin Overload Requests"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/overload-requests/{overload_request_id}": {
+      "patch": {
+        "tags": [
+          "admin-overload-requests"
+        ],
+        "summary": "Decide Overload Request",
+        "operationId": "decide_admin_overload_request",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "overload_request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Overload Request Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverloadDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverloadRequestRead"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when outside the Dean's college."
+          },
+          "409": {
+            "description": "REQUEST_ALREADY_DECIDED."
+          },
+          "422": {
+            "description": "DECISION_REMARKS_REQUIRED for a blank rejection."
+          }
+        }
       }
     },
     "/api/v1/iam/permissions": {
@@ -8073,6 +8209,202 @@
         ],
         "title": "OAuthCallback",
         "description": "Forward only the new redirect's decoded state/code using the same SIS session.\n\nEach value must be URL-decoded once locally, not via an online decoder.\nDo not paste the entire redirect URL. Attempts expire after ten minutes and\nare single-use; never log, share or replay these values."
+      },
+      "OverloadDecisionRequest": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVE",
+              "REJECT"
+            ],
+            "title": "Decision"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "title": "OverloadDecisionRequest"
+      },
+      "OverloadRequestCreate": {
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 3,
+            "title": "Term"
+          },
+          "requestedUnits": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Requestedunits"
+          },
+          "justification": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Justification"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "term",
+          "requestedUnits",
+          "justification"
+        ],
+        "title": "OverloadRequestCreate"
+      },
+      "OverloadRequestFiledRead": {
+        "properties": {
+          "overloadRequestId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Overloadrequestid"
+          },
+          "state": {
+            "type": "string",
+            "const": "PENDING_DEAN",
+            "title": "State"
+          }
+        },
+        "type": "object",
+        "required": [
+          "overloadRequestId",
+          "state"
+        ],
+        "title": "OverloadRequestFiledRead"
+      },
+      "OverloadRequestRead": {
+        "properties": {
+          "overloadRequestId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Overloadrequestid"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "studentName": {
+            "type": "string",
+            "title": "Studentname"
+          },
+          "programCode": {
+            "type": "string",
+            "title": "Programcode"
+          },
+          "department": {
+            "type": "string",
+            "title": "Department"
+          },
+          "college": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "College"
+          },
+          "term": {
+            "type": "string",
+            "title": "Term"
+          },
+          "requestedUnits": {
+            "type": "integer",
+            "title": "Requestedunits"
+          },
+          "justification": {
+            "type": "string",
+            "title": "Justification"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING_DEAN",
+              "APPROVED",
+              "REJECTED"
+            ],
+            "title": "State"
+          },
+          "reviewedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedby"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "reviewedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "overloadRequestId",
+          "studentId",
+          "studentNumber",
+          "studentName",
+          "programCode",
+          "department",
+          "college",
+          "term",
+          "requestedUnits",
+          "justification",
+          "state",
+          "createdAt"
+        ],
+        "title": "OverloadRequestRead"
       },
       "OverrideRequest": {
         "properties": {

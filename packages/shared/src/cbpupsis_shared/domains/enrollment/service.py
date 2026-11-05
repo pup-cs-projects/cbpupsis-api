@@ -10,6 +10,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.events import Event
+from cbpupsis_core.exceptions import ForbiddenError
+from cbpupsis_shared.domains.academics import client as academics
 from cbpupsis_shared.domains.academics.schemas import AcademicTermRead
 from cbpupsis_shared.domains.audit import client as audit
 from cbpupsis_shared.domains.auth.exceptions import ResourceNotFoundError
@@ -22,16 +24,26 @@ from cbpupsis_shared.domains.enrollment.constants import (
     ENROLLMENT_SUBMITTED_ACTION,
     ENROLLMENT_SUBMITTED_EVENT,
     MAX_OVERLOAD_UNITS,
+    OVERLOAD_APPROVED,
+    OVERLOAD_GRADUATING_RATIO,
+    OVERLOAD_PENDING,
+    OVERLOAD_REJECTED,
+    OVERLOAD_REQUEST_DECIDED_EVENT,
+    OVERLOAD_REQUEST_FILED_ACTION,
+    OVERLOAD_REQUIRED_GWA,
     SUMMER_RESTRICTED_ADMISSION_STATUSES,
     SUMMER_SUBJECT_CAP,
 )
 from cbpupsis_shared.domains.enrollment.exceptions import (
+    DecisionRemarksRequiredError,
     EnrollmentFinancialHoldError,
     EnrollmentHoldActiveError,
     EnrollmentPeriodClosedError,
     EnrollmentSectionFullError,
     EnrollmentStandingBlockedError,
     OverloadCapExceededError,
+    OverloadNotEligibleError,
+    RequestAlreadyDecidedError,
     ScheduleConflictError,
     SummerSubjectLimitError,
     UnitCeilingExceededError,
@@ -50,6 +62,9 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     EnrollmentSubmitRead,
     EnrollmentSubmitSectionRead,
     EnrollmentSummaryRead,
+    OverloadEligibilityRead,
+    OverloadRequestFiledRead,
+    OverloadRequestRead,
     RecordEnrollment,
     ScheduleConflictCheckRead,
     TermEnrollmentRead,
@@ -612,3 +627,275 @@ async def submit_enrollment(
         except Exception:
             await db.rollback()
             raise
+
+
+def assess_overload_eligibility(
+    *,
+    total_units_earned: Decimal,
+    total_units_required: Decimal,
+    gwa: Decimal | None,
+    stored_graduating: bool = False,
+) -> OverloadEligibilityRead:
+    """Apply the 85%-completion or 1.75-GWA overload eligibility rule."""
+    completion_ratio = (
+        total_units_earned / total_units_required
+        if total_units_required > 0
+        else Decimal("0")
+    )
+    is_graduating = stored_graduating or completion_ratio >= OVERLOAD_GRADUATING_RATIO
+    eligible = is_graduating or bool(gwa is not None and gwa <= OVERLOAD_REQUIRED_GWA)
+    return OverloadEligibilityRead(
+        eligible=eligible,
+        is_graduating=is_graduating,
+        gwa=gwa,
+        required_gwa=OVERLOAD_REQUIRED_GWA,
+    )
+
+
+async def file_overload_request(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term: AcademicTermRead,
+    requested_units: int,
+    justification: str,
+    role: str = "student",
+    client_ip: str | None = None,
+) -> OverloadRequestFiledRead:
+    """Validate and file one overload request with its audit row atomically."""
+    if Decimal(requested_units) > MAX_OVERLOAD_UNITS:
+        raise OverloadCapExceededError(maximum_overload_units=MAX_OVERLOAD_UNITS)
+
+    profile = await users.get_student_profile(db, student_id)
+    if profile is None:
+        raise ResourceNotFoundError
+    program = await curriculum.get_program(db, profile.program_id)
+    if program is None:
+        raise ResourceNotFoundError
+    transcript = await grading.read_transcript(
+        db, student_id=student_id, complete=True, limit=100
+    )
+    gwa = await grading.get_previous_regular_term_gwa(
+        db, student_id=student_id, before=term.start_date
+    )
+    eligibility = assess_overload_eligibility(
+        total_units_earned=transcript.total_units_earned,
+        total_units_required=program.total_units_required,
+        gwa=gwa,
+        stored_graduating=profile.is_graduating_senior,
+    )
+    if not eligibility.eligible:
+        raise OverloadNotEligibleError(
+            is_graduating=eligibility.is_graduating,
+            gwa=eligibility.gwa,
+            required_gwa=eligibility.required_gwa,
+        )
+
+    try:
+        request_row = repository.add_overload_request(
+            db,
+            student_id=student_id,
+            academic_term_id=term.id,
+            requested_units=requested_units,
+            justification=justification,
+            state=OVERLOAD_PENDING,
+        )
+        await db.flush()
+        occurred_at = datetime.now(UTC)
+        audit.stage(
+            db,
+            action=OVERLOAD_REQUEST_FILED_ACTION,
+            actor_id=student_id,
+            target_type="overload_request",
+            target_id=request_row.id,
+            occurred_at=occurred_at,
+            prior_state={},
+            new_state={
+                "state": OVERLOAD_PENDING,
+                "requestedUnits": requested_units,
+                "academicTermId": str(term.id),
+            },
+            payload={
+                "role": role,
+                "timestamp": occurred_at.isoformat(),
+                "ip_address": client_ip,
+            },
+        )
+        await db.commit()
+        return OverloadRequestFiledRead(
+            overload_request_id=request_row.id, state=OVERLOAD_PENDING
+        )
+    except Exception:
+        await db.rollback()
+        raise
+
+
+async def _overload_request_reads(db: AsyncSession, request_rows) -> list:
+    identities = await users.overload_student_identities(
+        db, {row.student_id for row in request_rows}
+    )
+    programs = await curriculum.programs_by_ids(
+        db, {identity.program_id for identity in identities.values()}
+    )
+    terms = {
+        term.id: term
+        for term in await academics.record_terms(
+            db, {row.academic_term_id for row in request_rows}
+        )
+    }
+    reads = []
+    for request_row in request_rows:
+        identity = identities.get(request_row.student_id)
+        term = terms.get(request_row.academic_term_id)
+        program = programs.get(identity.program_id) if identity is not None else None
+        if identity is None or term is None or program is None:
+            continue
+        reads.append(
+            OverloadRequestRead(
+                overload_request_id=request_row.id,
+                student_id=request_row.student_id,
+                student_number=identity.student_number,
+                student_name=identity.full_name,
+                program_code=program.code,
+                department=program.department,
+                college=program.college,
+                term=f"{term.academic_year}-{term.semester}",
+                requested_units=request_row.requested_units,
+                justification=request_row.justification,
+                state=request_row.state,
+                reviewed_by=request_row.reviewed_by,
+                remarks=request_row.review_remarks,
+                created_at=request_row.created_at,
+                reviewed_at=request_row.reviewed_at,
+            )
+        )
+    return reads
+
+
+def _overload_in_scope(
+    row: OverloadRequestRead,
+    *,
+    position: str,
+    department: str | None,
+    college: str | None,
+) -> bool:
+    return (
+        position == "registrar"
+        or (position == "chairperson" and department == row.department)
+        or (position == "dean" and college is not None and college == row.college)
+    )
+
+
+async def list_overload_requests(
+    db: AsyncSession,
+    *,
+    position: str,
+    department: str | None,
+    college: str | None,
+) -> list[OverloadRequestRead]:
+    """Return only overload requests inside the Admin caller's role scope."""
+    if position not in {"chairperson", "dean", "registrar"}:
+        raise ForbiddenError("This Admin position cannot review overload requests.")
+    reads = await _overload_request_reads(
+        db, await repository.list_overload_requests(db)
+    )
+    return [
+        row
+        for row in reads
+        if _overload_in_scope(
+            row,
+            position=position,
+            department=department,
+            college=college,
+        )
+    ]
+
+
+async def decide_overload_request(
+    db: AsyncSession,
+    *,
+    overload_request_id: uuid.UUID,
+    decision: str,
+    remarks: str | None,
+    reviewer_id: uuid.UUID,
+    position: str,
+    department: str | None,
+    college: str | None,
+    client_ip: str | None = None,
+) -> OverloadRequestRead:
+    """Apply one in-scope Dean decision and notify the student atomically."""
+    if position != "dean":
+        raise ForbiddenError("Only a College Dean may decide an overload request.")
+    request_row = await repository.get_overload_request_for_update(
+        db,
+        overload_request_id=overload_request_id,
+    )
+    if request_row is None:
+        raise ResourceNotFoundError
+    reads = await _overload_request_reads(db, [request_row])
+    if not reads or not _overload_in_scope(
+        reads[0],
+        position=position,
+        department=department,
+        college=college,
+    ):
+        raise ResourceNotFoundError
+    if request_row.state != OVERLOAD_PENDING:
+        raise RequestAlreadyDecidedError
+    normalized_remarks = remarks.strip() if remarks is not None else None
+    if decision == "REJECT" and not normalized_remarks:
+        raise DecisionRemarksRequiredError
+
+    new_state = OVERLOAD_APPROVED if decision == "APPROVE" else OVERLOAD_REJECTED
+    occurred_at = datetime.now(UTC)
+    prior = {
+        "state": request_row.state,
+        "reviewedBy": None,
+        "remarks": None,
+    }
+    request_row.state = new_state
+    request_row.reviewed_by = reviewer_id
+    request_row.review_remarks = normalized_remarks
+    request_row.reviewed_at = occurred_at
+    audit.stage(
+        db,
+        action=f"enrollment.overload_{new_state.lower()}",
+        actor_id=reviewer_id,
+        target_type="overload_request",
+        target_id=request_row.id,
+        occurred_at=occurred_at,
+        prior_state=prior,
+        new_state={
+            "state": new_state,
+            "reviewedBy": str(reviewer_id),
+            "remarks": normalized_remarks,
+        },
+        payload={
+            "role": position,
+            "timestamp": occurred_at.isoformat(),
+            "ip_address": client_ip,
+        },
+    )
+    publish_transactional(
+        db,
+        Event(
+            name=OVERLOAD_REQUEST_DECIDED_EVENT,
+            payload={
+                "user_id": str(request_row.student_id),
+                "overload_request_id": str(request_row.id),
+                "state": new_state,
+                "decision": decision,
+                "remarks": normalized_remarks,
+            },
+        ),
+    )
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    refreshed = await repository.get_overload_request(db, overload_request_id)
+    if refreshed is None:
+        raise ResourceNotFoundError
+    [result] = await _overload_request_reads(db, [refreshed])
+    return result

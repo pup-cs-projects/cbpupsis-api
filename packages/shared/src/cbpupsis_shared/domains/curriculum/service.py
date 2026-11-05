@@ -57,6 +57,15 @@ async def get_program(db: AsyncSession, program_id: uuid.UUID) -> ProgramRead | 
     return None if row is None else ProgramRead.model_validate(row)
 
 
+async def programs_by_ids(
+    db: AsyncSession, ids: set[uuid.UUID]
+) -> dict[uuid.UUID, ProgramRead]:
+    return {
+        row.id: ProgramRead.model_validate(row)
+        for row in await repository.list_programs_by_ids(db, ids)
+    }
+
+
 async def get_curriculum(
     db: AsyncSession, curriculum_id: uuid.UUID
 ) -> CurriculumRead | None:

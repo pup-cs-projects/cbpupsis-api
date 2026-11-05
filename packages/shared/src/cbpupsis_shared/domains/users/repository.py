@@ -71,6 +71,38 @@ async def get_record_identity(db: AsyncSession, student_id: uuid.UUID):
     return result.one_or_none()
 
 
+async def list_overload_student_identities(
+    db: AsyncSession, student_ids: set[uuid.UUID]
+):
+    """Read student identity and program keys for overload review.
+
+    SQL::
+
+        SELECT users.id, student_profiles.student_number, users.full_name,
+               user_profiles.first_name, user_profiles.last_name,
+               student_profiles.program_id
+        FROM users JOIN student_profiles ON student_profiles.user_id = users.id
+        LEFT JOIN user_profiles ON user_profiles.user_id = users.id
+        WHERE users.id IN (:student_ids);
+    """
+    if not student_ids:
+        return []
+    result = await db.execute(
+        select(
+            User.id.label("user_id"),
+            StudentProfile.student_number,
+            User.full_name,
+            UserProfile.first_name,
+            UserProfile.last_name,
+            StudentProfile.program_id,
+        )
+        .join(StudentProfile, StudentProfile.user_id == User.id)
+        .outerjoin(UserProfile, UserProfile.user_id == User.id)
+        .where(User.id.in_(student_ids))
+    )
+    return list(result.all())
+
+
 async def schedule_identity(db: AsyncSession, user_id: uuid.UUID):
     """Read only the caller's institutional identity.
 

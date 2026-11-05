@@ -28,9 +28,16 @@ __all__ = [
     "get_curriculum",
     "get_prescribed_load",
     "get_program",
+    "programs_by_ids",
     "record_courses",
     "schedule_courses",
 ]
+
+
+async def programs_by_ids(
+    db: AsyncSession, ids: set[uuid.UUID]
+) -> dict[uuid.UUID, ProgramRead]:
+    return await service.programs_by_ids(db, ids)
 
 
 async def enrollment_courses(

@@ -61,6 +61,13 @@ class RecordIdentity(BaseModel):
     full_name: str
 
 
+class OverloadStudentIdentity(BaseModel):
+    user_id: uuid.UUID
+    student_number: str
+    full_name: str
+    program_id: uuid.UUID
+
+
 class ScheduleIdentity(BaseModel):
     """Student identity for a private, caller-owned schedule."""
 

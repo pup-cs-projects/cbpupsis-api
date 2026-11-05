@@ -49,6 +49,10 @@ MESSAGES_BY_EVENT: dict[str, tuple[str, str]] = {
         "Your selected course sections have been reserved and are pending "
         "finalization.",
     ),
+    "enrollment.overload_decided": (
+        "Overload request decided",
+        "A College Dean has decided your overload request.",
+    ),
 }
 
 
@@ -57,6 +61,13 @@ def render(event: Event) -> RenderedNotification:
     title, body = MESSAGES_BY_EVENT.get(
         event.name, ("Notification", f"Something happened: {event.name}")
     )
+    if event.name == "enrollment.overload_decided":
+        state = str(event.payload.get("state", "DECIDED")).replace("_", " ").title()
+        remarks = event.payload.get("remarks")
+        title = f"Overload request {state.lower()}"
+        body = f"Your overload request was {state.lower()}."
+        if remarks:
+            body += f" Remarks: {remarks}"
     return RenderedNotification(
         notification_type=event.name,
         title=title,

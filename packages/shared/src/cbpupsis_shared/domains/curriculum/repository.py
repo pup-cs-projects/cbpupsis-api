@@ -81,6 +81,18 @@ async def get_program(db: AsyncSession, program_id: uuid.UUID) -> Program | None
     return await db.get(Program, program_id)
 
 
+async def list_programs_by_ids(db: AsyncSession, ids: set[uuid.UUID]):
+    """Read program scope metadata for a bounded id set.
+
+    SQL::
+
+        SELECT * FROM programs WHERE id IN (:ids);
+    """
+    if not ids:
+        return []
+    return list(await db.scalars(select(Program).where(Program.id.in_(ids))))
+
+
 async def get_curriculum(
     db: AsyncSession, curriculum_id: uuid.UUID
 ) -> Curriculum | None:

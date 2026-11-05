@@ -90,6 +90,7 @@ def test_student_records_have_one_public_route_per_operation(app: FastAPI) -> No
         ("get", "/api/v1/student/enrollment/eligibility"),
         ("get", "/api/v1/student/enrollment/available-courses"),
         ("post", "/api/v1/student/enrollment/submit"),
+        ("post", "/api/v1/student/enrollment/overload"),
         ("get", "/api/v1/students/me/schedule"),
         ("get", "/api/v1/students/me/schedule/export"),
         ("get", "/api/v1/students/{student_number}/schedule"),

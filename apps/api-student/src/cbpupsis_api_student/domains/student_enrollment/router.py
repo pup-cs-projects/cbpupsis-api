@@ -10,17 +10,50 @@ from cbpupsis_api_student.domains.student_enrollment.schemas import (
     EnrollmentEligibilityRead,
     EnrollmentSubmitRead,
     EnrollmentSubmitRequest,
+    OverloadRequestCreate,
+    OverloadRequestFiledRead,
 )
 from cbpupsis_core.middleware import client_ip_or_none
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.auth.dependencies import CurrentUser
 from cbpupsis_shared.domains.enrollment.constants import (
     CREATE_ENROLLMENT,
+    CREATE_OVERLOAD_REQUEST,
     READ_ENROLLMENT,
 )
 from cbpupsis_shared.domains.iam.dependencies import require_permission
 
 router = APIRouter()
+
+
+@router.post(
+    "/overload",
+    response_model=OverloadRequestFiledRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    operation_id="create_student_overload_request",
+    responses={
+        409: {
+            "description": "ENROLL_OVERLOAD_NOT_ELIGIBLE or "
+            "ENROLL_OVERLOAD_CAP_EXCEEDED."
+        }
+    },
+)
+async def create_overload_request(
+    body: OverloadRequestCreate,
+    request: Request,
+    user: CurrentUser = Depends(require_student_session),
+    _authorized: CurrentUser = Depends(require_permission(CREATE_OVERLOAD_REQUEST)),
+    db: AsyncSession = Depends(get_db),
+) -> OverloadRequestFiledRead:
+    return await service.file_overload_request(
+        db,
+        student_id=user.id,
+        term_selector=body.term,
+        requested_units=body.requested_units,
+        justification=body.justification,
+        client_ip=client_ip_or_none(request),
+        role=user.role or "student",
+    )
 
 
 @router.post(

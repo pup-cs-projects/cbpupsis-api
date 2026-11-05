@@ -4,7 +4,7 @@ import uuid
 from datetime import time
 from decimal import Decimal
 
-from cbpupsis_core.exceptions import ConflictError
+from cbpupsis_core.exceptions import ConflictError, ValidationError
 
 
 def _display_units(value: Decimal) -> str:
@@ -143,3 +143,36 @@ class EnrollmentSectionFullError(ConflictError):
             "A selected section has no seat available.",
             response_fields={"details": {"sectionId": str(section_id)}},
         )
+
+
+class OverloadNotEligibleError(ConflictError):
+    code = "ENROLL_OVERLOAD_NOT_ELIGIBLE"
+
+    def __init__(
+        self, *, is_graduating: bool, gwa: Decimal | None, required_gwa: Decimal
+    ) -> None:
+        super().__init__(
+            "An overload requires either completion of at least 85 percent of "
+            "the curriculum or a previous regular-term GWA of 1.75 or better.",
+            response_fields={
+                "details": {
+                    "isGraduating": is_graduating,
+                    "gwa": gwa,
+                    "requiredGwa": required_gwa,
+                }
+            },
+        )
+
+
+class DecisionRemarksRequiredError(ValidationError):
+    code = "DECISION_REMARKS_REQUIRED"
+
+    def __init__(self) -> None:
+        super().__init__("Remarks are required when rejecting an overload request.")
+
+
+class RequestAlreadyDecidedError(ConflictError):
+    code = "REQUEST_ALREADY_DECIDED"
+
+    def __init__(self) -> None:
+        super().__init__("This overload request has already been decided.")

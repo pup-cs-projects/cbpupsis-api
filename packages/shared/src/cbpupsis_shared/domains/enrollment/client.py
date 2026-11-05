@@ -11,9 +11,12 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     AvailableCourseRead,
     EnrollmentSubmitRead,
     EnrollmentSummaryRead,
+    OverloadRequestFiledRead,
+    OverloadRequestRead,
     TermEnrollmentRead,
 )
 from cbpupsis_shared.domains.enrollment.service import (
+    assess_overload_eligibility,
     check_schedule_conflict,
     check_unit_ceiling,
     compute_effective_ceiling,
@@ -25,18 +28,85 @@ __all__ = [
     "AvailableCourseRead",
     "EnrollmentSubmitRead",
     "EnrollmentSummaryRead",
+    "OverloadRequestFiledRead",
+    "OverloadRequestRead",
     "TermEnrollmentRead",
+    "assess_overload_eligibility",
     "check_schedule_conflict",
     "check_unit_ceiling",
     "compute_effective_ceiling",
+    "decide_overload_request",
     "enrolled_sections",
+    "file_overload_request",
     "get_approved_overload_units",
     "get_enrollment_summary",
     "get_term_enrollment",
     "list_available_courses",
+    "list_overload_requests",
     "record_enrollments",
     "submit_enrollment",
 ]
+
+
+async def file_overload_request(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term: AcademicTermRead,
+    requested_units: int,
+    justification: str,
+    role: str = "student",
+    client_ip: str | None = None,
+) -> OverloadRequestFiledRead:
+    return await service.file_overload_request(
+        db,
+        student_id=student_id,
+        term=term,
+        requested_units=requested_units,
+        justification=justification,
+        role=role,
+        client_ip=client_ip,
+    )
+
+
+async def list_overload_requests(
+    db: AsyncSession,
+    *,
+    position: str,
+    department: str | None,
+    college: str | None,
+) -> list[OverloadRequestRead]:
+    return await service.list_overload_requests(
+        db,
+        position=position,
+        department=department,
+        college=college,
+    )
+
+
+async def decide_overload_request(
+    db: AsyncSession,
+    *,
+    overload_request_id: uuid.UUID,
+    decision: str,
+    remarks: str | None,
+    reviewer_id: uuid.UUID,
+    position: str,
+    department: str | None,
+    college: str | None,
+    client_ip: str | None = None,
+) -> OverloadRequestRead:
+    return await service.decide_overload_request(
+        db,
+        overload_request_id=overload_request_id,
+        decision=decision,
+        remarks=remarks,
+        reviewer_id=reviewer_id,
+        position=position,
+        department=department,
+        college=college,
+        client_ip=client_ip,
+    )
 
 
 async def list_available_courses(
