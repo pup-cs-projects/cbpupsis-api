@@ -2879,6 +2879,261 @@
         ]
       }
     },
+    "/api/v1/student/schedule/cor": {
+      "post": {
+        "tags": [
+          "student-certificate"
+        ],
+        "summary": "Issue",
+        "description": "Atomically issue; retries preserve certificate identity/token and one audit.",
+        "operationId": "issue_api_v1_student_schedule_cor_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueCertificate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateMetadata"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A live student bearer session is required."
+          },
+          "403": {
+            "description": "Student role and operation permission are required."
+          },
+          "409": {
+            "description": "COR_NOT_ENROLLED, or COR_ENROLLMENT_NOT_FINAL with details.unmet: HOLD, PREREQUISITE_VIOLATION, NO_ASSESSMENT."
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE; no partial document. Includes unavailable dependency, encryption or renderer."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "student-certificate"
+        ],
+        "summary": "Read",
+        "description": "Read immutable issued content; never issue, assess or repair enrollment.",
+        "operationId": "read_api_v1_student_schedule_cor_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "term",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Stored academic-term UUID (shared producer integration pending).",
+              "title": "Term"
+            },
+            "description": "Stored academic-term UUID (shared producer integration pending)."
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "pdf",
+                "json"
+              ],
+              "type": "string",
+              "default": "pdf",
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateRead"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A live student bearer session is required."
+          },
+          "403": {
+            "description": "Student role and operation permission are required."
+          },
+          "409": {
+            "description": "COR_NOT_ENROLLED, or COR_ENROLLMENT_NOT_FINAL with details.unmet: HOLD, PREREQUISITE_VIOLATION, NO_ASSESSMENT."
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE; no partial document. Includes unavailable dependency, encryption or renderer."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/student/assessment": {
+      "get": {
+        "tags": [
+          "student-certificate"
+        ],
+        "summary": "Assessment",
+        "description": "Read stored shared assessment only. Every amount is a decimal string.",
+        "operationId": "assessment_api_v1_student_assessment_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "term",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Stored academic-term UUID (shared producer integration pending).",
+              "title": "Term"
+            },
+            "description": "Stored academic-term UUID (shared producer integration pending)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A live student bearer session is required."
+          },
+          "403": {
+            "description": "Student role and operation permission are required."
+          },
+          "409": {
+            "description": "COR_NOT_ENROLLED, or COR_ENROLLMENT_NOT_FINAL with details.unmet: HOLD, PREREQUISITE_VIOLATION, NO_ASSESSMENT."
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE; no partial document. Includes unavailable dependency, encryption or renderer."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public/cor/verify/{token}": {
+      "get": {
+        "tags": [
+          "public-certificate"
+        ],
+        "summary": "Verify",
+        "description": "Anonymous, non-cacheable: five fields, no database IDs or assessment.",
+        "operationId": "verify_api_v1_public_cor_verify__token__get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationRead"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: unknown or malformed token."
+          },
+          "429": {
+            "description": "rate_limited: at most ten checks/minute/IP across all tokens."
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE; no partial document. Includes unavailable dependency, encryption or renderer."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/faculty/login": {
       "post": {
         "tags": [
@@ -6159,6 +6414,79 @@
         "title": "AnnouncementRead",
         "description": "An institution-wide or academic announcement."
       },
+      "AssessmentLine": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "amount"
+        ],
+        "title": "AssessmentLine"
+      },
+      "AssessmentRead": {
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/AssessmentLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "amountAssessed": {
+            "type": "string",
+            "title": "Amountassessed"
+          },
+          "subsidyApplied": {
+            "type": "string",
+            "title": "Subsidyapplied"
+          },
+          "netPayable": {
+            "type": "string",
+            "title": "Netpayable"
+          },
+          "fheQualified": {
+            "type": "boolean",
+            "title": "Fhequalified"
+          },
+          "fheForfeited": {
+            "type": "boolean",
+            "title": "Fheforfeited"
+          },
+          "fheForfeitureReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fheforfeiturereason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "lines",
+          "amountAssessed",
+          "subsidyApplied",
+          "netPayable",
+          "fheQualified",
+          "fheForfeited",
+          "fheForfeitureReason"
+        ],
+        "title": "AssessmentRead"
+      },
       "AttachPolicyRequest": {
         "properties": {
           "policy_id": {
@@ -6511,6 +6839,241 @@
         ],
         "title": "CalendarTargetRead",
         "description": "One pinned academic term, with no Google calendar/event identifiers exposed."
+      },
+      "CertificateCourse": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "section": {
+            "type": "string",
+            "title": "Section"
+          },
+          "schedule": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateMeeting"
+            },
+            "type": "array",
+            "title": "Schedule"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "faculty": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Faculty"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectionId",
+          "code",
+          "title",
+          "section",
+          "schedule",
+          "room",
+          "faculty",
+          "units"
+        ],
+        "title": "CertificateCourse"
+      },
+      "CertificateMeeting": {
+        "properties": {
+          "dayOfWeek": {
+            "type": "integer",
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Dayofweek"
+          },
+          "startTime": {
+            "type": "string",
+            "format": "time",
+            "title": "Starttime"
+          },
+          "endTime": {
+            "type": "string",
+            "format": "time",
+            "title": "Endtime"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dayOfWeek",
+          "startTime",
+          "endTime",
+          "room",
+          "type"
+        ],
+        "title": "CertificateMeeting"
+      },
+      "CertificateMetadata": {
+        "properties": {
+          "certificateId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Certificateid"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Issuedat"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CURRENT",
+              "SUPERSEDED"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "certificateId",
+          "issuedAt",
+          "status"
+        ],
+        "title": "CertificateMetadata"
+      },
+      "CertificateRead": {
+        "properties": {
+          "certificateId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Certificateid"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Issuedat"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CURRENT",
+              "SUPERSEDED"
+            ],
+            "title": "Status"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "program": {
+            "type": "string",
+            "title": "Program"
+          },
+          "term": {
+            "$ref": "#/components/schemas/CertificateTerm"
+          },
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateCourse"
+            },
+            "type": "array",
+            "title": "Courses"
+          },
+          "totalUnits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Totalunits"
+          },
+          "assessment": {
+            "$ref": "#/components/schemas/AssessmentRead"
+          },
+          "verificationUrl": {
+            "type": "string",
+            "title": "Verificationurl"
+          }
+        },
+        "type": "object",
+        "required": [
+          "certificateId",
+          "issuedAt",
+          "status",
+          "name",
+          "studentNumber",
+          "program",
+          "term",
+          "courses",
+          "totalUnits",
+          "assessment",
+          "verificationUrl"
+        ],
+        "title": "CertificateRead"
+      },
+      "CertificateTerm": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "year": {
+            "type": "string",
+            "title": "Year"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "year",
+          "semester"
+        ],
+        "title": "CertificateTerm"
       },
       "ChallengeRequest": {
         "properties": {
@@ -7825,6 +8388,22 @@
         ],
         "title": "HoldRead",
         "description": "A student administrative or financial hold."
+      },
+      "IssueCertificate": {
+        "properties": {
+          "term": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Term",
+            "description": "Stored academic-term UUID; #168/#169 integration must share this selector."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "term"
+        ],
+        "title": "IssueCertificate"
       },
       "ItemCreate": {
         "properties": {
@@ -10568,6 +11147,61 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VerificationRead": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "term": {
+            "$ref": "#/components/schemas/VerificationTerm"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Issuedat"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CURRENT",
+              "SUPERSEDED"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "studentNumber",
+          "term",
+          "issuedAt",
+          "status"
+        ],
+        "title": "VerificationRead"
+      },
+      "VerificationTerm": {
+        "properties": {
+          "year": {
+            "type": "string",
+            "title": "Year"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          }
+        },
+        "type": "object",
+        "required": [
+          "year",
+          "semester"
+        ],
+        "title": "VerificationTerm"
       },
       "VerifyEmailRequest": {
         "properties": {

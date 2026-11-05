@@ -124,6 +124,8 @@ class Settings(BaseSettings):
     #: 256-bit sub-key is derived from JWT_SECRET so local/test setups remain
     #: operable without weakening AES-256-GCM.
     mfa_encryption_key: SecretStr | None = None
+    # Stable, dedicated AES-256 key; never derived from rotating JWT credentials.
+    cor_encryption_key: SecretStr | None = None
     webauthn_rp_id: str = "admin.cbpupsis"
     webauthn_origin: str = "https://admin.cbpupsis"
 

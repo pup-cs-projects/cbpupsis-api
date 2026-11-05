@@ -51,7 +51,12 @@ ELEVATED_VERBS = ("ReadAll", "Moderate", "Manage")
 #: transition earns a permission only when it is granted separately from a plain
 #: update.
 TRANSITIONS: frozenset[str] = frozenset(
-    {"RequestBackupRestore", "ApproveBackupRestore", "ApproveOverloadRequest"}
+    {
+        "RequestBackupRestore",
+        "ApproveBackupRestore",
+        "IssueCertificate",
+        "ApproveOverloadRequest",
+    }
 )
 
 #: Words that mean one of the verbs above. Allowing a synonym is how a codebase
