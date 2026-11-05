@@ -253,6 +253,7 @@ class StudentProfileRead(BaseModel):
     fhe_forfeited: bool = False
     fhe_forfeiture_reason: str | None = None
     is_graduating_senior: bool = False
+    graduating_final_term_id: uuid.UUID | None = None
     has_financial_hold: bool = False
     has_academic_hold: bool = False
 

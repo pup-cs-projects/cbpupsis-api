@@ -23,6 +23,8 @@ from cbpupsis_shared.domains.grading.constants import (
 )
 from cbpupsis_shared.domains.grading.exceptions import GradeRecordUnavailableError
 from cbpupsis_shared.domains.grading.schemas import (
+    AcademicAttempt,
+    AcademicRecord,
     GradeCourse,
     GradesRead,
     ScholasticStandingRead,
@@ -294,3 +296,20 @@ async def read_transcript(
     if blocks:
         result.state, result.message = "available", None
     return result
+
+
+async def academic_record(db: AsyncSession, student_id: uuid.UUID) -> AcademicRecord:
+    """Use the canonical published transcript calculation, never stored defaults."""
+    transcript = await read_transcript(db, student_id=student_id, complete=True)
+    return AcademicRecord(
+        attempts=[
+            AcademicAttempt(
+                enrollment_item_id=c.enrollment_id,
+                course_id=c.course_id,
+                mark=c.final_grade,
+            )
+            for term in transcript.terms
+            for c in term.courses
+        ],
+        cumulative_gwa=transcript.cumulative_gwa,
+    )

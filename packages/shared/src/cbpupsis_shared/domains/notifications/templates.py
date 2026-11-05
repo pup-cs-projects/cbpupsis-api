@@ -17,6 +17,10 @@ from cbpupsis_shared.domains.notifications.channels import RenderedNotification
 #: message rather than raising: a missing template must not stop a security
 #: notice from going out, and an ugly notification beats a silent one.
 MESSAGES_BY_EVENT: dict[str, tuple[str, str]] = {
+    "enrollment.waiver_decided": (
+        "Your waiver request was reviewed",
+        "A decision was recorded on your prerequisite waiver request.",
+    ),
     "item.created": (
         "New item created",
         "An item you own was created successfully.",

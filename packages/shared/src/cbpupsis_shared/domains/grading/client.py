@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.grading import service
 from cbpupsis_shared.domains.grading.schemas import ScholasticStandingRead
+from cbpupsis_shared.domains.grading.service import academic_record as academic_record
 from cbpupsis_shared.domains.grading.service import read_grades, read_transcript
 
 __all__ = [

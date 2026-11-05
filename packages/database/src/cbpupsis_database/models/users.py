@@ -331,6 +331,9 @@ class StudentProfile(Base):
     is_graduating_senior: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    graduating_final_term_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("academic_terms.id", ondelete="SET NULL"), default=None
+    )
     has_financial_hold: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )

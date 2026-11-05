@@ -90,6 +90,9 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ReadGrade", "Read your own finalized grades"),
     ("ReadTranscript", "Read and export your own transcript"),
     ("ReadSchedule", "Read and export your own student course schedule"),
+    ("CreateWaiverRequest", "File your own prerequisite waiver request"),
+    ("ReadWaiverRequest", "Read position-scoped prerequisite waiver requests"),
+    ("ApproveWaiverRequest", "Record the assigned prerequisite waiver decision"),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -108,6 +111,8 @@ POLICIES: dict[str, list[str]] = {
     "GradeReader": ["ReadGrade"],
     "TranscriptReader": ["ReadTranscript"],
     "ScheduleReader": ["ReadSchedule"],
+    "WaiverRequestAuthor": ["CreateWaiverRequest"],
+    "WaiverRequestAdmin": ["ReadWaiverRequest", "ApproveWaiverRequest"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
@@ -137,10 +142,15 @@ GROUPS: dict[str, list[str]] = {
     # product permissions (Home, Calendar, Courses, Enrollment) will be attached
     # by those domains. User administration, IAM, and audit reading belong to
     # the separate Superadmin story and must not leak through this seed.
-    ADMIN_GROUP: [],
+    ADMIN_GROUP: ["WaiverRequestAdmin"],
     FACULTY_GROUP: ["CourseSectionReader"],
     # Superadmin-created student accounts join this group.
-    STUDENT_GROUP: ["GradeReader", "TranscriptReader", "ScheduleReader"],
+    STUDENT_GROUP: [
+        "GradeReader",
+        "TranscriptReader",
+        "ScheduleReader",
+        "WaiverRequestAuthor",
+    ],
     SUPERADMIN_GROUP: list(POLICIES),
 }
 

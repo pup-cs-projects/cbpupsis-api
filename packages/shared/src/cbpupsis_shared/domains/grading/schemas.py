@@ -56,6 +56,17 @@ FinalGrade = Literal[
 ]
 
 
+class AcademicAttempt(BaseModel):
+    enrollment_item_id: uuid.UUID
+    course_id: uuid.UUID
+    mark: str
+
+
+class AcademicRecord(BaseModel):
+    attempts: list[AcademicAttempt]
+    cumulative_gwa: Decimal | None
+
+
 class GradeCourse(BaseModel):
     """One posted course attempt; draft marks are excluded."""
 

@@ -282,3 +282,7 @@ async def get_student_by_number(
 ) -> StudentProfileRead | None:
     """Return a student profile by student number, or None."""
     return await service.get_student_by_number(db, student_number)
+
+
+async def student_ids_in_programs(db: AsyncSession, program_ids):
+    return await service.student_ids_in_programs(db, program_ids)

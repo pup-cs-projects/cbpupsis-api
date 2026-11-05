@@ -21,10 +21,30 @@ __all__ = [
     "EnrollmentSummaryRead",
     "TermEnrollmentRead",
     "enrolled_sections",
+    "evaluate_academics",
     "get_enrollment_summary",
     "get_term_enrollment",
     "record_enrollments",
+    "require_academics",
 ]
+
+
+async def evaluate_academics(db: AsyncSession, *, student_id, term, section_ids):
+    # Grading reads enrollment history; defer the orchestration import so the
+    # two domain clients do not create an import-time cycle.
+    from cbpupsis_shared.domains.enrollment.academic import (  # noqa: PLC0415
+        evaluate_academics as evaluate,
+    )
+
+    return await evaluate(db, student_id=student_id, term=term, section_ids=section_ids)
+
+
+def require_academics(verdict):
+    from cbpupsis_shared.domains.enrollment.academic import (  # noqa: PLC0415
+        require_academics as require,
+    )
+
+    return require(verdict)
 
 
 async def get_term_enrollment(

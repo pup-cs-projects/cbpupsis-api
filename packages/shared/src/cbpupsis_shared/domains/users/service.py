@@ -1097,3 +1097,7 @@ async def get_student_by_number(
     if profile is None:
         return None
     return StudentProfileRead.model_validate(profile)
+
+
+async def student_ids_in_programs(db: AsyncSession, program_ids):
+    return await repository.student_ids_in_programs(db, program_ids)

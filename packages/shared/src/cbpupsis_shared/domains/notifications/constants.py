@@ -62,6 +62,9 @@ class NotificationTypeSpec:
 #: type is opt-outable — the same "declare it as data" approach the IAM seed
 #: takes with permissions.
 NOTIFICATION_TYPES: dict[str, NotificationTypeSpec] = {
+    "enrollment.waiver_decided": NotificationTypeSpec(
+        default_channels=(Channel.IN_APP,), optional=False
+    ),
     "item.created": NotificationTypeSpec(default_channels=(Channel.IN_APP,)),
     "user.deactivated": NotificationTypeSpec(
         default_channels=(Channel.EMAIL, Channel.IN_APP), optional=False

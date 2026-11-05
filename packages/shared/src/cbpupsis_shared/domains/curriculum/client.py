@@ -6,13 +6,14 @@ Other domains depend on this module, never on ``service.py`` directly.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.curriculum import service
 from cbpupsis_shared.domains.curriculum.schemas import (
+    AcademicCatalog,
     CurriculumRead,
     ProgramRead,
     ScheduleCourse,
@@ -22,12 +23,15 @@ from cbpupsis_shared.domains.curriculum.service import record_courses
 __all__ = [
     "CurriculumRead",
     "ProgramRead",
+    "academic_catalog",
     "active_programs_by_code",
     "get_curriculum",
     "get_prescribed_load",
     "get_program",
+    "program_ids_in_scope",
     "record_courses",
     "schedule_courses",
+    "stage_replace_prerequisites",
 ]
 
 
@@ -62,4 +66,35 @@ async def get_prescribed_load(
 ) -> Decimal:
     return await service.get_prescribed_load(
         db, curriculum_id=curriculum_id, year_level=year_level, semester=semester
+    )
+
+
+async def stage_replace_prerequisites(
+    db: AsyncSession,
+    *,
+    course_id: uuid.UUID,
+    prerequisite_course_ids: Collection[uuid.UUID],
+) -> None:
+    """Guarded catalogue write; caller owns the transaction's commit/rollback."""
+    await service.stage_replace_prerequisites(
+        db, course_id=course_id, prerequisite_course_ids=prerequisite_course_ids
+    )
+
+
+async def academic_catalog(
+    db: AsyncSession,
+    curriculum_id: uuid.UUID | None,
+    course_ids: Collection[uuid.UUID],
+) -> AcademicCatalog:
+    return await service.academic_catalog(db, curriculum_id, course_ids)
+
+
+async def program_ids_in_scope(
+    db: AsyncSession,
+    *,
+    department: str | None = None,
+    college: str | None = None,
+) -> list[uuid.UUID]:
+    return await service.program_ids_in_scope(
+        db, department=department, college=college
     )

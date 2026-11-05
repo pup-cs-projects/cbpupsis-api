@@ -22,6 +22,7 @@ from cbpupsis_api_student.domains.student_profile.router import (
     router as student_profile_router,
 )
 from cbpupsis_shared.application import RouterMount
+from cbpupsis_shared.domains.enrollment.router import router as enrollment_router
 from cbpupsis_shared.routes import COMMON_MOUNTS
 
 STUDENT_AUTH = RouterMount(student_auth_router, "/auth/student", "student-auth")
@@ -47,4 +48,5 @@ MOUNTS: tuple[RouterMount, ...] = (
     GRADES,
     SCHEDULE,
     GOOGLE_CALENDAR,
+    RouterMount(enrollment_router, "/student/enrollment", "enrollment"),
 )

@@ -12,6 +12,7 @@ from collections.abc import Callable
 
 from fastapi import FastAPI
 
+from cbpupsis_api_admin.domains.admin_auth.dependencies import require_waiver_reviewer
 from cbpupsis_api_admin.domains.admin_auth.router import (
     protected_router as admin_router,
 )
@@ -27,6 +28,11 @@ from cbpupsis_api_admin.domains.user_import.router import (
     router as user_import_router,
 )
 from cbpupsis_shared.application import RouterMount
+from cbpupsis_shared.domains.enrollment.constants import (
+    APPROVE_WAIVER_REQUEST,
+    READ_WAIVER_REQUEST,
+)
+from cbpupsis_shared.domains.enrollment.router import build_admin_router
 from cbpupsis_shared.routes import AUDIT, COMMON_MOUNTS, IAM, USER_MANAGEMENT
 
 ADMIN_AUTH = RouterMount(admin_auth_router, "/auth/admin", "admin-auth")
@@ -46,6 +52,14 @@ MOUNTS: tuple[RouterMount, ...] = (
     # Beside the shared users router, at the same prefix: only this app parses
     # multipart uploads.
     RouterMount(user_import_router, "/users", "users"),
+    RouterMount(
+        build_admin_router(
+            require_waiver_reviewer(READ_WAIVER_REQUEST),
+            require_waiver_reviewer(APPROVE_WAIVER_REQUEST),
+        ),
+        "/admin/waiver-requests",
+        "waiver-requests",
+    ),
 )
 
 # SQLAdmin bypasses service-layer MFA, justification, and immutable audit staging.
