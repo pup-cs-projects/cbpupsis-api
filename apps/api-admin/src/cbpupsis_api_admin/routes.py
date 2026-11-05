@@ -20,6 +20,9 @@ from cbpupsis_api_admin.domains.admin_auth.router import (
     superadmin_auth_router,
     superadmin_protected_router,
 )
+from cbpupsis_api_admin.domains.admin_catalog.router import (
+    router as admin_catalog_router,
+)
 from cbpupsis_api_admin.domains.superadmin_ops.router import (
     router as superadmin_ops_router,
 )
@@ -31,11 +34,13 @@ from cbpupsis_shared.routes import AUDIT, COMMON_MOUNTS, IAM, USER_MANAGEMENT
 
 ADMIN_AUTH = RouterMount(admin_auth_router, "/auth/admin", "admin-auth")
 ADMIN = RouterMount(admin_router, "/admin", "admin")
+ADMIN_CATALOG = RouterMount(admin_catalog_router, "/admin/catalog", "admin-catalog")
 
 MOUNTS: tuple[RouterMount, ...] = (
     *COMMON_MOUNTS,
     ADMIN_AUTH,
     ADMIN,
+    ADMIN_CATALOG,
     IAM,
     AUDIT,
     # After COMMON_MOUNTS, so /users/me resolves before /users/{user_id}.

@@ -13,14 +13,20 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     TermEnrollmentRead,
 )
 from cbpupsis_shared.domains.enrollment.service import (
+    compute_effective_ceiling,
+    count_section_enrollments,
     enrolled_sections,
+    get_approved_overload_units,
     record_enrollments,
 )
 
 __all__ = [
     "EnrollmentSummaryRead",
     "TermEnrollmentRead",
+    "compute_effective_ceiling",
+    "count_section_enrollments",
     "enrolled_sections",
+    "get_approved_overload_units",
     "get_enrollment_summary",
     "get_term_enrollment",
     "record_enrollments",

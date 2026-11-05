@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from fastapi import Depends, Request
@@ -83,6 +84,30 @@ async def require_admin_session(
         # Logged with status and code only, never the token or identity.
         _log_refusal(request, error)
         raise
+
+
+def require_admin_permission(
+    *required: str,
+) -> Callable[..., Awaitable[AdminSession]]:
+    """Require an MFA-completed Admin session holding all required permissions.
+
+    Raises InsufficientRoleError (403 AUTH_INSUFFICIENT_ROLE) when the caller is
+    not an admin or lacks any of the required permissions.
+    """
+
+    async def checker(
+        request: Request,
+        admin: AdminSession = Depends(require_admin_session),
+        db: AsyncSession = Depends(get_db),
+    ) -> AdminSession:
+        granted = await iam_service.get_effective_permissions(db, admin.id)
+        if not set(required).issubset(granted):
+            error = InsufficientRoleError()
+            _log_refusal(request, error)
+            raise error
+        return admin
+
+    return checker
 
 
 async def _admin_session(

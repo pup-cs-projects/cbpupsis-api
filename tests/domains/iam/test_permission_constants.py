@@ -36,6 +36,8 @@ from cbpupsis_api_student.domains.student_profile import (
     constants as student_profile_constants,
 )
 from cbpupsis_shared.domains.auth import constants as auth_constants
+from cbpupsis_shared.domains.curriculum import constants as curriculum_constants
+from cbpupsis_shared.domains.enrollment import constants as enrollment_constants
 from cbpupsis_shared.domains.grading import constants as grading_constants
 from cbpupsis_shared.domains.iam import constants as iam_constants
 from cbpupsis_shared.domains.notifications import constants as notifications_constants
@@ -47,6 +49,8 @@ from scripts.seed_iam import GROUPS, PERMISSIONS
 #: permission constants are then covered automatically.
 DOMAIN_CONSTANTS: dict[str, ModuleType] = {
     "auth": auth_constants,
+    "curriculum": curriculum_constants,
+    "enrollment": enrollment_constants,
     "users": users_constants,
     "iam": iam_constants,
     "items": items_constants,

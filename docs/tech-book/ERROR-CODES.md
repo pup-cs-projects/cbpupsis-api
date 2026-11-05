@@ -11,7 +11,7 @@ Add the row in the same commit as the code that raises it.
 | | |
 |---|---|
 | **Last updated** | 2026-10-23 |
-| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications` in `packages/shared`; `items` and `student_profile` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The `student_auth`, `faculty_auth`, and `sections` domains raise the shared `auth` classes and add none of their own; `curriculum` raises none. |
+| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications`, `curriculum`, `sections` in `packages/shared`; `items` and `student_profile` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The `student_auth` and `faculty_auth` domains raise the shared `auth` classes and add none of their own. |
 
 ## Student academic records (US-STU-004)
 
@@ -260,6 +260,16 @@ arrive through the outbox.
 |---|---|---|---|---|
 | 400 | `INVALID_INPUT` | One or more query parameters contain invalid values. | A limit parameter is out of range (< 1 or > 50) or a year parameter is malformed. | `dashboard/exceptions.py` |
 | 404 | `RESOURCE_NOT_FOUND` | The requested resource does not exist or is no longer available. | The requested dashboard is not the caller's own. Answers 404 rather than 403 to prevent probing student identifiers. | `dashboard/exceptions.py` |
+
+### curriculum and sections (admin catalog management)
+
+| Status | Code | Message | When | Raised in |
+|---|---|---|---|---|
+| 422 | `CATALOG_PREREQUISITE_CYCLE` | Prerequisite or co-requisite creates a cycle. | Creating or editing a course or publishing a curriculum version where prerequisite or co-requisite relationships form a direct self-reference or multi-course cycle. Extra field `details.cycle` listing the course codes in the cycle. | `curriculum/exceptions.py` |
+| 409 | `CATALOG_VERSION_IN_USE` | Cannot delete a curriculum version with bound students. | Deleting a curriculum version while one or more student profiles remain bound to it. | `curriculum/exceptions.py` |
+| 409 | `SECTION_CAPACITY_BELOW_ENROLLED` | Section capacity cannot be lower than the enrolled count. | Updating a section's capacity to a value lower than the number of active enrollments in that section. Extra field `details.enrolled` containing the current enrolled count. | `sections/exceptions.py` |
+| 404 | `RESOURCE_NOT_FOUND` | Resource not found. | The course, program, curriculum version, section, faculty member, or student does not exist or is outside the caller's department or college scope. | `auth/exceptions.py` (raised by `curriculum/service.py`, `sections/service.py`, `admin_catalog/service.py`) |
+| 403 | `AUTH_INSUFFICIENT_ROLE` | This action is not available to your role | A College Dean, Registrar, or non-Admin attempts an admin catalog write (`ManageCatalog` or `ApproveSubstitution`), or a non-Admin attempts to read the admin catalog (`ReadCatalog`). | `auth/exceptions.py` (raised by `admin_auth/dependencies.py`) |
 
 ### Removed in this revision
 

@@ -249,6 +249,7 @@ class StudentProfileRead(BaseModel):
     year_level: int
     section: str | None = None
     enrollment_status: str
+    admission_status: str = "REGULAR"
     fhe_qualified: bool = True
     fhe_forfeited: bool = False
     fhe_forfeiture_reason: str | None = None

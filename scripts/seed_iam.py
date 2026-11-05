@@ -26,10 +26,13 @@ from cbpupsis_database.models.iam import (
     Permission,
     Policy,
     PolicyPermission,
+    UserPolicy,
 )
+from cbpupsis_database.models.users import AdminProfile
 from cbpupsis_database.session import AsyncSessionLocal
 from cbpupsis_shared.domains.iam.constants import (
     ADMIN_GROUP,
+    ADMIN_POSITION_POLICIES,
     FACULTY_GROUP,
     STUDENT_GROUP,
     SUPERADMIN_GROUP,
@@ -90,6 +93,16 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ReadGrade", "Read your own finalized grades"),
     ("ReadTranscript", "Read and export your own transcript"),
     ("ReadSchedule", "Read and export your own student course schedule"),
+    ("ReadEnrollment", "Read your own enrollment eligibility and unit ceiling"),
+    ("ReadCatalog", "Read courses, curricula, and sections within your Admin scope"),
+    (
+        "ManageCatalog",
+        "Create and update department courses, curriculum versions, and sections",
+    ),
+    (
+        "ApproveSubstitution",
+        "Approve course substitutions for students in your department",
+    ),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -108,6 +121,9 @@ POLICIES: dict[str, list[str]] = {
     "GradeReader": ["ReadGrade"],
     "TranscriptReader": ["ReadTranscript"],
     "ScheduleReader": ["ReadSchedule"],
+    "EnrollmentReader": ["ReadEnrollment"],
+    "CatalogReader": ["ReadCatalog"],
+    "CatalogAdmin": ["ReadCatalog", "ManageCatalog", "ApproveSubstitution"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
@@ -140,7 +156,12 @@ GROUPS: dict[str, list[str]] = {
     ADMIN_GROUP: [],
     FACULTY_GROUP: ["CourseSectionReader"],
     # Superadmin-created student accounts join this group.
-    STUDENT_GROUP: ["GradeReader", "TranscriptReader", "ScheduleReader"],
+    STUDENT_GROUP: [
+        "GradeReader",
+        "TranscriptReader",
+        "ScheduleReader",
+        "EnrollmentReader",
+    ],
     SUPERADMIN_GROUP: list(POLICIES),
 }
 
@@ -208,33 +229,59 @@ async def _ensure_group_policy(session, group_id: int, policy_id: int) -> None:
         session.add(GroupPolicy(group_id=group_id, policy_id=policy_id))
 
 
-async def seed() -> None:
-    """Create the baseline permissions, policies, and groups idempotently."""
-    async with AsyncSessionLocal() as session:
-        # 1) Permissions
-        permissions: dict[str, Permission] = {}
-        for action, description in PERMISSIONS:
-            permissions[action] = await _get_or_create_permission(
-                session, action, description
+async def _ensure_user_policy(session, user_id, policy_id: int) -> None:
+    """Attach ``policy_id`` directly to ``user_id`` if it is absent."""
+    exists = await session.scalar(
+        select(UserPolicy).where(
+            UserPolicy.user_id == user_id,
+            UserPolicy.policy_id == policy_id,
+        )
+    )
+    if exists is None:
+        session.add(UserPolicy(user_id=user_id, policy_id=policy_id))
+
+
+async def _seed_session(session) -> None:
+    """Populate permissions, policies, groups, and admin policies on ``session``."""
+    # 1) Permissions
+    permissions: dict[str, Permission] = {}
+    for action, description in PERMISSIONS:
+        permissions[action] = await _get_or_create_permission(
+            session, action, description
+        )
+
+    # 2) Policies, with their permissions attached
+    policies: dict[str, Policy] = {}
+    for policy_name, actions in POLICIES.items():
+        policy = await _get_or_create_policy(session, policy_name)
+        policies[policy_name] = policy
+        for action in actions:
+            await _ensure_policy_permission(session, policy.id, permissions[action].id)
+
+    # 3) Groups, with their policies attached
+    for group_name, policy_names in GROUPS.items():
+        group = await _get_or_create_group(session, group_name)
+        for policy_name in policy_names:
+            await _ensure_group_policy(session, group.id, policies[policy_name].id)
+
+    # 4) Position-specific policies for existing Admin accounts
+    admin_profiles = list((await session.scalars(select(AdminProfile))).all())
+    for profile in admin_profiles:
+        for policy_name in ADMIN_POSITION_POLICIES.get(profile.position, ()):
+            await _ensure_user_policy(
+                session, profile.user_id, policies[policy_name].id
             )
 
-        # 2) Policies, with their permissions attached
-        policies: dict[str, Policy] = {}
-        for policy_name, actions in POLICIES.items():
-            policy = await _get_or_create_policy(session, policy_name)
-            policies[policy_name] = policy
-            for action in actions:
-                await _ensure_policy_permission(
-                    session, policy.id, permissions[action].id
-                )
+    await session.commit()
 
-        # 3) Groups, with their policies attached
-        for group_name, policy_names in GROUPS.items():
-            group = await _get_or_create_group(session, group_name)
-            for policy_name in policy_names:
-                await _ensure_group_policy(session, group.id, policies[policy_name].id)
 
-        await session.commit()
+async def seed(session=None) -> None:
+    """Create the baseline permissions, policies, and groups idempotently."""
+    if session is not None:
+        await _seed_session(session)
+    else:
+        async with AsyncSessionLocal() as new_session:
+            await _seed_session(new_session)
     print("IAM seed complete.")
 
 

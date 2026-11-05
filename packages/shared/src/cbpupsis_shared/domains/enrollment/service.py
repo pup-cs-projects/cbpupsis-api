@@ -9,11 +9,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.enrollment import repository
 from cbpupsis_shared.domains.enrollment.schemas import (
+    CeilingStudent,
     EnrolledSection,
     EnrollmentSummaryRead,
     RecordEnrollment,
     TermEnrollmentRead,
 )
+
+
+def compute_effective_ceiling(student: CeilingStudent) -> Decimal:
+    return (
+        student.prescribed_load
+        + student.approved_overload_units
+        - student.standing_reduction
+    )
 
 
 async def get_term_enrollment(
@@ -72,3 +81,15 @@ async def enrolled_sections(
         EnrolledSection.model_validate(row)
         for row in await repository.enrolled_sections(db, student_id, term_id)
     ]
+
+
+async def get_approved_overload_units(
+    db: AsyncSession, *, student_id: uuid.UUID, academic_term_id: uuid.UUID
+) -> Decimal:
+    return await repository.get_approved_overload_units(
+        db, student_id=student_id, academic_term_id=academic_term_id
+    )
+
+
+async def count_section_enrollments(db: AsyncSession, section_id: uuid.UUID) -> int:
+    return await repository.count_section_enrollments(db, section_id)

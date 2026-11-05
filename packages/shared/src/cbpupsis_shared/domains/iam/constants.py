@@ -32,6 +32,12 @@ FACULTY_GROUP = "Faculty"
 #: domains attach theirs as they are built.
 STUDENT_GROUP = "Students"
 
+ADMIN_POSITION_POLICIES: dict[str, tuple[str, ...]] = {
+    "chairperson": ("CatalogAdmin",),
+    "dean": ("CatalogReader",),
+    "registrar": ("CatalogReader",),
+}
+
 SUPERADMIN_ACTIONS = frozenset(
     {
         "CreateUser",

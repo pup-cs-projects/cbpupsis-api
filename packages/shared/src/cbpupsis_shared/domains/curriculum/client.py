@@ -13,21 +13,56 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.curriculum import service
 from cbpupsis_shared.domains.curriculum.schemas import (
+    CatalogCourseCreate,
+    CatalogCourseRead,
+    CatalogCourseUpdate,
     CurriculumRead,
+    CurriculumVersionCreate,
+    CurriculumVersionRead,
     ProgramRead,
     ScheduleCourse,
+    StudentDegreeProgressRead,
+    SubstitutionApprovalRead,
+    SubstitutionApproveRequest,
 )
-from cbpupsis_shared.domains.curriculum.service import record_courses
+from cbpupsis_shared.domains.curriculum.service import (
+    approve_course_substitution,
+    create_catalog_course,
+    delete_curriculum_version,
+    get_course_read,
+    get_student_degree_progress,
+    list_catalog_courses,
+    publish_curriculum_version,
+    record_courses,
+    update_catalog_course,
+)
 
 __all__ = [
+    "CatalogCourseCreate",
+    "CatalogCourseRead",
+    "CatalogCourseUpdate",
     "CurriculumRead",
+    "CurriculumVersionCreate",
+    "CurriculumVersionRead",
     "ProgramRead",
+    "ScheduleCourse",
+    "StudentDegreeProgressRead",
+    "SubstitutionApprovalRead",
+    "SubstitutionApproveRequest",
     "active_programs_by_code",
+    "approve_course_substitution",
+    "create_catalog_course",
+    "delete_curriculum_version",
+    "get_course_read",
     "get_curriculum",
     "get_prescribed_load",
     "get_program",
+    "get_student_degree_progress",
+    "list_catalog_courses",
+    "publish_curriculum_version",
     "record_courses",
     "schedule_courses",
+    "update_catalog_course",
 ]
 
 
