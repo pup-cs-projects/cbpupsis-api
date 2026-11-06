@@ -7,6 +7,7 @@ and course registrations.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
 from decimal import Decimal
 
 from sqlalchemy import Uuid, bindparam, func, select, text
@@ -16,6 +17,10 @@ from cbpupsis_database.models.enrollment import (
     OverloadRequest,
     StudentCourseEnrollment,
     TermEnrollment,
+)
+from cbpupsis_shared.domains.enrollment.constants import (
+    ACTIVE_COURSE_ENROLLMENT_STATUSES,
+    ACTIVE_TERM_ENROLLMENT_STATUSES,
 )
 
 
@@ -116,6 +121,88 @@ async def get_approved_overload_units(
     return Decimal(str(val)) if val is not None else Decimal("0")
 
 
+def add_overload_request(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    academic_term_id: uuid.UUID,
+    requested_units: int,
+    justification: str,
+    state: str,
+) -> OverloadRequest:
+    """Stage one student overload request in the caller's transaction.
+
+    SQL::
+
+        INSERT INTO overload_requests
+            (student_id, academic_term_id, requested_units, justification,
+             state, id)
+        VALUES (:student_id, :academic_term_id, :requested_units,
+                :justification, :state, :id);
+    """
+    row = OverloadRequest(
+        student_id=student_id,
+        academic_term_id=academic_term_id,
+        requested_units=requested_units,
+        justification=justification,
+        state=state,
+    )
+    db.add(row)
+    return row
+
+
+async def list_overload_requests(db: AsyncSession) -> list[OverloadRequest]:
+    """List overload requests for service-side identity and scope composition.
+
+    SQL::
+
+        SELECT * FROM overload_requests
+        ORDER BY created_at DESC, id DESC LIMIT 1001;
+    """
+    return list(
+        await db.scalars(
+            select(OverloadRequest)
+            .order_by(OverloadRequest.created_at.desc(), OverloadRequest.id.desc())
+            .limit(1001)
+            .execution_options(populate_existing=True)
+        )
+    )
+
+
+async def get_overload_request_for_update(
+    db: AsyncSession,
+    *,
+    overload_request_id: uuid.UUID,
+) -> OverloadRequest | None:
+    """Lock one overload request through the caller's transaction.
+
+    SQL::
+
+        SELECT * FROM overload_requests
+        WHERE id = :overload_request_id FOR UPDATE;
+    """
+    return await db.scalar(
+        select(OverloadRequest)
+        .where(OverloadRequest.id == overload_request_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
+async def get_overload_request(
+    db: AsyncSession, overload_request_id: uuid.UUID
+) -> OverloadRequest | None:
+    """Read one overload request by id.
+
+    SQL::
+
+        SELECT * FROM overload_requests WHERE id = :overload_request_id;
+    """
+    return await db.scalar(
+        select(OverloadRequest).where(OverloadRequest.id == overload_request_id)
+    )
+
+
 async def list_record_enrollments(db: AsyncSession, student_id: uuid.UUID):
     """Retain historical attempts, including withdrawn courses with posted marks.
 
@@ -157,7 +244,8 @@ async def enrolled_sections(
         JOIN term_enrollments AS te ON te.id = sce.term_enrollment_id
         WHERE te.student_id = :student_id AND te.academic_term_id = :term_id
           AND sce.academic_term_id = :term_id
-          AND te.enrollment_status = 'enrolled' AND sce.status = 'enrolled'
+          AND te.enrollment_status IN ('enrolled', 'ENROLLED_PENDING')
+          AND sce.status IN ('enrolled', 'ENROLLED_PENDING')
         ORDER BY sce.section_id LIMIT 101;
     """
     return list(
@@ -171,8 +259,8 @@ async def enrolled_sections(
                 TermEnrollment.student_id == student_id,
                 TermEnrollment.academic_term_id == term_id,
                 StudentCourseEnrollment.academic_term_id == term_id,
-                TermEnrollment.enrollment_status == "enrolled",
-                StudentCourseEnrollment.status == "enrolled",
+                TermEnrollment.enrollment_status.in_(ACTIVE_TERM_ENROLLMENT_STATUSES),
+                StudentCourseEnrollment.status.in_(ACTIVE_COURSE_ENROLLMENT_STATUSES),
             )
             .order_by(StudentCourseEnrollment.section_id)
             .limit(101)
@@ -254,3 +342,115 @@ async def get_enrollment_report_counts(
     )
     result = await db.execute(stmt, params)
     return [(str(row[0]), int(row[1])) for row in result.all()]
+
+
+async def count_active_section_enrollments(
+    db: AsyncSession, section_ids: Collection[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """Count occupied seats without exposing any student's selection.
+
+    SQL::
+
+        SELECT student_course_enrollments.section_id,
+               count(student_course_enrollments.id)
+        FROM student_course_enrollments
+        JOIN term_enrollments
+          ON term_enrollments.id = student_course_enrollments.term_enrollment_id
+        WHERE student_course_enrollments.section_id IN (:section_ids)
+          AND student_course_enrollments.status
+              IN ('enrolled', 'ENROLLED_PENDING')
+          AND term_enrollments.enrollment_status
+              IN ('enrolled', 'ENROLLED_PENDING')
+        GROUP BY student_course_enrollments.section_id;
+    """
+    if not section_ids:
+        return {}
+    result = await db.execute(
+        select(
+            StudentCourseEnrollment.section_id,
+            func.count(StudentCourseEnrollment.id),
+        )
+        .join(
+            TermEnrollment,
+            TermEnrollment.id == StudentCourseEnrollment.term_enrollment_id,
+        )
+        .where(
+            StudentCourseEnrollment.section_id.in_(section_ids),
+            StudentCourseEnrollment.status.in_(ACTIVE_COURSE_ENROLLMENT_STATUSES),
+            TermEnrollment.enrollment_status.in_(ACTIVE_TERM_ENROLLMENT_STATUSES),
+        )
+        .group_by(StudentCourseEnrollment.section_id)
+    )
+    return {section_id: int(count) for section_id, count in result.all()}
+
+
+async def list_term_enrollment_sections(
+    db: AsyncSession, term_enrollment_id: uuid.UUID
+) -> list[StudentCourseEnrollment]:
+    """Return the seat rows belonging to one idempotent submission.
+
+    SQL::
+
+        SELECT * FROM student_course_enrollments
+        WHERE term_enrollment_id = :term_enrollment_id
+        ORDER BY section_id;
+    """
+    rows = await db.scalars(
+        select(StudentCourseEnrollment)
+        .where(StudentCourseEnrollment.term_enrollment_id == term_enrollment_id)
+        .order_by(StudentCourseEnrollment.section_id)
+    )
+    return list(rows)
+
+
+def add_term_enrollment(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    academic_term_id: uuid.UUID,
+    status: str,
+) -> TermEnrollment:
+    """Stage the unique student-term enrollment.
+
+    On the service's commit::
+
+        INSERT INTO term_enrollments
+            (student_id, academic_term_id, enrollment_status, id)
+        VALUES (:student_id, :academic_term_id, :status, :id);
+    """
+    row = TermEnrollment(
+        student_id=student_id,
+        academic_term_id=academic_term_id,
+        enrollment_status=status,
+    )
+    db.add(row)
+    return row
+
+
+def add_course_enrollments(
+    db: AsyncSession,
+    *,
+    term_enrollment_id: uuid.UUID,
+    academic_term_id: uuid.UUID,
+    section_ids: Collection[uuid.UUID],
+) -> list[StudentCourseEnrollment]:
+    """Stage the selected seat rows in the caller's transaction.
+
+    On the service's commit::
+
+        INSERT INTO student_course_enrollments
+            (term_enrollment_id, academic_term_id, section_id, status, id)
+        VALUES (:term_enrollment_id, :academic_term_id, :section_id,
+                'enrolled', :id);
+    """
+    rows = [
+        StudentCourseEnrollment(
+            term_enrollment_id=term_enrollment_id,
+            academic_term_id=academic_term_id,
+            section_id=section_id,
+            status="enrolled",
+        )
+        for section_id in section_ids
+    ]
+    db.add_all(rows)
+    return rows

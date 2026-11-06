@@ -20,6 +20,9 @@ from cbpupsis_api_admin.domains.admin_auth.router import (
     superadmin_auth_router,
     superadmin_protected_router,
 )
+from cbpupsis_api_admin.domains.overload_requests.router import (
+    router as overload_requests_router,
+)
 from cbpupsis_api_admin.domains.superadmin_ops.router import (
     router as superadmin_ops_router,
 )
@@ -43,6 +46,11 @@ MOUNTS: tuple[RouterMount, ...] = (
     ADMIN_AUTH,
     ADMIN,
     REPORTS,
+    RouterMount(
+        overload_requests_router,
+        "/admin/overload-requests",
+        "admin-overload-requests",
+    ),
     IAM,
     AUDIT,
     # After COMMON_MOUNTS, so /users/me resolves before /users/{user_id}.

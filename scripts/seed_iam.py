@@ -94,6 +94,11 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ReadTranscript", "Read and export your own transcript"),
     ("ReadSchedule", "Read and export your own student course schedule"),
     ("ReadEnrollmentReport", "Read enrollment counts and statistics report"),
+    ("ReadEnrollment", "Read your own enrollment eligibility and unit ceiling"),
+    ("CreateEnrollment", "Submit your own enrollment section selections"),
+    ("CreateOverloadRequest", "File your own enrollment overload request"),
+    ("ReadOverloadRequest", "Read overload requests within your Admin scope"),
+    ("ApproveOverloadRequest", "Approve or reject an in-scope overload request"),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -113,6 +118,11 @@ POLICIES: dict[str, list[str]] = {
     "TranscriptReader": ["ReadTranscript"],
     "ScheduleReader": ["ReadSchedule"],
     "EnrollmentReportReader": ["ReadEnrollmentReport"],
+    "EnrollmentReader": ["ReadEnrollment"],
+    "EnrollmentAuthor": ["CreateEnrollment"],
+    "OverloadRequestAuthor": ["CreateOverloadRequest"],
+    "OverloadRequestReader": ["ReadOverloadRequest"],
+    "OverloadRequestAdmin": ["ReadOverloadRequest", "ApproveOverloadRequest"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
@@ -145,7 +155,14 @@ GROUPS: dict[str, list[str]] = {
     ADMIN_GROUP: [],
     FACULTY_GROUP: ["CourseSectionReader"],
     # Superadmin-created student accounts join this group.
-    STUDENT_GROUP: ["GradeReader", "TranscriptReader", "ScheduleReader"],
+    STUDENT_GROUP: [
+        "GradeReader",
+        "TranscriptReader",
+        "ScheduleReader",
+        "EnrollmentReader",
+        "EnrollmentAuthor",
+        "OverloadRequestAuthor",
+    ],
     SUPERADMIN_GROUP: list(POLICIES),
 }
 
@@ -214,7 +231,7 @@ async def _ensure_group_policy(session, group_id: int, policy_id: int) -> None:
 
 
 async def _ensure_user_policy(session, user_id, policy_id: int) -> None:
-    """Attach ``policy_id`` directly to ``user_id`` if not already attached."""
+    """Attach ``policy_id`` directly to ``user_id`` if it is absent."""
     exists = await session.scalar(
         select(UserPolicy).where(
             UserPolicy.user_id == user_id,
@@ -248,6 +265,9 @@ async def _seed_session(session) -> None:
             await _ensure_group_policy(session, group.id, policies[policy_name].id)
 
     # 4) Position-specific policies for existing Admin accounts
+    # Admin is one login role, but permissions differ by position.
+    # Backfill direct policies for existing accounts; account creation uses
+    # the same mapping for new accounts.
     admin_profiles = list((await session.scalars(select(AdminProfile))).all())
     for profile in admin_profiles:
         for policy_name in ADMIN_POSITION_POLICIES.get(profile.position, ()):

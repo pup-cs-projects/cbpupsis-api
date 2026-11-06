@@ -24,6 +24,7 @@ from cbpupsis_shared.domains.users.schemas import (
     AvatarRead,
     EmergencyContactRead,
     FacultyProfileRead,
+    OverloadStudentIdentity,
     ScheduleIdentity,
     StudentProfileRead,
     UserProfileRead,
@@ -61,6 +62,7 @@ __all__ = [
     "list_emergency_contacts",
     "lock_active_user",
     "lock_role_subject",
+    "overload_student_identities",
     "record_identity",
     "save_admin_profile",
     "schedule_identity",
@@ -73,6 +75,12 @@ __all__ = [
     "stage_update_user_profile",
     "user_exists",
 ]
+
+
+async def overload_student_identities(
+    db: AsyncSession, student_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, OverloadStudentIdentity]:
+    return await service.overload_student_identities(db, student_ids)
 
 
 async def schedule_identity(

@@ -321,6 +321,9 @@ class StudentProfile(Base):
     enrollment_status: Mapped[str] = mapped_column(
         String(30), default="pending", server_default="pending"
     )
+    admission_status: Mapped[str] = mapped_column(
+        String(30), default="REGULAR", server_default="REGULAR"
+    )
     fhe_qualified: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true"
     )

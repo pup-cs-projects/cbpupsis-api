@@ -34,6 +34,8 @@ class ScheduleSection(BaseModel):
     course_id: uuid.UUID
     faculty_id: uuid.UUID | None
     section_name: str
+    capacity: int
+    status: str
     meetings: list[MeetingSlot]
 
 
