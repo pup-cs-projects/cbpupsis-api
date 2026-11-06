@@ -18,6 +18,7 @@ from cbpupsis_database import models as _models  # noqa: F401
 from cbpupsis_database.base import Base
 from cbpupsis_database.models.academics import AcademicTerm
 from cbpupsis_database.models.audit import AuditEntry
+from cbpupsis_database.models.billing import FeeStructure, StudentBillingAccount
 from cbpupsis_database.models.curriculum import (
     Course,
     Curriculum,
@@ -34,6 +35,7 @@ from cbpupsis_database.models.sections import CourseSection, SectionSchedule
 from cbpupsis_database.models.users import StudentProfile, User, UserProfile
 from cbpupsis_shared.domains.academics.schemas import AcademicTermRead
 from cbpupsis_shared.domains.auth.security import hash_password
+from cbpupsis_shared.domains.billing import client as billing
 from cbpupsis_shared.domains.enrollment import service as enrollment_service
 from cbpupsis_shared.domains.enrollment.constants import (
     CREATE_ENROLLMENT,
@@ -189,6 +191,22 @@ async def _section(
     return section
 
 
+async def _fee_structure(
+    db: AsyncSession, *, program: Program, term: AcademicTerm
+) -> FeeStructure:
+    fee = FeeStructure(
+        program_id=program.id,
+        academic_term_id=term.id,
+        tuition_per_unit=Decimal("100"),
+        registration_fee=Decimal("50"),
+        lab_fee=Decimal("25"),
+        misc_fee=Decimal("75"),
+    )
+    db.add(fee)
+    await db.flush()
+    return fee
+
+
 async def _headers(client: AsyncClient, number: str) -> dict[str, str]:
     response = await client.post(
         LOGIN_URL,
@@ -238,6 +256,7 @@ async def submission(db: AsyncSession, grant):
         start=time(9),
         end=time(10),
     )
+    await _fee_structure(db, program=program, term=term)
     await db.commit()
     await grant(student.id, CREATE_ENROLLMENT)
     return {
@@ -262,7 +281,7 @@ def _body(submission, **extra) -> dict[str, object]:
 
 
 async def test_ac_enrl_001_1_success_returns_pending_assessment(
-    client: AsyncClient, submission
+    client: AsyncClient, db: AsyncSession, submission
 ) -> None:
     response = await client.post(
         URL,
@@ -277,6 +296,21 @@ async def test_ac_enrl_001_1_success_returns_pending_assessment(
     assert {row["sectionId"] for row in data["sections"]} == {
         str(section.id) for section in submission["sections"]
     }
+    stored = await billing.read_stored_assessment(
+        db,
+        submission["student"].id,
+        submission["term"].id,
+    )
+    assert stored is not None
+    assert stored.assessment.amountAssessed == "750.00"
+    assert stored.assessment.subsidyApplied == "750.00"
+    assert stored.assessment.netPayable == "0.00"
+    assert {course.section_id for course in stored.inputs.courses} == {
+        section.id for section in submission["sections"]
+    }
+    account = await db.scalar(select(StudentBillingAccount))
+    assert account is not None
+    assert account.due_date == submission["term"].regular_enrollment_end.date()
 
 
 async def test_ac_enrl_001_10_ordered_refusals_write_nothing(
@@ -398,6 +432,42 @@ async def test_ac_enrl_001_10_assessment_failure_takes_no_seat(
     )
 
 
+async def test_ac_enrl_001_10_assessment_persistence_failure_rolls_back_enrollment(
+    db: AsyncSession, submission, monkeypatch
+) -> None:
+    stage_assessment = billing.stage_assessment
+
+    async def fail_assessment(*args, **kwargs):
+        await stage_assessment(*args, **kwargs)
+        raise billing.AssessmentInvalid
+
+    monkeypatch.setattr(billing, "stage_assessment", fail_assessment)
+
+    with pytest.raises(billing.AssessmentInvalid):
+        await enrollment_service.submit_enrollment(
+            db,
+            student_id=submission["student"].id,
+            term=AcademicTermRead.model_validate(submission["term"]),
+            section_ids=[section.id for section in submission["sections"]],
+            client_ip="127.0.0.1",
+        )
+
+    assert await db.scalar(select(func.count()).select_from(TermEnrollment)) == 0
+    assert (
+        await db.scalar(select(func.count()).select_from(StudentCourseEnrollment)) == 0
+    )
+    assert await db.scalar(select(func.count()).select_from(StudentBillingAccount)) == 0
+    assert await db.scalar(select(func.count()).select_from(AuditEntry)) == 0
+    assert (
+        await db.scalar(
+            select(func.count())
+            .select_from(OutboxMessage)
+            .where(OutboxMessage.event_name == ENROLLMENT_SUBMITTED_EVENT)
+        )
+        == 0
+    )
+
+
 async def test_ac_enrl_001_12_replay_returns_original_without_second_seat(
     client: AsyncClient, db: AsyncSession, submission
 ) -> None:
@@ -510,6 +580,7 @@ async def test_ac_enrl_001_11_last_seat_never_oversells_in_100_submits(
                 )
             )
             term = await _term(setup_db, year=f"RACE-{index:03}", semester="Race")
+            await _fee_structure(setup_db, program=program, term=term)
             first = await _student(
                 setup_db,
                 program=program,
