@@ -19,7 +19,8 @@ from cbpupsis_database.models.enrollment import (
     CorIssuance,
     StudentCourseEnrollment,
 )
-from cbpupsis_shared.domains.enrollment import academic_verdict, service
+from cbpupsis_shared.domains.academics.schemas import AcademicTermRead
+from cbpupsis_shared.domains.enrollment import academic, academic_verdict, service
 from cbpupsis_shared.domains.enrollment.constants import (
     APPROVE_ADD_DROP,
     CREATE_ADD_DROP_REQUEST,
@@ -357,3 +358,53 @@ async def test_filing_checks_pe_against_the_load_after_drops(client, db, flow):
         },
     )
     assert swapped.status_code == 201, swapped.text
+
+
+async def test_off_curriculum_section_does_not_fail_the_preview(db, flow):
+    """Another program's course is left out instead of refusing the whole list."""
+    _, other_curriculum = await _program(db, code="BSIT")
+    outside = await _course(
+        db, curriculum=other_curriculum, code="IT101", title="Outside"
+    )
+    section = await _section(db, term=flow.term, course=outside, name="IT101")
+    verdicts = await academic.preview_academics(
+        db,
+        student_id=flow.student.id,
+        term=AcademicTermRead.model_validate(flow.term),
+        section_ids=[section.id, flow.sections["CS401"].id],
+    )
+    assert set(verdicts) == {flow.sections["CS401"].id}
+
+
+async def test_corequisite_is_met_by_taking_both_together(client, db, flow):
+    db.add(
+        CoursePrerequisite(
+            course_id=flow.sections["CS401"].course_id,
+            prerequisite_course_id=flow.sections["CS402"].course_id,
+            is_corequisite=True,
+        )
+    )
+    await db.commit()
+    verdicts = await academic.preview_academics(
+        db,
+        student_id=flow.student.id,
+        term=AcademicTermRead.model_validate(flow.term),
+        section_ids=[flow.sections["CS401"].id, flow.sections["CS402"].id],
+    )
+    assert verdicts[flow.sections["CS401"].id].prerequisites_satisfied is True
+
+    alone = await client.post(
+        SUBMIT_URL,
+        headers=flow.headers,
+        json={
+            "term": f"{flow.term.academic_year}-{flow.term.semester}",
+            "sectionIds": [str(flow.sections["CS401"].id)],
+            "confirmation": True,
+        },
+    )
+    assert alone.status_code == 409
+    assert alone.json()["code"] == "ENROLL_PREREQUISITE_NOT_MET"
+    # The refusal rolled back the shared session, which expired these rows.
+    for row in (flow.term, flow.sections["CS401"], flow.sections["CS402"]):
+        await db.refresh(row)
+    await _submit(client, flow, ("CS401", "CS402"))

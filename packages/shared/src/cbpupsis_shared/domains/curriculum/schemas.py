@@ -462,6 +462,7 @@ class PrerequisiteEdge(BaseModel):
 
     course_id: uuid.UUID
     prerequisite_course_id: uuid.UUID
+    is_corequisite: bool = False
 
 
 class AcademicCatalog(BaseModel):

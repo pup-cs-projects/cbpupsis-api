@@ -463,6 +463,7 @@ async def create_catalog_course(
         resolved_college = payload.college or resolved_college
 
     all_courses = await repository.list_all_courses(db)
+    await repository.lock_prerequisite_graph(db)
     existing_edges = await repository.list_all_course_prerequisites(db)
     temp_id = uuid.uuid4()
     prereq_ids = await _resolve_dependency_refs(
@@ -590,6 +591,8 @@ async def update_catalog_course(
         raise ResourceNotFoundError
 
     all_courses = await repository.list_all_courses(db)
+    if payload.prerequisite_ids is not None or payload.corequisite_ids is not None:
+        await repository.lock_prerequisite_graph(db)
     existing_edges = await repository.list_all_course_prerequisites(db)
     current_prereq_ids = [
         e.prerequisite_course_id
@@ -778,6 +781,7 @@ async def publish_curriculum_version(
             await db.rollback()
             raise ResourceNotFoundError
         if item.prerequisite_ids or item.corequisite_ids:
+            await repository.lock_prerequisite_graph(db)
             existing_edges = await repository.list_all_course_prerequisites(db)
             p_ids = await _resolve_dependency_refs(
                 db,

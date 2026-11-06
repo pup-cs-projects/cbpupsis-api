@@ -55,6 +55,8 @@ class AcademicFacts:
     waivers: list[tuple[uuid.UUID, str, str]]
     unfinished_courses: set[uuid.UUID]
     retake_courses: set[uuid.UUID] = field(default_factory=set)
+    # Courses a preview can still pair with this one in the same selection.
+    co_selectable: set[uuid.UUID] = field(default_factory=set)
 
 
 _SEMESTER_TYPES = {
@@ -192,6 +194,10 @@ def evaluate_facts(facts: AcademicFacts) -> AcademicVerdict:
         for edge in edges:
             required = courses[edge.prerequisite_course_id]
             if required.id in passed_ids:
+                continue
+            if edge.is_corequisite and required.id in (
+                selected_ids | facts.co_selectable
+            ):
                 continue
             states = {
                 state
@@ -362,10 +368,11 @@ async def preview_academics(
     facts = await load_facts(
         db, student_id=student_id, term=term, section_ids=section_ids, preview=True
     )
+    offered = {section.course_id for section in facts.proposed}
     return {
-        section.id: evaluate_facts(replace(facts, proposed=[section])).sections[
-            section.id
-        ]
+        section.id: evaluate_facts(
+            replace(facts, proposed=[section], co_selectable=offered)
+        ).sections[section.id]
         for section in facts.proposed
     }
 
