@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from collections.abc import Collection
+from dataclasses import dataclass, field, replace
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +24,6 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     AcademicSectionVerdict,
     AcademicVerdict,
 )
-from cbpupsis_shared.domains.grading import client as grading
 from cbpupsis_shared.domains.grading.schemas import AcademicRecord
 from cbpupsis_shared.domains.sections import client as sections
 from cbpupsis_shared.domains.sections.schemas import RecordSection
@@ -57,9 +57,34 @@ class AcademicFacts:
     retake_courses: set[uuid.UUID] = field(default_factory=set)
 
 
-async def load_facts(db: AsyncSession, *, student_id, term, section_ids):
+_SEMESTER_TYPES = {
+    "first": "REGULAR",
+    "second": "REGULAR",
+    "first semester": "REGULAR",
+    "second semester": "REGULAR",
+    "summer": "SUMMER",
+    "summer term": "SUMMER",
+    "summer semester": "SUMMER",
+}
+
+
+async def load_facts(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term: AcademicTermRead,
+    section_ids: Collection[uuid.UUID],
+    preview: bool = False,
+) -> AcademicFacts:
+    # Grading reads enrollment history through the enrollment client.
+    from cbpupsis_shared.domains.grading import client as grading  # noqa: PLC0415
+
     if term is None:
         raise academic_data_unavailable()
+    if term.term_type is None:
+        term = term.model_copy(
+            update={"term_type": _SEMESTER_TYPES.get(term.semester.strip().lower())}
+        )
     student = await users.get_student_profile(db, student_id)
     if student is None:
         raise ResourceNotFoundError
@@ -75,7 +100,11 @@ async def load_facts(db: AsyncSession, *, student_id, term, section_ids):
     catalog = await curriculum.academic_catalog(
         db, student.curriculum_id, {s.course_id for s in [*proposed, *active]}
     )
-    if any(s.course_id not in catalog.placements for s in proposed):
+    if student.curriculum_id is None:
+        raise academic_data_unavailable()
+    if preview:
+        proposed = [s for s in proposed if s.course_id in catalog.placements]
+    elif any(s.course_id not in catalog.placements for s in proposed):
         raise academic_data_unavailable()
     record = await grading.academic_record(db, student_id)
     published_ids = {a.enrollment_item_id for a in record.attempts}
@@ -265,6 +294,25 @@ async def evaluate_academics(
     return evaluate_facts(
         await load_facts(db, student_id=student_id, term=term, section_ids=section_ids)
     )
+
+
+async def preview_academics(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term: AcademicTermRead,
+    section_ids: Collection[uuid.UUID],
+) -> dict[uuid.UUID, AcademicSectionVerdict]:
+    """Load authoritative facts once; candidates are alternatives, not a selection."""
+    facts = await load_facts(
+        db, student_id=student_id, term=term, section_ids=section_ids, preview=True
+    )
+    return {
+        section.id: evaluate_facts(replace(facts, proposed=[section])).sections[
+            section.id
+        ]
+        for section in facts.proposed
+    }
 
 
 def require_academics(verdict: AcademicVerdict) -> None:

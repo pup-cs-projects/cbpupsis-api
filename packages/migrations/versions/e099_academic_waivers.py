@@ -1,9 +1,9 @@
 """Explicit academic metadata and waiver workflow integrity/IAM.
 
 Revision ID: e099_academic_waivers
-Revises: a098_user_avatars
+Revises: e170_program_college
 
-No institutional mappings are guessed. NULL classifications/college/final-term
+No institutional mappings are guessed. NULL classifications/final-term
 must be populated by a reviewed owner-run import before production readiness.
 """
 
@@ -11,13 +11,12 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "e099_academic_waivers"
-down_revision = "a098_user_avatars"
+down_revision = "e170_program_college"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("programs", sa.Column("college", sa.String(100), nullable=True))
     op.add_column("courses", sa.Column("pe_sequence", sa.SmallInteger(), nullable=True))
     op.add_column("courses", sa.Column("is_nstp", sa.Boolean(), nullable=True))
     op.create_check_constraint(
@@ -118,4 +117,3 @@ def downgrade() -> None:
     op.drop_constraint("ck_courses_academic_classification", "courses", type_="check")
     op.drop_column("courses", "is_nstp")
     op.drop_column("courses", "pe_sequence")
-    op.drop_column("programs", "college")

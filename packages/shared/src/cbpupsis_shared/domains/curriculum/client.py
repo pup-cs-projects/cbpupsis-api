@@ -15,6 +15,7 @@ from cbpupsis_shared.domains.curriculum import service
 from cbpupsis_shared.domains.curriculum.schemas import (
     AcademicCatalog,
     CurriculumRead,
+    EnrollmentCourse,
     ProgramRead,
     ScheduleCourse,
 )
@@ -25,14 +26,39 @@ __all__ = [
     "ProgramRead",
     "academic_catalog",
     "active_programs_by_code",
+    "enrollment_courses",
     "get_curriculum",
     "get_prescribed_load",
     "get_program",
     "program_ids_in_scope",
+    "programs_by_ids",
     "record_courses",
     "schedule_courses",
     "stage_replace_prerequisites",
 ]
+
+
+async def programs_by_ids(
+    db: AsyncSession, ids: set[uuid.UUID]
+) -> dict[uuid.UUID, ProgramRead]:
+    return await service.programs_by_ids(db, ids)
+
+
+async def enrollment_courses(
+    db: AsyncSession,
+    *,
+    curriculum_id: uuid.UUID | None,
+    program_id: uuid.UUID,
+    year_level: int,
+    semester: str,
+) -> list[EnrollmentCourse]:
+    return await service.enrollment_courses(
+        db,
+        curriculum_id=curriculum_id,
+        program_id=program_id,
+        year_level=year_level,
+        semester=semester,
+    )
 
 
 async def schedule_courses(

@@ -1,5 +1,3 @@
-"""Internal client for the enrollment domain: the extraction swap point."""
-
 from __future__ import annotations
 
 import uuid
@@ -7,26 +5,141 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cbpupsis_shared.domains.academics.schemas import AcademicTermRead
 from cbpupsis_shared.domains.enrollment import service
 from cbpupsis_shared.domains.enrollment.schemas import (
+    AvailableCourseRead,
+    EnrollmentSubmitRead,
     EnrollmentSummaryRead,
+    OverloadRequestFiledRead,
+    OverloadRequestRead,
     TermEnrollmentRead,
+    WaiverFile,
+    WaiverFiled,
 )
 from cbpupsis_shared.domains.enrollment.service import (
+    assess_overload_eligibility,
+    check_schedule_conflict,
+    check_unit_ceiling,
+    compute_effective_ceiling,
     enrolled_sections,
     record_enrollments,
 )
 
 __all__ = [
+    "AvailableCourseRead",
+    "EnrollmentSubmitRead",
     "EnrollmentSummaryRead",
+    "OverloadRequestFiledRead",
+    "OverloadRequestRead",
     "TermEnrollmentRead",
+    "assess_overload_eligibility",
+    "check_schedule_conflict",
+    "check_unit_ceiling",
+    "compute_effective_ceiling",
+    "decide_overload_request",
     "enrolled_sections",
     "evaluate_academics",
+    "file_overload_request",
+    "file_waiver",
+    "get_approved_overload_units",
     "get_enrollment_summary",
     "get_term_enrollment",
+    "list_available_courses",
+    "list_overload_requests",
     "record_enrollments",
     "require_academics",
+    "submit_enrollment",
 ]
+
+
+async def file_overload_request(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term: AcademicTermRead,
+    requested_units: int,
+    justification: str,
+    role: str = "student",
+    client_ip: str | None = None,
+) -> OverloadRequestFiledRead:
+    return await service.file_overload_request(
+        db,
+        student_id=student_id,
+        term=term,
+        requested_units=requested_units,
+        justification=justification,
+        role=role,
+        client_ip=client_ip,
+    )
+
+
+async def list_overload_requests(
+    db: AsyncSession,
+    *,
+    position: str,
+    department: str | None,
+    college: str | None,
+) -> list[OverloadRequestRead]:
+    return await service.list_overload_requests(
+        db,
+        position=position,
+        department=department,
+        college=college,
+    )
+
+
+async def decide_overload_request(
+    db: AsyncSession,
+    *,
+    overload_request_id: uuid.UUID,
+    decision: str,
+    remarks: str | None,
+    reviewer_id: uuid.UUID,
+    position: str,
+    department: str | None,
+    college: str | None,
+    client_ip: str | None = None,
+) -> OverloadRequestRead:
+    return await service.decide_overload_request(
+        db,
+        overload_request_id=overload_request_id,
+        decision=decision,
+        remarks=remarks,
+        reviewer_id=reviewer_id,
+        position=position,
+        department=department,
+        college=college,
+        client_ip=client_ip,
+    )
+
+
+async def list_available_courses(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term: AcademicTermRead,
+) -> list[AvailableCourseRead]:
+    return await service.list_available_courses(db, student_id=student_id, term=term)
+
+
+async def submit_enrollment(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term: AcademicTermRead,
+    section_ids: list[uuid.UUID],
+    client_ip: str | None,
+    role: str = "student",
+) -> EnrollmentSubmitRead:
+    return await service.submit_enrollment(
+        db,
+        student_id=student_id,
+        term=term,
+        section_ids=section_ids,
+        client_ip=client_ip,
+        role=role,
+    )
 
 
 async def evaluate_academics(db: AsyncSession, *, student_id, term, section_ids):
@@ -37,6 +150,16 @@ async def evaluate_academics(db: AsyncSession, *, student_id, term, section_ids)
     )
 
     return await evaluate(db, student_id=student_id, term=term, section_ids=section_ids)
+
+
+async def file_waiver(
+    db: AsyncSession, *, student_id: uuid.UUID, data: WaiverFile, ip_address: str | None
+) -> WaiverFiled:
+    from cbpupsis_shared.domains.enrollment import waiver  # noqa: PLC0415
+
+    return await waiver.file_waiver(
+        db, student_id=student_id, data=data, ip_address=ip_address
+    )
 
 
 def require_academics(verdict):
@@ -67,4 +190,12 @@ async def get_enrollment_summary(
         academic_term_id=academic_term_id,
         prescribed_load=prescribed_load,
         standing_reduction=standing_reduction,
+    )
+
+
+async def get_approved_overload_units(
+    db: AsyncSession, *, student_id: uuid.UUID, academic_term_id: uuid.UUID
+) -> Decimal:
+    return await service.get_approved_overload_units(
+        db, student_id=student_id, academic_term_id=academic_term_id
     )

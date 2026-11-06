@@ -26,10 +26,13 @@ from cbpupsis_database.models.iam import (
     Permission,
     Policy,
     PolicyPermission,
+    UserPolicy,
 )
+from cbpupsis_database.models.users import AdminProfile
 from cbpupsis_database.session import AsyncSessionLocal
 from cbpupsis_shared.domains.iam.constants import (
     ADMIN_GROUP,
+    ADMIN_POSITION_POLICIES,
     FACULTY_GROUP,
     STUDENT_GROUP,
     SUPERADMIN_GROUP,
@@ -93,6 +96,11 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("CreateWaiverRequest", "File your own prerequisite waiver request"),
     ("ReadWaiverRequest", "Read position-scoped prerequisite waiver requests"),
     ("ApproveWaiverRequest", "Record the assigned prerequisite waiver decision"),
+    ("ReadEnrollment", "Read your own enrollment eligibility and unit ceiling"),
+    ("CreateEnrollment", "Submit your own enrollment section selections"),
+    ("CreateOverloadRequest", "File your own enrollment overload request"),
+    ("ReadOverloadRequest", "Read overload requests within your Admin scope"),
+    ("ApproveOverloadRequest", "Approve or reject an in-scope overload request"),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -113,6 +121,11 @@ POLICIES: dict[str, list[str]] = {
     "ScheduleReader": ["ReadSchedule"],
     "WaiverRequestAuthor": ["CreateWaiverRequest"],
     "WaiverRequestAdmin": ["ReadWaiverRequest", "ApproveWaiverRequest"],
+    "EnrollmentReader": ["ReadEnrollment"],
+    "EnrollmentAuthor": ["CreateEnrollment"],
+    "OverloadRequestAuthor": ["CreateOverloadRequest"],
+    "OverloadRequestReader": ["ReadOverloadRequest"],
+    "OverloadRequestAdmin": ["ReadOverloadRequest", "ApproveOverloadRequest"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
@@ -150,6 +163,9 @@ GROUPS: dict[str, list[str]] = {
         "TranscriptReader",
         "ScheduleReader",
         "WaiverRequestAuthor",
+        "EnrollmentReader",
+        "EnrollmentAuthor",
+        "OverloadRequestAuthor",
     ],
     SUPERADMIN_GROUP: list(POLICIES),
 }
@@ -218,6 +234,18 @@ async def _ensure_group_policy(session, group_id: int, policy_id: int) -> None:
         session.add(GroupPolicy(group_id=group_id, policy_id=policy_id))
 
 
+async def _ensure_user_policy(session, user_id, policy_id: int) -> None:
+    """Attach ``policy_id`` directly to ``user_id`` if it is absent."""
+    exists = await session.scalar(
+        select(UserPolicy).where(
+            UserPolicy.user_id == user_id,
+            UserPolicy.policy_id == policy_id,
+        )
+    )
+    if exists is None:
+        session.add(UserPolicy(user_id=user_id, policy_id=policy_id))
+
+
 async def seed() -> None:
     """Create the baseline permissions, policies, and groups idempotently."""
     async with AsyncSessionLocal() as session:
@@ -243,6 +271,16 @@ async def seed() -> None:
             group = await _get_or_create_group(session, group_name)
             for policy_name in policy_names:
                 await _ensure_group_policy(session, group.id, policies[policy_name].id)
+
+        # Admin is one login role, but overload permissions differ by position.
+        # Backfill direct policies for existing accounts; account creation uses
+        # the same mapping for new accounts.
+        admin_profiles = list((await session.scalars(select(AdminProfile))).all())
+        for profile in admin_profiles:
+            for policy_name in ADMIN_POSITION_POLICIES.get(profile.position, ()):
+                await _ensure_user_policy(
+                    session, profile.user_id, policies[policy_name].id
+                )
 
         await session.commit()
     print("IAM seed complete.")

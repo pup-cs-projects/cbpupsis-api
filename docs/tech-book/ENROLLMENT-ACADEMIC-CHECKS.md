@@ -2,20 +2,11 @@
 
 ## Delivery boundary
 
-PR preparation, 2026-11-05: #168/#169 now exist in open dependency PR #209 at
-`15d377a250d0244f88a2669cc413ad515dd4ccaa`, not this branch's fr003 baseline.
-Real preview/submit wiring was verified in a separate local combined candidate;
-it is not part of this standalone #99 commit. Before merging with #209, port
-that wiring and reconcile e099 with e170, which also owns programs.college.
-Do not apply both unreconciled migrations. Original e099 is preserved here for
-review against its actual baseline; candidate-only results are not branch CI.
-
-The shared evaluator, waiver endpoints and guarded catalogue writer are present.
-The actual available-courses (#168) and submit (#169) endpoints are **not present
-on this branch's baseline**. No substitute routes were added. Their integration
-and real pending/refused -> approved/successful submit evidence remain required
-before issue #99 can be resolved. Required CI and approved promotion also remain
-delivery gates; local focused tests are not comprehensive QA acceptance.
+PR #209 supplies the real available-courses and submit endpoints on fr003.
+This change wires the shared academic evaluator into both and reconciles the
+migration chain. It does not implement certificate/assessment changes or
+replace the existing submit workflow. Local verification is not CI, reviewer
+approval, production-data readiness, or comprehensive QA acceptance.
 
 ## Endpoints
 
@@ -23,6 +14,8 @@ All paths below start with `/api/v1` and use the existing error envelope.
 
 | Method/path | Authorization | Response |
 | --- | --- | --- |
+| GET `/student/enrollment/available-courses?term=...` | Live student session + ReadEnrollment | Existing section list with academic verdict fields |
+| POST `/student/enrollment/submit` | Live student session + CreateEnrollment | Existing submission response, or academic refusal before allocation |
 | POST `/student/enrollment/waiver` | Live student session + CreateWaiverRequest, session-owned filing only | 202 `{waiverRequestId,state:"PENDING_CHAIR"}` |
 | GET `/admin/waiver-requests?limit=50&offset=0` | Live MFA-completed Admin session + ReadWaiverRequest | `{items,total,limit,offset}`, max limit 200 |
 | PATCH `/admin/waiver-requests/{waiverRequestId}` | Live MFA-completed Admin session + ApproveWaiverRequest | Updated waiver DTO |
@@ -64,22 +57,21 @@ The notification worker uses its existing delivery receipt; there is deliberatel
 no additional audit subscriber for the decision event. Filing stages one audit
 row and has account locking plus a partial unique live-edge index.
 
-## Shared evaluator contract and integration handoff
+## Shared evaluator and real enrollment consumers
 
 Use `enrollment.client.evaluate_academics(db, student_id=authenticated.id,
 term=resolved_academic_term, section_ids=proposed_final_section_ids)`.
-The term must be an academics-owned `AcademicTermRead`, with stored `term_type`.
+The term must be an academics-owned `AcademicTermRead`.
 It returns `AcademicVerdict`, does not enroll/allocate seats, and never commits.
 It batches owner-domain reads through clients; no SQL belongs in the consumer.
 
-- #168: call the evaluator for each candidate's proposed final selection and
-  merge `verdict.sections[section_id].model_dump(mode="json", by_alias=True)`
-  into the existing section response. Preserve non-academic blocker fields and
-  all seat/schedule/faculty data. For large lists, group candidates and reuse
-  authoritative input batches rather than issue per-edge SQL.
-- #169: recompute the verdict in the real submit transaction after stages 1-6,
-  then call `enrollment.client.require_academics(verdict)` before allocation.
-  Never trust a preview, client blockers, student tags or waiver state in a body.
+- Available-courses batches academic facts once and checks each candidate
+  against the student's active registrations independently. Visible PE choices
+  are alternatives. It omits off-curriculum candidates, retains the existing
+  section/seat/conflict fields, and fails closed on genuine missing metadata.
+- Submit recomputes and requires the verdict after schedule conflicts and
+  before the existing section lock and seat allocation. It never trusts a
+  preview, client blockers, student tags, or waiver state in a body.
 - #100/#101: use the same client precondition; certificate/assessment/add-drop
   implementation is not part of #99. Active registrations recognize existing
   `enrolled` plus ENROLLED_PENDING/OFFICIALLY_ENROLLED; dropped rows do not count.
@@ -124,20 +116,43 @@ are JSON strings, matching grading conventions.
 is the user's provisional implementation default, not confirmed institutional
 policy. Obtain confirmation before treating it as final handbook policy.
 
-Migration `e099_academic_waivers` follows actual baseline head a098_user_avatars.
+Migration `e099_academic_waivers` follows e170_program_college on the linear
+chain a098_user_avatars -> e167_enrollment -> e170_program_college -> e099.
 It reuses the existing prerequisite, waiver, enrollment, grade, audit and outbox
 tables. It adds nullable, explicit Course.pe_sequence/Course.is_nstp,
-Program.college, AcademicTerm.term_type, StudentProfile.graduating_final_term_id
-and the Registrar reviewer field; it does not guess institutional backfills.
+AcademicTerm.term_type, StudentProfile.graduating_final_term_id and the
+Registrar reviewer field; e170 owns Program.college and its CCIS backfill.
+Downgrading e099 does not remove e170 data.
 `is_nstp = NULL` means unreviewed classification; false + null sequence means
 reviewed ordinary course. PE sequence must be 1-4 and not NSTP.
 
-Before deployment, catalogue/users/academics owners must review and import
-classifications, program-to-college mappings, term types (REGULAR/SUMMER), and
-applicable graduating final terms. Missing academic data returns
+Stored term type is authoritative. Without it, explicit recognized semester
+labels (first/second, First/Second Semester, Summer/Summer Term/Summer Semester)
+resolve the type. Unknown labels are not defaulted to REGULAR.
+
+Before deployment, catalogue owners must supply a reviewed JSON manifest
+of exact course codes. For example, using synthetic codes only:
+
+```json
+[
+  {"course_code": "DEMO-ORDINARY", "is_nstp": false, "pe_sequence": null},
+  {"course_code": "DEMO-PE-1", "is_nstp": false, "pe_sequence": 1},
+  {"course_code": "DEMO-NSTP", "is_nstp": true, "pe_sequence": null}
+]
+```
+
+Use `python -m scripts.seed_course_classifications <reviewed-manifest.json>`
+to validate without writing, then `--apply` only after the owner approves the
+target database and manifest. The import rejects unknown/duplicate codes and
+contradictory classifications; unspecified courses are not defaulted.
+Verify coverage for active curricula before enabling enrollment. Academics and
+users owners supply any nonstandard term types and applicable graduating final
+terms. Missing academic data returns
 ENROLL_ACADEMIC_DATA_UNAVAILABLE; missing department/college metadata grants
 no scoped reviewer access. Synthetic test mappings do not prove production
-readiness. Existing duplicate live waiver edges require operator review before
+readiness. A read-only dev Neon audit at e170 found 53 courses and no explicit
+classification columns; a reviewed mapping is still a rollout blocker.
+Existing duplicate live waiver edges require operator review before
 the unique index can be applied. No automatic rejection/deletion is performed.
 
 Seed/grant the three permissions using `scripts.seed_iam`; Admins get review
@@ -162,8 +177,10 @@ No catalogue administration route is introduced.
 `tests/domains/enrollment/test_prerequisites.py` and `test_waiver.py` map rules
 to AC-ENRL-002.1-.10. They cover owner reads, exact pass boundary, blocking
 marks, unique-credit gates, PE/final-term evidence, waiver lifecycle/scope,
-live MFA and permission enforcement, effects and rollback. Actual submit is
-absent and is **not** claimed by the service-level pending/approved test.
+live MFA and permission enforcement, effects and rollback. The affected
+available-courses/submit tests also exercise independent PE choices, off-curriculum
+isolation, stage-7 refusal before seat locking, and the same real submit
+succeeding after final waiver approval.
 
 Opt-in PostgreSQL checks use `ISSUE99_POSTGRES_URL` pointing **only to a migrated
 disposable database**: graph writer contention in curriculum, and duplicate

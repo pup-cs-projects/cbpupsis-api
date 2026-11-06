@@ -18,6 +18,7 @@ class ProgramRead(BaseModel):
     name: str
     department: str
     college: str | None = None
+    total_units_required: Decimal
     is_active: bool
 
 
@@ -45,6 +46,18 @@ class ScheduleCourse(BaseModel):
     """Course catalog fields used by student schedules."""
 
     model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    course_code: str
+    title: str
+    lecture_units: Decimal
+    lab_units: Decimal
+
+
+class EnrollmentCourse(BaseModel):
+    """Curriculum course fields used while composing enrollment choices."""
+
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     course_code: str
     title: str

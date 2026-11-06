@@ -934,9 +934,9 @@ each build creates its own.
 ## Conventions worth keeping
 
 Academic enrollment checks and prerequisite waivers follow the
-[#99 contract](ENROLLMENT-ACADEMIC-CHECKS.md). The three waiver routes are
-implemented; real #168/#169 available-courses/submit integration remains a
-delivery dependency, not a simulated endpoint or a claim of issue completion.
+[#99 contract](ENROLLMENT-ACADEMIC-CHECKS.md). Available-courses reports
+per-candidate academic blockers; submit recomputes them before locking seats.
+Review, manual acceptance and approved data readiness are separate delivery gates.
 
 Student schedule reads and exports follow the
 [US-STU-003 contract](STUDENT-SCHEDULE.md), including weekly contact-hour totals,

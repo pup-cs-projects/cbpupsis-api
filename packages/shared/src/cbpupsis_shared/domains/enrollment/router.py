@@ -1,66 +1,18 @@
-"""Waiver HTTP contracts; app composition supplies its live MFA admin guard."""
+"""Admin waiver HTTP contracts; app composition supplies the live MFA guard."""
 
 import uuid
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_core.exceptions import ForbiddenError
 from cbpupsis_core.pagination import Page, PaginationParams
 from cbpupsis_database.session import get_db
-from cbpupsis_shared.domains.auth.dependencies import CurrentUser
 from cbpupsis_shared.domains.enrollment import waiver
-from cbpupsis_shared.domains.enrollment.constants import CREATE_WAIVER_REQUEST
 from cbpupsis_shared.domains.enrollment.schemas import (
     WaiverDecision,
-    WaiverFile,
-    WaiverFiled,
     WaiverRead,
     WaiverReviewer,
 )
-from cbpupsis_shared.domains.iam.dependencies import require_permission
-
-router = APIRouter()
-
-
-async def filing_student(
-    user: CurrentUser = Depends(require_permission(CREATE_WAIVER_REQUEST)),
-):
-    if user.role != "student":
-        raise ForbiddenError("A student session is required.", code="INSUFFICIENT_ROLE")
-    return user
-
-
-@router.post(
-    "/waiver",
-    status_code=202,
-    response_model=WaiverFiled,
-    responses={
-        409: {
-            "description": "ENROLL_PREREQUISITE_NOT_MET or ENROLL_WAIVER_PENDING; "
-            "eligibility is verified server-side."
-        }
-    },
-)
-async def file_waiver(
-    request: Request,
-    data: WaiverFile,
-    user: CurrentUser = Depends(filing_student),
-    db: AsyncSession = Depends(get_db),
-):
-    """File a session-owned unmet-edge waiver with CreateWaiverRequest.
-
-    Requires a live student session. Conditions: REPEATED_PREREQUISITE
-    (finalized 5.00 plus same-term retake, provisional policy), SUPERIOR_STANDING
-    (canonical cumulative GWA <= 1.75), GRADUATING (stored applicable final term).
-    No student identity or claims of eligibility are accepted in the body.
-    """
-    return await waiver.file_waiver(
-        db,
-        student_id=user.id,
-        data=data,
-        ip_address=request.client.host if request.client else None,
-    )
 
 
 def build_admin_router(read_guard, approve_guard):

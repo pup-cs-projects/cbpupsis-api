@@ -22,8 +22,8 @@ from cbpupsis_shared.domains.enrollment.academic import (
 from cbpupsis_shared.domains.enrollment.constants import PENDING_STATES, REVIEW_STEPS
 from cbpupsis_shared.domains.enrollment.exceptions import (
     DecisionRemarksRequiredError,
+    RequestAlreadyDecidedError,
     VpaaReferenceRequiredError,
-    WaiverAlreadyDecidedError,
     WaiverEligibilityError,
     WaiverPendingError,
     WaiverStepMismatchError,
@@ -100,7 +100,7 @@ async def file_waiver(
             and w.state == "APPROVED"
             for w in existing
         ):
-            raise WaiverAlreadyDecidedError
+            raise RequestAlreadyDecidedError("This waiver is already decided.")
         if any(
             w.prerequisite_course_code == data.prerequisite_course_code
             and w.state in PENDING_STATES
@@ -163,13 +163,13 @@ async def decide_waiver(
         if row is None:
             raise ResourceNotFoundError
         if row.state not in PENDING_STATES:
-            raise WaiverAlreadyDecidedError
+            raise RequestAlreadyDecidedError("This waiver is already decided.")
         if REVIEW_STEPS[reviewer.position] != row.state:
             raise WaiverStepMismatchError
         remarks = (data.remarks or "").strip()
         reference = (data.vpaa_reference or "").strip()
         if data.decision == "REJECT" and not remarks:
-            raise DecisionRemarksRequiredError
+            raise DecisionRemarksRequiredError("Rejection remarks are required.")
         if row.state == "PENDING_VPAA" and data.decision == "APPROVE" and not reference:
             raise VpaaReferenceRequiredError
         prior = row.state

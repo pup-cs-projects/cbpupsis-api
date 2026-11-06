@@ -19,6 +19,7 @@ from cbpupsis_shared.domains.curriculum.schemas import (
     AcademicCatalog,
     AcademicCourse,
     CurriculumRead,
+    EnrollmentCourse,
     PrerequisiteEdge,
     ProgramRead,
     RecordCourse,
@@ -59,6 +60,15 @@ async def get_program(db: AsyncSession, program_id: uuid.UUID) -> ProgramRead | 
     """Return a program by id, or ``None``."""
     row = await repository.get_program(db, program_id)
     return None if row is None else ProgramRead.model_validate(row)
+
+
+async def programs_by_ids(
+    db: AsyncSession, ids: set[uuid.UUID]
+) -> dict[uuid.UUID, ProgramRead]:
+    return {
+        row.id: ProgramRead.model_validate(row)
+        for row in await repository.list_programs_by_ids(db, ids)
+    }
 
 
 async def get_curriculum(
@@ -160,3 +170,23 @@ async def program_ids_in_scope(
     return await repository.program_ids_in_scope(
         db, department=department, college=college
     )
+
+
+async def enrollment_courses(
+    db: AsyncSession,
+    *,
+    curriculum_id: uuid.UUID | None,
+    program_id: uuid.UUID,
+    year_level: int,
+    semester: str,
+) -> list[EnrollmentCourse]:
+    return [
+        EnrollmentCourse.model_validate(row)
+        for row in await repository.list_enrollment_courses(
+            db,
+            curriculum_id=curriculum_id,
+            program_id=program_id,
+            year_level=year_level,
+            semester=semester,
+        )
+    ]

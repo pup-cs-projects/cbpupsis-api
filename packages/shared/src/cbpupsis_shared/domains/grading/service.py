@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
@@ -78,6 +78,36 @@ async def get_student_scholastic_standing(
         explanation=explanation,
         appeal_available=appeal,
     )
+
+
+async def get_previous_regular_term_gwa(
+    db: AsyncSession, *, student_id: uuid.UUID, before: date
+) -> Decimal | None:
+    evaluations = await repository.list_student_term_gpas(db, student_id=student_id)
+    terms = {
+        term.id: term
+        for term in await academics.record_terms(
+            db, {row.academic_term_id for row in evaluations}
+        )
+    }
+    eligible = [
+        row
+        for row in evaluations
+        if (term := terms.get(row.academic_term_id)) is not None
+        and term.end_date < before
+        and "summer" not in term.semester.lower()
+    ]
+    if not eligible:
+        return None
+    latest = max(
+        eligible,
+        key=lambda row: (
+            terms[row.academic_term_id].end_date,
+            row.calculated_at,
+            str(row.id),
+        ),
+    )
+    return Decimal(str(latest.term_gpa))
 
 
 def utc(value: datetime) -> datetime:

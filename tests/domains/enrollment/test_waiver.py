@@ -5,6 +5,7 @@ import uuid
 import pytest
 from sqlalchemy import func, select
 
+from cbpupsis_api_student.domains.student_enrollment.router import filing_student
 from cbpupsis_core.exceptions import AppError
 from cbpupsis_database.models.audit import AuditEntry
 from cbpupsis_database.models.curriculum import Program
@@ -18,7 +19,6 @@ from cbpupsis_shared.domains.auth.dependencies import CurrentUser
 from cbpupsis_shared.domains.auth.security import create_access_token
 from cbpupsis_shared.domains.enrollment import waiver
 from cbpupsis_shared.domains.enrollment.academic import evaluate_academics
-from cbpupsis_shared.domains.enrollment.router import filing_student
 from cbpupsis_shared.domains.enrollment.schemas import (
     WaiverDecision,
     WaiverFile,
