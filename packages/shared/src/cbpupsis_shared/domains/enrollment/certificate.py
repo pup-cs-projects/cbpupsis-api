@@ -229,7 +229,9 @@ async def _content(
     )
 
 
-async def _create(db, enrollment, *, actor_id, client_ip, reissue=False):
+async def _create(
+    db, enrollment, *, actor_id, client_ip, reissue=False, actor_role="student"
+):
     profile, registrations, stored = await _preconditions(db, enrollment)
     certificate_id, issued_at, token = (
         uuid.uuid4(),
@@ -261,7 +263,7 @@ async def _create(db, enrollment, *, actor_id, client_ip, reissue=False):
         prior_state={"status": old},
         new_state={"status": enrollment.enrollment_status},
         payload={
-            "actor_role": "admin" if reissue else "student",
+            "actor_role": actor_role,
             "client_ip": client_ip,
         },
         occurred_at=issued_at,
@@ -318,6 +320,7 @@ async def stage_reissue(
     actor_id,
     assessment: billing.StoredAssessment,
     client_ip=None,
+    actor_role="admin",
 ):
     """#101 calls inside its approval transaction. Never commit or roll back here.
 
@@ -338,7 +341,12 @@ async def stage_reissue(
     old.status, old.superseded_at = "SUPERSEDED", datetime.now(UTC)
     await db.flush()  # Release partial-unique slot before creating its successor.
     return await _create(
-        db, enrollment, actor_id=actor_id, client_ip=client_ip, reissue=True
+        db,
+        enrollment,
+        actor_id=actor_id,
+        client_ip=client_ip,
+        reissue=True,
+        actor_role=actor_role,
     )
 
 

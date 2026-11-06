@@ -278,13 +278,3 @@ class BelowMinimumLoadError(ConflictError):
                 }
             },
         )
-
-
-class PrerequisiteNotMetError(ConflictError):
-    code = "ENROLL_PREREQUISITE_NOT_MET"
-
-    def __init__(self, *, course_code: str, details: dict | None = None) -> None:
-        super().__init__(
-            f"Prerequisite requirements for {course_code} are not satisfied.",
-            response_fields={"details": details or {"courseCode": course_code}},
-        )

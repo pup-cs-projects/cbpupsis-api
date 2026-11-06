@@ -101,6 +101,10 @@ async def available_sections(
     ]
 
 
+async def mark_seats_taken(db: AsyncSession, ids: Collection[uuid.UUID]) -> None:
+    await repository.mark_seats_taken(db, ids)
+
+
 async def lock_for_enrollment(
     db: AsyncSession, ids: Collection[uuid.UUID]
 ) -> list[ScheduleSection]:

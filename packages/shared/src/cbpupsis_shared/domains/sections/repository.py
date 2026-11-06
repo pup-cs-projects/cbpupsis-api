@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Collection
 from datetime import time
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.models.sections import CourseSection, SectionSchedule
@@ -87,6 +87,25 @@ async def list_available_sections(
         .limit(1001)
     )
     return sections, list(meetings)
+
+
+async def mark_seats_taken(db: AsyncSession, ids: Collection[uuid.UUID]) -> None:
+    """Write a new version of sections whose seats were just allocated.
+
+    A REPEATABLE READ writer that locks one of these rows afterwards then fails
+    with a serialization error and retries, instead of counting seats from a
+    snapshot that predates this allocation. The caller holds the row locks.
+
+    SQL::
+
+        UPDATE course_sections SET capacity = capacity WHERE id IN (:ids);
+    """
+    await db.execute(
+        update(CourseSection)
+        .where(CourseSection.id.in_(list(ids)))
+        .values(capacity=CourseSection.capacity)
+        .execution_options(synchronize_session=False)
+    )
 
 
 async def lock_sections_for_enrollment(db: AsyncSession, ids: Collection[uuid.UUID]):

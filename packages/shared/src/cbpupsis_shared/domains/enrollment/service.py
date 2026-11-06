@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, time
 from decimal import Decimal
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.config import settings
@@ -19,8 +19,10 @@ from cbpupsis_shared.domains.auth.exceptions import ResourceNotFoundError
 from cbpupsis_shared.domains.billing import client as billing
 from cbpupsis_shared.domains.curriculum import client as curriculum
 from cbpupsis_shared.domains.enrollment import academic, repository
+from cbpupsis_shared.domains.enrollment.certificate import stage_reissue
 from cbpupsis_shared.domains.enrollment.constants import (
     ADD_DROP_APPROVED,
+    ADD_DROP_DECISION_ATTEMPTS,
     ADD_DROP_PENDING,
     ADD_DROP_REJECTED,
     ADD_DROP_REQUEST_DECIDED_ACTION,
@@ -47,6 +49,7 @@ from cbpupsis_shared.domains.enrollment.constants import (
 from cbpupsis_shared.domains.enrollment.exceptions import (
     AddDropPeriodClosedError,
     BelowMinimumLoadError,
+    CorNotFinal,
     DecisionRemarksRequiredError,
     EnrollmentFinancialHoldError,
     EnrollmentHoldActiveError,
@@ -617,6 +620,7 @@ async def submit_enrollment(
             for section_id in sorted(section_ids, key=str):
                 if occupied.get(section_id, 0) >= locked_by_id[section_id].capacity:
                     raise EnrollmentSectionFullError(section_id=section_id)
+            await sections.mark_seats_taken(db, section_ids)
 
             enrollment_row = repository.add_term_enrollment(
                 db,
@@ -1283,6 +1287,16 @@ async def file_add_drop_request(
             _selected_conflict_sections(term, resulting_sections, courses_by_id),
         )
 
+        academic.require_academics(
+            await academic.evaluate_changes(
+                db,
+                student_id=student_id,
+                term=term,
+                add_section_ids=add_ids,
+                drop_section_ids=drop_ids,
+            )
+        )
+
     drop_tuples = [(item.section_id, item.reason) for item in request_data.drop]
     request_row = repository.add_add_drop_request(
         db,
@@ -1384,10 +1398,56 @@ async def decide_add_drop_request(
     client_ip: str | None = None,
     version: int,
 ) -> AdminAddDropRequestRead:
+    """Decide one request, retrying an approval that lost a snapshot race."""
     if position not in {"chairperson", "dean"}:
         raise ForbiddenError(
             "Only a Chairperson or College Dean may decide an add/drop request."
         )
+
+    for attempt in range(ADD_DROP_DECISION_ATTEMPTS):
+        try:
+            return await _decide_add_drop_request(
+                db,
+                request_id=request_id,
+                decision=decision,
+                remarks=remarks,
+                reviewer_id=reviewer_id,
+                position=position,
+                department=department,
+                college=college,
+                client_ip=client_ip,
+                version=version,
+            )
+        except DBAPIError as exc:
+            await db.rollback()
+            if getattr(exc.orig, "sqlstate", None) not in {"40001", "40P01"}:
+                raise
+            if attempt == ADD_DROP_DECISION_ATTEMPTS - 1:
+                raise ConflictError(
+                    "Request concurrency conflict. Please refresh and try again.",
+                    code="REQUEST_CONCURRENCY_CONFLICT",
+                ) from None
+    raise AssertionError("unreachable")
+
+
+async def _decide_add_drop_request(
+    db: AsyncSession,
+    *,
+    request_id: uuid.UUID,
+    decision: str,
+    remarks: str | None,
+    reviewer_id: uuid.UUID,
+    position: str,
+    department: str | None,
+    college: str | None,
+    client_ip: str | None,
+    version: int,
+) -> AdminAddDropRequestRead:
+    if decision == "APPROVE":
+        # Approval reissues the COR, which needs one snapshot for the whole
+        # transaction. Finish the authentication reads first, as issuance does.
+        await db.commit()
+        await repository.begin_certificate_snapshot(db)
 
     request_row = await repository.get_add_drop_request_for_update(db, request_id)
     if request_row is None:
@@ -1441,9 +1501,10 @@ async def decide_add_drop_request(
                 for sid in sorted(add_ids, key=str):
                     if seat_counts.get(sid, 0) >= locked_by_id[sid].capacity:
                         raise EnrollmentSectionFullError(section_id=sid)
+                await sections.mark_seats_taken(db, add_ids)
 
-            term_enrollment = await repository.get_term_enrollment(
-                db, request_row.student_id, request_row.academic_term_id
+            term_enrollment = await repository.enrollment(
+                db, request_row.student_id, request_row.academic_term_id, lock=True
             )
             if term_enrollment is None:
                 raise ResourceNotFoundError
@@ -1541,6 +1602,16 @@ async def decide_add_drop_request(
                     ),
                 )
 
+                academic.require_academics(
+                    await academic.evaluate_changes(
+                        db,
+                        student_id=request_row.student_id,
+                        term=term,
+                        add_section_ids=add_ids,
+                        drop_section_ids=drop_ids,
+                    )
+                )
+
             for item in request_row.items:
                 if item.action == "DROP":
                     sce = await repository.get_student_course_enrollment(
@@ -1562,8 +1633,33 @@ async def decide_add_drop_request(
                             section_ids=[item.section_id],
                         )
 
-            # Note: Official COR reissue (via certificate.stage_reissue) and billing
-            # assessment (via billing.stage_assessment) hook into PR #214 upon merge.
+            await db.flush()
+            try:
+                assessment = await billing.stage_assessment(
+                    db,
+                    student_id=request_row.student_id,
+                    term_id=term.id,
+                    courses=[
+                        billing.AssessmentCourse(
+                            section_id=sid, units=section_units[sid]
+                        )
+                        for sid in sorted(resulting_section_ids, key=str)
+                    ],
+                    due_date=_as_utc(term.add_drop_deadline).date(),
+                )
+            except billing.AssessmentInvalid:
+                raise CorNotFinal(["NO_ASSESSMENT"]) from None
+            # A student who has not issued a COR yet has nothing to supersede.
+            if await repository.current(db, term_enrollment.id, lock=True):
+                await stage_reissue(
+                    db,
+                    student_id=request_row.student_id,
+                    term_id=term.id,
+                    actor_id=reviewer_id,
+                    assessment=assessment,
+                    client_ip=client_ip,
+                    actor_role=position,
+                )
 
         prior = {
             "state": request_row.state,

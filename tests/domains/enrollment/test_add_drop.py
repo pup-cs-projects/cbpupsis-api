@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
@@ -7,12 +8,15 @@ from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
+from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cbpupsis_core.config import settings
 from cbpupsis_core.events import Event
 from cbpupsis_database.models.academics import AcademicTerm
 from cbpupsis_database.models.audit import AuditEntry
+from cbpupsis_database.models.billing import FeeStructure
 from cbpupsis_database.models.curriculum import (
     Course,
     Curriculum,
@@ -119,7 +123,7 @@ async def _course(
     code: str,
     title: str,
     units: Decimal = Decimal("3"),
-    year_level: int = 3,
+    year_level: int = 2,
     semester: str = "First Semester",
 ) -> Course:
     course = Course(
@@ -128,6 +132,7 @@ async def _course(
         lecture_units=units,
         lab_units=Decimal("0"),
         is_active=True,
+        is_nstp=False,
     )
     db.add(course)
     await db.flush()
@@ -205,7 +210,7 @@ async def _student(
             student_number=number,
             program_id=program.id,
             curriculum_id=curriculum.id,
-            year_level=3,
+            year_level=2,
             enrollment_status="enrolled",
         )
     )
@@ -327,7 +332,15 @@ async def _admin(
 
 
 @pytest.fixture
-async def add_drop_setup(db: AsyncSession):
+async def add_drop_setup(db: AsyncSession, monkeypatch):
+    monkeypatch.setattr(
+        settings,
+        "cor_encryption_key",
+        SecretStr(base64.urlsafe_b64encode(bytes(range(32))).decode()),
+    )
+    monkeypatch.setattr(
+        settings, "frontend_base_url_student", "https://student.example.test"
+    )
     term = await _term(db, add_drop_open=True)
     program, curriculum = await _program(
         db, code="BSCS", department="Computer Science", college="CCIS"
@@ -366,7 +379,7 @@ async def add_drop_setup(db: AsyncSession):
 
     # Conflicting section (same day/time as S1)
     c7 = await _course(
-        db, curriculum=curriculum, code="CS317", title="Subject 7", year_level=4
+        db, curriculum=curriculum, code="CS317", title="Subject 7", year_level=1
     )
     s7 = await _section(
         db,
@@ -380,7 +393,7 @@ async def add_drop_setup(db: AsyncSession):
 
     # Full section (capacity 1)
     c8 = await _course(
-        db, curriculum=curriculum, code="CS318", title="Subject 8", year_level=4
+        db, curriculum=curriculum, code="CS318", title="Subject 8", year_level=1
     )
     s8 = await _section(
         db,
@@ -400,6 +413,16 @@ async def add_drop_setup(db: AsyncSession):
         curriculum=curriculum,
     )
     te, sces, cor = await _enroll(db, student=student, term=term, sections=sections)
+    db.add(
+        FeeStructure(
+            program_id=program.id,
+            academic_term_id=term.id,
+            tuition_per_unit=Decimal("100"),
+            registration_fee=Decimal("50"),
+            lab_fee=Decimal("25"),
+            misc_fee=Decimal("75"),
+        )
+    )
     await db.commit()
 
     await _grant_action(
@@ -553,10 +576,7 @@ async def test_ac_enrl_004_2_chair_or_dean_approves_updates_enrollment_and_asses
     assert added_sec is not None
     assert added_sec.status == "enrolled"
 
-    # Note on billing assessment & COR reissue:
-    # Staging assessment (billing.stage_assessment) and COR reissue
-    # (certificate.stage_reissue) integrate via PR #214 (Issue #100).
-    # Assessment staging assertions will be added upon merging PR #214.
+    # test_enrollment_flow.py covers the assessment and the new certificate.
 
 
 async def test_ac_enrl_004_2_failure_rollback_preserves_pending(
@@ -899,7 +919,7 @@ async def test_ac_enrl_004_10_addition_validation_refusals(
     # 3. Unit ceiling exceeded: Prescribed load is 18. Currently 15 units.
     # Adding two 3-unit courses (CS316 and a new CS319) = 15 + 6 = 21 units > 18.
     c9 = await _course(
-        db, curriculum=s["curriculum"], code="CS319", title="Subject 9", year_level=4
+        db, curriculum=s["curriculum"], code="CS319", title="Subject 9", year_level=1
     )
     s9 = await _section(
         db,

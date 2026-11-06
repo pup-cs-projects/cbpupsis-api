@@ -62,7 +62,10 @@ async def list_add_drop_requests(
             )
         },
         409: {
-            "description": ("REQUEST_ALREADY_DECIDED or REQUEST_CONCURRENCY_CONFLICT.")
+            "description": "REQUEST_ALREADY_DECIDED, "
+            "REQUEST_CONCURRENCY_CONFLICT, the submit check codes for additions, or "
+            "COR_ENROLLMENT_NOT_FINAL when the assessment or certificate cannot be "
+            "updated. Nothing changes on a refusal."
         },
         422: {"description": "DECISION_REMARKS_REQUIRED for a blank rejection."},
     },
