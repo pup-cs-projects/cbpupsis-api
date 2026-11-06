@@ -300,6 +300,57 @@ async def evaluate_academics(
     )
 
 
+async def evaluate_registered(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term: AcademicTermRead,
+    section_ids: Collection[uuid.UUID],
+) -> AcademicVerdict:
+    """Re-check an existing registration, counting each registered course once.
+
+    ``load_facts`` also reads these sections as active history. They are the
+    subject here, so their own in-progress attempts must not count against them.
+    """
+    facts = await load_facts(
+        db, student_id=student_id, term=term, section_ids=section_ids
+    )
+    registered = {s.id for s in facts.proposed}
+    own_courses = {s.course_id for s in facts.proposed}
+    return evaluate_facts(
+        replace(
+            facts,
+            active=[s for s in facts.active if s.id not in registered],
+            unfinished_courses=facts.unfinished_courses - own_courses,
+            retake_courses=facts.retake_courses - own_courses,
+        )
+    )
+
+
+async def evaluate_changes(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term: AcademicTermRead,
+    add_section_ids: Collection[uuid.UUID],
+    drop_section_ids: Collection[uuid.UUID],
+) -> AcademicVerdict:
+    """Check additions against the registration that remains after the drops."""
+    facts = await load_facts(
+        db, student_id=student_id, term=term, section_ids=add_section_ids
+    )
+    dropped = set(drop_section_ids)
+    active = [s for s in facts.active if s.id not in dropped]
+    dropped_courses = {s.course_id for s in facts.active if s.id in dropped}
+    return evaluate_facts(
+        replace(
+            facts,
+            active=active,
+            retake_courses=facts.retake_courses - dropped_courses,
+        )
+    )
+
+
 async def preview_academics(
     db: AsyncSession,
     *,

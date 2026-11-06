@@ -1,12 +1,27 @@
-"""Explicit #99 integration seam. No verdict is safer than invented eligibility.
+"""The certificate's academic verdict, read from the shared evaluator.
 
-Replace this operation with the real shared #99 verdict once integrated. It must
-use the supplied transaction, check every selected section, and never commit.
-True means all prerequisite/gate/PE/waiver checks passed; False means violated.
+Uses the supplied transaction, checks every registered section, and never commits.
+True means all prerequisite, gate, PE, and waiver checks passed; False means one is
+violated. Missing academic data is CertificateUnavailable, never invented eligibility.
 """
 
-from cbpupsis_shared.domains.enrollment.exceptions import CertificateUnavailable
+from cbpupsis_shared.domains.academics import client as academics
+from cbpupsis_shared.domains.auth.exceptions import ResourceNotFoundError
+from cbpupsis_shared.domains.enrollment import academic
+from cbpupsis_shared.domains.enrollment.exceptions import (
+    AcademicDataUnavailableError,
+    CertificateUnavailable,
+)
 
 
 async def certificate_eligible(db, *, student_id, term_id, section_ids) -> bool:
-    raise CertificateUnavailable
+    term = await academics.get_academic_term(db, term_id)
+    if term is None:
+        raise CertificateUnavailable
+    try:
+        verdict = await academic.evaluate_registered(
+            db, student_id=student_id, term=term, section_ids=section_ids
+        )
+    except (AcademicDataUnavailableError, ResourceNotFoundError):
+        raise CertificateUnavailable from None
+    return not verdict.blockers
