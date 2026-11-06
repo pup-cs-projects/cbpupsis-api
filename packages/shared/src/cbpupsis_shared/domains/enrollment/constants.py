@@ -1,3 +1,7 @@
+"""Academic enrollment permissions and transition vocabulary."""
+
+from __future__ import annotations
+
 from decimal import Decimal
 
 READ_ENROLLMENT = "ReadEnrollment"
@@ -5,9 +9,14 @@ CREATE_ENROLLMENT = "CreateEnrollment"
 CREATE_OVERLOAD_REQUEST = "CreateOverloadRequest"
 READ_OVERLOAD_REQUEST = "ReadOverloadRequest"
 APPROVE_OVERLOAD_REQUEST = "ApproveOverloadRequest"
+CREATE_ADD_DROP_REQUEST = "CreateAddDropRequest"
+READ_ADD_DROP_REQUEST = "ReadAddDropRequest"
+APPROVE_ADD_DROP = "ApproveAddDrop"
 
 ENROLLED_PENDING = "ENROLLED_PENDING"
-ACTIVE_TERM_ENROLLMENT_STATUSES = frozenset({"enrolled", ENROLLED_PENDING})
+ACTIVE_TERM_ENROLLMENT_STATUSES = frozenset(
+    {"enrolled", ENROLLED_PENDING, "OFFICIALLY_ENROLLED"}
+)
 ACTIVE_COURSE_ENROLLMENT_STATUSES = frozenset({"enrolled", ENROLLED_PENDING})
 ENROLLMENT_SUBMITTED_EVENT = "enrollment.confirmed"
 ENROLLMENT_SUBMITTED_ACTION = "enrollment.submitted"
@@ -24,3 +33,27 @@ MAX_OVERLOAD_UNITS = Decimal("9")
 SUMMER_SUBJECT_CAP = 2
 SUMMER_RESTRICTED_ADMISSION_STATUSES = frozenset({"TRANSFEREE", "SHIFTEE", "RETURNEE"})
 BLOCKED_ACADEMIC_STANDINGS = frozenset({"COLLEGE DROPPING", "UNIVERSITY DISMISSAL"})
+
+CREATE_WAIVER_REQUEST = "CreateWaiverRequest"
+READ_WAIVER_REQUEST = "ReadWaiverRequest"
+APPROVE_WAIVER_REQUEST = "ApproveWaiverRequest"
+
+PENDING_STATES = ("PENDING_CHAIR", "PENDING_DEAN", "PENDING_VPAA")
+REVIEW_STEPS = {
+    "chairperson": "PENDING_CHAIR",
+    "dean": "PENDING_DEAN",
+    "registrar": "PENDING_VPAA",
+}
+ADD_DROP_DECISION_ATTEMPTS = 3
+ADD_DROP_PENDING = "PENDING"
+ADD_DROP_APPROVED = "APPROVED"
+ADD_DROP_REJECTED = "REJECTED"
+
+ADD_DROP_REQUEST_FILED_ACTION = "enrollment.add_drop_requested"
+ADD_DROP_REQUEST_DECIDED_ACTION = "enrollment.add_drop_decided"
+ADD_DROP_REQUEST_DECIDED_EVENT = "enrollment.add_drop_decided"
+
+TAG_PENDING_ADD = "PENDING_ADD"
+TAG_PENDING_DROP = "PENDING_DROP"
+
+MINIMUM_REGULAR_LOAD = Decimal("12.0")

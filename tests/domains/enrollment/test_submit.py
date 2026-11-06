@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -18,6 +18,7 @@ from cbpupsis_database import models as _models  # noqa: F401
 from cbpupsis_database.base import Base
 from cbpupsis_database.models.academics import AcademicTerm
 from cbpupsis_database.models.audit import AuditEntry
+from cbpupsis_database.models.billing import FeeStructure, StudentBillingAccount
 from cbpupsis_database.models.curriculum import (
     Course,
     Curriculum,
@@ -34,6 +35,7 @@ from cbpupsis_database.models.sections import CourseSection, SectionSchedule
 from cbpupsis_database.models.users import StudentProfile, User, UserProfile
 from cbpupsis_shared.domains.academics.schemas import AcademicTermRead
 from cbpupsis_shared.domains.auth.security import hash_password
+from cbpupsis_shared.domains.billing import client as billing
 from cbpupsis_shared.domains.enrollment import service as enrollment_service
 from cbpupsis_shared.domains.enrollment.constants import (
     CREATE_ENROLLMENT,
@@ -42,6 +44,7 @@ from cbpupsis_shared.domains.enrollment.constants import (
     ENROLLMENT_SUBMITTED_EVENT,
 )
 from cbpupsis_shared.domains.enrollment.exceptions import (
+    EnrollmentAssessmentUnavailableError,
     EnrollmentSectionFullError,
 )
 
@@ -78,6 +81,7 @@ async def _program_curriculum(
             title=f"Enrollment Course {index + 1}",
             lecture_units=Decimal("3"),
             lab_units=Decimal("0"),
+            is_nstp=False,
             is_active=True,
         )
         db.add(course)
@@ -86,7 +90,7 @@ async def _program_curriculum(
             CurriculumCourse(
                 curriculum_id=curriculum.id,
                 course_id=course.id,
-                year_level=3,
+                year_level=2,
                 semester=semester,
             )
         )
@@ -147,7 +151,7 @@ async def _student(
             student_number=number,
             program_id=program.id,
             curriculum_id=curriculum.id,
-            year_level=3,
+            year_level=2,
             enrollment_status="PENDING",
         )
     )
@@ -187,6 +191,22 @@ async def _section(
     )
     await db.flush()
     return section
+
+
+async def _fee_structure(
+    db: AsyncSession, *, program: Program, term: AcademicTerm
+) -> FeeStructure:
+    fee = FeeStructure(
+        program_id=program.id,
+        academic_term_id=term.id,
+        tuition_per_unit=Decimal("100"),
+        registration_fee=Decimal("50"),
+        lab_fee=Decimal("25"),
+        misc_fee=Decimal("75"),
+    )
+    db.add(fee)
+    await db.flush()
+    return fee
 
 
 async def _headers(client: AsyncClient, number: str) -> dict[str, str]:
@@ -238,6 +258,7 @@ async def submission(db: AsyncSession, grant):
         start=time(9),
         end=time(10),
     )
+    await _fee_structure(db, program=program, term=term)
     await db.commit()
     await grant(student.id, CREATE_ENROLLMENT)
     return {
@@ -261,8 +282,84 @@ def _body(submission, **extra) -> dict[str, object]:
     return body
 
 
+async def test_stage_seven_refuses_without_seats_then_accepts_approved_waiver(
+    client, db, submission, grant, monkeypatch
+):
+    from unittest.mock import AsyncMock
+
+    from cbpupsis_database.models.curriculum import CoursePrerequisite
+    from cbpupsis_shared.domains.enrollment import waiver
+    from cbpupsis_shared.domains.enrollment.constants import CREATE_WAIVER_REQUEST
+    from cbpupsis_shared.domains.enrollment.schemas import (
+        WaiverDecision,
+        WaiverReviewer,
+    )
+    from cbpupsis_shared.domains.sections import client as sections
+
+    student_id = submission["student"].id
+    reviewer_id = submission["other"].id
+    term_id = submission["term"].id
+    target, prerequisite = submission["courses"]
+    section_id = str(submission["sections"][0].id)
+    prerequisite_code = prerequisite.course_code
+    submission["program"].college = "CCIS"
+    profile = await db.get(StudentProfile, student_id)
+    profile.is_graduating_senior = True
+    profile.graduating_final_term_id = term_id
+    db.add(
+        CoursePrerequisite(course_id=target.id, prerequisite_course_id=prerequisite.id)
+    )
+    await db.commit()
+    await grant(student_id, CREATE_WAIVER_REQUEST)
+    headers = await _headers(client, "2026-00169-MN-0")
+    body = _body(submission, sectionIds=[section_id])
+    lock = AsyncMock(wraps=sections.lock_for_enrollment)
+    monkeypatch.setattr(sections, "lock_for_enrollment", lock)
+
+    response = await client.post(URL, json=body, headers=headers)
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "ENROLL_PREREQUISITE_NOT_MET"
+    assert response.json()["details"]["unmet"][0]["course"] == prerequisite_code
+    lock.assert_not_awaited()
+    filed = await client.post(
+        "/api/v1/student/enrollment/waiver",
+        headers=headers,
+        json={
+            "sectionId": section_id,
+            "prerequisiteCourseCode": prerequisite_code,
+            "condition": "GRADUATING",
+            "justification": "Synthetic graduating final-term fixture",
+        },
+    )
+    assert filed.status_code == 202, filed.text
+    waiver_id = uuid.UUID(filed.json()["waiverRequestId"])
+    pending = await client.post(URL, json=body, headers=headers)
+    assert pending.status_code == 409, pending.text
+    assert pending.json()["code"] == "ENROLL_WAIVER_PENDING"
+    lock.assert_not_awaited()
+    assert not await db.scalar(
+        select(TermEnrollment.id).where(TermEnrollment.student_id == student_id)
+    )
+    for position in ("chairperson", "dean", "registrar"):
+        await waiver.decide_waiver(
+            db,
+            reviewer=WaiverReviewer(
+                id=reviewer_id,
+                position=position,
+                department="Computer Science",
+                college="CCIS",
+            ),
+            waiver_id=waiver_id,
+            data=WaiverDecision(decision="APPROVE", vpaa_reference="SYNTHETIC-213"),
+        )
+    accepted = await client.post(URL, json=body, headers=headers)
+    assert accepted.status_code == 201, accepted.text
+    assert accepted.json()["status"] == ENROLLED_PENDING
+    lock.assert_awaited_once()
+
+
 async def test_ac_enrl_001_1_success_returns_pending_assessment(
-    client: AsyncClient, submission
+    client: AsyncClient, db: AsyncSession, submission
 ) -> None:
     response = await client.post(
         URL,
@@ -277,6 +374,21 @@ async def test_ac_enrl_001_1_success_returns_pending_assessment(
     assert {row["sectionId"] for row in data["sections"]} == {
         str(section.id) for section in submission["sections"]
     }
+    stored = await billing.read_stored_assessment(
+        db,
+        submission["student"].id,
+        submission["term"].id,
+    )
+    assert stored is not None
+    assert stored.assessment.amountAssessed == "750.00"
+    assert stored.assessment.subsidyApplied == "750.00"
+    assert stored.assessment.netPayable == "0.00"
+    assert {course.section_id for course in stored.inputs.courses} == {
+        section.id for section in submission["sections"]
+    }
+    account = await db.scalar(select(StudentBillingAccount))
+    assert account is not None
+    assert account.due_date == submission["term"].regular_enrollment_end.date()
 
 
 async def test_ac_enrl_001_10_ordered_refusals_write_nothing(
@@ -398,6 +510,64 @@ async def test_ac_enrl_001_10_assessment_failure_takes_no_seat(
     )
 
 
+async def test_ac_enrl_001_10_missing_fee_structure_refuses_with_a_conflict(
+    db: AsyncSession, submission
+) -> None:
+    await db.execute(delete(FeeStructure))
+    await db.commit()
+
+    with pytest.raises(EnrollmentAssessmentUnavailableError) as refused:
+        await enrollment_service.submit_enrollment(
+            db,
+            student_id=submission["student"].id,
+            term=AcademicTermRead.model_validate(submission["term"]),
+            section_ids=[section.id for section in submission["sections"]],
+            client_ip="127.0.0.1",
+        )
+
+    assert refused.value.code == "ENROLL_ASSESSMENT_UNAVAILABLE"
+    assert await db.scalar(select(func.count()).select_from(TermEnrollment)) == 0
+    assert (
+        await db.scalar(select(func.count()).select_from(StudentCourseEnrollment)) == 0
+    )
+
+
+async def test_ac_enrl_001_10_assessment_persistence_failure_rolls_back_enrollment(
+    db: AsyncSession, submission, monkeypatch
+) -> None:
+    stage_assessment = billing.stage_assessment
+
+    async def fail_assessment(*args, **kwargs):
+        await stage_assessment(*args, **kwargs)
+        raise billing.AssessmentInvalid
+
+    monkeypatch.setattr(billing, "stage_assessment", fail_assessment)
+
+    with pytest.raises(EnrollmentAssessmentUnavailableError):
+        await enrollment_service.submit_enrollment(
+            db,
+            student_id=submission["student"].id,
+            term=AcademicTermRead.model_validate(submission["term"]),
+            section_ids=[section.id for section in submission["sections"]],
+            client_ip="127.0.0.1",
+        )
+
+    assert await db.scalar(select(func.count()).select_from(TermEnrollment)) == 0
+    assert (
+        await db.scalar(select(func.count()).select_from(StudentCourseEnrollment)) == 0
+    )
+    assert await db.scalar(select(func.count()).select_from(StudentBillingAccount)) == 0
+    assert await db.scalar(select(func.count()).select_from(AuditEntry)) == 0
+    assert (
+        await db.scalar(
+            select(func.count())
+            .select_from(OutboxMessage)
+            .where(OutboxMessage.event_name == ENROLLMENT_SUBMITTED_EVENT)
+        )
+        == 0
+    )
+
+
 async def test_ac_enrl_001_12_replay_returns_original_without_second_seat(
     client: AsyncClient, db: AsyncSession, submission
 ) -> None:
@@ -497,6 +667,7 @@ async def test_ac_enrl_001_11_last_seat_never_oversells_in_100_submits(
                 title=f"Race Course {index}",
                 lecture_units=Decimal("1"),
                 lab_units=Decimal("0"),
+                is_nstp=False,
                 is_active=True,
             )
             setup_db.add(course)
@@ -505,11 +676,12 @@ async def test_ac_enrl_001_11_last_seat_never_oversells_in_100_submits(
                 CurriculumCourse(
                     curriculum_id=curriculum.id,
                     course_id=course.id,
-                    year_level=3,
+                    year_level=2,
                     semester="Race",
                 )
             )
             term = await _term(setup_db, year=f"RACE-{index:03}", semester="Race")
+            await _fee_structure(setup_db, program=program, term=term)
             first = await _student(
                 setup_db,
                 program=program,

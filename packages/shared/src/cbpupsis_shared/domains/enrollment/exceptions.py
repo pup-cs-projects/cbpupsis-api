@@ -1,10 +1,15 @@
+"""Stable academic enrollment, waiver, and certificate refusals.
+
+Certificate refusals never include token or record contents.
+"""
+
 from __future__ import annotations
 
 import uuid
 from datetime import time
 from decimal import Decimal
 
-from cbpupsis_core.exceptions import ConflictError, ValidationError
+from cbpupsis_core.exceptions import AppError, ConflictError, ValidationError
 
 
 def _display_units(value: Decimal) -> str:
@@ -164,15 +169,122 @@ class OverloadNotEligibleError(ConflictError):
         )
 
 
+class AcademicRefusalError(ConflictError):
+    """A structured refusal from the shared academic evaluator."""
+
+
+class AcademicDataUnavailableError(ConflictError):
+    code = "ENROLL_ACADEMIC_DATA_UNAVAILABLE"
+
+    def __init__(self):
+        super().__init__("Reviewed academic metadata is unavailable.")
+
+
+class EnrollmentAssessmentUnavailableError(ConflictError):
+    code = "ENROLL_ASSESSMENT_UNAVAILABLE"
+
+    def __init__(self):
+        super().__init__(
+            "Your assessment cannot be computed for this term yet. "
+            "Please contact the Registrar."
+        )
+
+
+class WaiverEligibilityError(ConflictError):
+    code = "ENROLL_PREREQUISITE_NOT_MET"
+
+    def __init__(self):
+        super().__init__("No qualifying unmet prerequisite and waiver condition.")
+
+
+class WaiverPendingError(ConflictError):
+    code = "ENROLL_WAIVER_PENDING"
+
+    def __init__(self):
+        super().__init__("A live waiver already exists.")
+
+
+class WaiverStepMismatchError(ConflictError):
+    code = "ENROLL_WAIVER_STEP_MISMATCH"
+
+    def __init__(self):
+        super().__init__("Reviewer is not assigned to this step.")
+
+
 class DecisionRemarksRequiredError(ValidationError):
     code = "DECISION_REMARKS_REQUIRED"
 
-    def __init__(self) -> None:
-        super().__init__("Remarks are required when rejecting an overload request.")
+    def __init__(
+        self, detail: str = "Remarks are required when rejecting a request."
+    ) -> None:
+        super().__init__(detail)
 
 
 class RequestAlreadyDecidedError(ConflictError):
     code = "REQUEST_ALREADY_DECIDED"
 
-    def __init__(self) -> None:
-        super().__init__("This overload request has already been decided.")
+    def __init__(self, detail: str = "This request has already been decided.") -> None:
+        super().__init__(detail)
+
+
+class VpaaReferenceRequiredError(ValidationError):
+    code = "VALIDATION_ERROR"
+
+    def __init__(self):
+        super().__init__("The external VPAA approval reference is required.")
+
+
+class CorNotEnrolled(ConflictError):
+    code = "COR_NOT_ENROLLED"
+
+    def __init__(self):
+        super().__init__("No enrollment exists for this term.")
+
+
+class CorNotFinal(ConflictError):
+    code = "COR_ENROLLMENT_NOT_FINAL"
+
+    def __init__(self, unmet=()):
+        super().__init__(
+            "Certificate enrollment is not final.",
+            response_fields={"details": {"unmet": list(unmet)}},
+        )
+
+
+class CertificateUnavailable(AppError):
+    status_code = 503
+    code = "SERVICE_UNAVAILABLE"
+
+    def __init__(self):
+        super().__init__("Certificate service is unavailable.")
+
+
+class AddDropPeriodClosedError(ConflictError):
+    code = "ENROLL_ADD_DROP_PERIOD_CLOSED"
+
+    def __init__(self, *, period_start: str, period_end: str) -> None:
+        super().__init__(
+            "Add and drop period is closed.",
+            response_fields={
+                "details": {
+                    "periodStart": period_start,
+                    "periodEnd": period_end,
+                }
+            },
+        )
+
+
+class BelowMinimumLoadError(ConflictError):
+    code = "ENROLL_BELOW_MINIMUM_LOAD"
+
+    def __init__(self, *, minimum_load: Decimal, units_after: Decimal) -> None:
+        super().__init__(
+            f"Dropping this course takes total units ({_display_units(units_after)}) "
+            f"below the minimum load of {_display_units(minimum_load)} units.",
+            response_fields={
+                "details": {
+                    "minimumLoad": _display_units(minimum_load),
+                    "unitsAfter": _display_units(units_after),
+                }
+            },
+        )

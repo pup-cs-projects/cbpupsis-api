@@ -19,6 +19,8 @@ from cbpupsis_shared.domains.enrollment.constants import (
     SUMMER_SUBJECT_CAP,
 )
 from cbpupsis_shared.domains.enrollment.schemas import (
+    AddDropRequestCreate,
+    AddDropRequestRead,
     AvailableCourseRead,
     CeilingStudent,
     EligibilityHoldRead,
@@ -136,6 +138,11 @@ async def get_eligibility(
     if profile is None or term is None:
         raise ResourceNotFoundError
 
+    curr_read = (
+        await curriculum.get_curriculum(db, profile.curriculum_id)
+        if profile.curriculum_id is not None
+        else None
+    )
     prescribed_load = await curriculum.get_prescribed_load(
         db,
         curriculum_id=profile.curriculum_id,
@@ -232,6 +239,10 @@ async def get_eligibility(
     return EnrollmentEligibilityRead(
         is_eligible=not reasons,
         term_type=term_type,
+        curriculum_id=profile.curriculum_id,
+        curriculum_version=(
+            curr_read.curriculum_year if curr_read is not None else None
+        ),
         prescribed_load=prescribed_load,
         approved_overload_units=approved_overload,
         standing_reduction=ceiling_student.standing_reduction,
@@ -242,4 +253,43 @@ async def get_eligibility(
         holds=holds,
         academic_period=current_period,
         reasons=reasons,
+    )
+
+
+async def file_add_drop_request(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    request_data: AddDropRequestCreate,
+    client_ip: str | None,
+) -> AddDropRequestRead:
+    return await enrollment.file_add_drop_request(
+        db,
+        student_id=student_id,
+        request_data=request_data,
+        client_ip=client_ip,
+    )
+
+
+async def get_student_add_drop_request(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    request_id: uuid.UUID,
+) -> AddDropRequestRead:
+    return await enrollment.get_student_add_drop_request(
+        db,
+        student_id=student_id,
+        request_id=request_id,
+    )
+
+
+async def list_student_add_drop_requests(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+) -> list[AddDropRequestRead]:
+    return await enrollment.list_student_add_drop_requests(
+        db,
+        student_id=student_id,
     )

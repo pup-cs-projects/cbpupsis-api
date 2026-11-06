@@ -3,9 +3,10 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, time
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic.alias_generators import to_camel
 
 
 class TermEnrollmentRead(BaseModel):
@@ -52,6 +53,75 @@ class EnrolledSection(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     section_id: uuid.UUID
     status: str
+
+
+class AcademicDTO(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        from_attributes=True,
+        extra="forbid",
+    )
+
+
+class AcademicBlock(AcademicDTO):
+    rule: str
+    course_code: str
+    blocking_mark: str | None = None
+    required_range: str | None = None
+    details: dict[str, object] = Field(default_factory=dict)
+
+
+class AcademicSectionVerdict(AcademicDTO):
+    prerequisites_satisfied: bool = True
+    block_reason: str | None = None
+    blocks: list[AcademicBlock] = Field(default_factory=list)
+    waiver_available: bool = False
+
+
+class AcademicVerdict(AcademicDTO):
+    sections: dict[uuid.UUID, AcademicSectionVerdict] = Field(default_factory=dict)
+    blockers: list[AcademicBlock] = Field(default_factory=list)
+
+
+WaiverCondition = Literal["REPEATED_PREREQUISITE", "SUPERIOR_STANDING", "GRADUATING"]
+Nonblank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+class WaiverFile(AcademicDTO):
+    section_id: uuid.UUID
+    prerequisite_course_code: Annotated[Nonblank, Field(max_length=20)]
+    condition: WaiverCondition
+    justification: Annotated[Nonblank, Field(max_length=4000)]
+
+
+class WaiverDecision(AcademicDTO):
+    decision: Literal["APPROVE", "REJECT"]
+    remarks: str | None = Field(default=None, max_length=4000)
+    vpaa_reference: str | None = Field(default=None, max_length=128)
+
+
+class WaiverFiled(AcademicDTO):
+    waiver_request_id: uuid.UUID
+    state: str
+
+
+class WaiverRead(WaiverFiled):
+    student_id: uuid.UUID
+    section_id: uuid.UUID
+    prerequisite_course_code: str
+    condition: str
+    justification: str
+    review_remarks: str | None
+    vpaa_reference: str | None
+    created_at: datetime
+
+
+class WaiverReviewer(BaseModel):
+    id: uuid.UUID
+    position: Literal["chairperson", "dean", "registrar"]
+    department: str | None = None
+    college: str | None = None
 
 
 class CeilingStudent(BaseModel):
@@ -102,6 +172,12 @@ class EnrollmentEligibilityRead(BaseModel):
 
     is_eligible: bool = Field(serialization_alias="isEligible")
     term_type: Literal["REGULAR", "SUMMER"] = Field(serialization_alias="termType")
+    curriculum_id: uuid.UUID | None = Field(
+        default=None, serialization_alias="curriculumId"
+    )
+    curriculum_version: str | None = Field(
+        default=None, serialization_alias="curriculumVersion"
+    )
     prescribed_load: Decimal = Field(serialization_alias="prescribedLoad")
     approved_overload_units: Decimal = Field(
         serialization_alias="approvedOverloadUnits"
@@ -148,6 +224,8 @@ class AvailableCourseRead(BaseModel):
         default=True, serialization_alias="prerequisitesSatisfied"
     )
     block_reason: str | None = Field(default=None, serialization_alias="blockReason")
+    blocks: list[AcademicBlock] = Field(default_factory=list)
+    waiver_available: bool = Field(default=False, serialization_alias="waiverAvailable")
     conflicts_with: list[uuid.UUID] = Field(
         default_factory=list, serialization_alias="conflictsWith"
     )
@@ -230,3 +308,78 @@ class OverloadRequestRead(BaseModel):
     remarks: str | None = None
     created_at: datetime = Field(serialization_alias="createdAt")
     reviewed_at: datetime | None = Field(default=None, serialization_alias="reviewedAt")
+
+
+class AddSectionItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    section_id: uuid.UUID = Field(alias="sectionId")
+
+
+class DropSectionItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    section_id: uuid.UUID = Field(alias="sectionId")
+    reason: str
+
+
+class AddDropRequestCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    add: list[AddSectionItem] = Field(default_factory=list)
+    drop: list[DropSectionItem] = Field(default_factory=list)
+    comments: str | None = None
+
+
+class AddDropCourseRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    section_id: uuid.UUID = Field(alias="sectionId")
+    course_code: str = Field(alias="courseCode")
+    course_title: str = Field(alias="courseTitle")
+    units: Decimal
+    tag: Literal["PENDING_ADD", "PENDING_DROP"]
+    reason: str | None = None
+
+
+class AddDropRequestRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    request_id: uuid.UUID = Field(alias="requestId")
+    student_id: uuid.UUID = Field(alias="studentId")
+    academic_term_id: uuid.UUID = Field(alias="academicTermId")
+    state: Literal["PENDING", "APPROVED", "REJECTED"]
+    units_before: Decimal = Field(alias="unitsBefore")
+    units_after: Decimal = Field(alias="unitsAfter")
+    comments: str | None = None
+    remarks: str | None = None
+    version: int = 1
+    courses: list[AddDropCourseRead] = Field(default_factory=list)
+    created_at: datetime = Field(alias="createdAt")
+    reviewed_at: datetime | None = Field(default=None, alias="reviewedAt")
+    reviewed_by: uuid.UUID | None = Field(default=None, alias="reviewedBy")
+
+
+class AddDropDecisionRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    decision: Literal["APPROVE", "REJECT"]
+    remarks: str | None = None
+    version: int
+
+
+class AdminAddDropRequestRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    request_id: uuid.UUID = Field(alias="requestId")
+    student_id: uuid.UUID = Field(alias="studentId")
+    student_number: str = Field(alias="studentNumber")
+    student_name: str = Field(alias="studentName")
+    program_code: str = Field(alias="programCode")
+    department: str
+    college: str | None
+    term: str
+    academic_term_id: uuid.UUID = Field(alias="academicTermId")
+    state: Literal["PENDING", "APPROVED", "REJECTED"]
+    units_before: Decimal = Field(alias="unitsBefore")
+    units_after: Decimal = Field(alias="unitsAfter")
+    comments: str | None = None
+    remarks: str | None = None
+    version: int = 1
+    courses: list[AddDropCourseRead] = Field(default_factory=list)
+    created_at: datetime = Field(alias="createdAt")
+    reviewed_at: datetime | None = Field(default=None, alias="reviewedAt")
+    reviewed_by: uuid.UUID | None = Field(default=None, alias="reviewedBy")

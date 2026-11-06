@@ -67,6 +67,7 @@ async def _curriculum(
             title=f"Course {index + 1}",
             lecture_units=Decimal("3"),
             lab_units=Decimal("0"),
+            is_nstp=False,
             is_active=True,
         )
         db.add(course)
@@ -75,7 +76,7 @@ async def _curriculum(
             CurriculumCourse(
                 curriculum_id=curriculum.id,
                 course_id=course.id,
-                year_level=3,
+                year_level=2,
                 semester="First Semester",
             )
         )
@@ -135,7 +136,7 @@ async def _student(
             student_number=number,
             program_id=program.id,
             curriculum_id=curriculum.id,
-            year_level=3,
+            year_level=2,
             enrollment_status="PENDING",
         )
     )
@@ -350,6 +351,8 @@ async def test_ac_enrl_001_9_endpoint_returns_every_section_field(
         "availableSlots",
         "prerequisitesSatisfied",
         "blockReason",
+        "blocks",
+        "waiverAvailable",
         "conflictsWith",
     }
     assert item["sectionId"] == str(section.id)
@@ -363,7 +366,62 @@ async def test_ac_enrl_001_9_endpoint_returns_every_section_field(
     assert item["availableSlots"] == 1
     assert item["prerequisitesSatisfied"] is True
     assert item["blockReason"] is None
+    assert item["blocks"] == []
+    assert item["waiverAvailable"] is False
     assert item["conflictsWith"] == []
+
+
+async def test_academic_preview_batches_independent_pe_and_omits_off_curriculum(
+    client, db, grant, monkeypatch
+):
+    from unittest.mock import AsyncMock
+
+    from cbpupsis_shared.domains.enrollment import academic
+    from cbpupsis_shared.domains.sections import client as sections
+
+    program, curriculum, courses = await _curriculum(
+        db, code="PR213-PE", course_codes=["DEMO-PE-1", "DEMO-PE-2"]
+    )
+    courses[0].pe_sequence, courses[1].pe_sequence = 1, 2
+    term = await _term(db)
+    number = "2026-00213-MN-0"
+    student = await _student(db, program=program, curriculum=curriculum, number=number)
+    off_course = Course(course_code="DEMO-OUTSIDE", title="Outside curriculum")
+    db.add(off_course)
+    await db.flush()
+    for course in [*courses, off_course]:
+        await _section(
+            db, term=term, course=course, name="A", start=time(9), end=time(10)
+        )
+    await db.commit()
+    await grant(student.id, READ_ENROLLMENT)
+    headers = await _headers(client, number)
+    original = sections.available_sections
+
+    async def include_drift(db, *, academic_term_id, course_ids):
+        return await original(
+            db,
+            academic_term_id=academic_term_id,
+            course_ids={*course_ids, off_course.id},
+        )
+
+    monkeypatch.setattr(sections, "available_sections", include_drift)
+    load = AsyncMock(wraps=academic.load_facts)
+    monkeypatch.setattr(academic, "load_facts", load)
+    params = {"term": "2026-2027-First Semester"}
+    response = await client.get(URL, params=params, headers=headers)
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert {row["courseCode"] for row in rows} == {"DEMO-PE-1", "DEMO-PE-2"}
+    assert all(row["blocks"] == [] for row in rows)
+    load.assert_awaited_once()
+
+    courses[0].pe_sequence = None
+    courses[0].is_nstp = None
+    await db.commit()
+    response = await client.get(URL, params=params, headers=headers)
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "ENROLL_ACADEMIC_DATA_UNAVAILABLE"
 
 
 async def test_ac_enrl_001_9_scopes_program_term_and_student_conflicts(
