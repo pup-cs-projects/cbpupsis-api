@@ -57,6 +57,7 @@ TRANSITIONS: frozenset[str] = frozenset(
         "ApproveOverloadRequest",
         "ApproveWaiverRequest",
         "IssueCertificate",
+        "ApproveAddDrop",
     }
 )
 

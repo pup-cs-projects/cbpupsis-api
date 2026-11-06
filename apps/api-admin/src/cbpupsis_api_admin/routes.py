@@ -12,6 +12,9 @@ from collections.abc import Callable
 
 from fastapi import FastAPI
 
+from cbpupsis_api_admin.domains.add_drop_requests.router import (
+    router as add_drop_requests_router,
+)
 from cbpupsis_api_admin.domains.admin_auth.dependencies import require_waiver_reviewer
 from cbpupsis_api_admin.domains.admin_auth.router import (
     protected_router as admin_router,
@@ -49,6 +52,11 @@ MOUNTS: tuple[RouterMount, ...] = (
         overload_requests_router,
         "/admin/overload-requests",
         "admin-overload-requests",
+    ),
+    RouterMount(
+        add_drop_requests_router,
+        "/admin/add-drop",
+        "admin-add-drop",
     ),
     IAM,
     AUDIT,

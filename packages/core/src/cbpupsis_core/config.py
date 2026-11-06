@@ -13,6 +13,7 @@ import json
 import os
 from base64 import urlsafe_b64decode
 from collections.abc import MutableMapping
+from decimal import Decimal
 from functools import lru_cache
 from typing import Any, Literal, Protocol
 from urllib.parse import urlsplit
@@ -257,6 +258,10 @@ class Settings(BaseSettings):
     frontend_base_url_faculty: str | None = None
     frontend_base_url_admin: str | None = None
     frontend_base_url_superadmin: str | None = None
+
+    # --- Enrollment ---
+    #: Minimum regular semester load required during add/drop adjustments.
+    enrollment_minimum_regular_load: Decimal = Field(default=Decimal("12.0"))
 
     @property
     def email_enabled(self) -> bool:

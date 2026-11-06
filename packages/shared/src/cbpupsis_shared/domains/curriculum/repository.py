@@ -341,3 +341,18 @@ async def program_ids_in_scope(
     if college is not None:
         stmt = stmt.where(Program.college == college)
     return list(await db.scalars(stmt))
+
+
+async def list_curriculum_course_ids(
+    db: AsyncSession, curriculum_id: uuid.UUID
+) -> set[uuid.UUID]:
+    """Return all course IDs mapped to the specified curriculum.
+
+    SQL::
+
+        SELECT course_id FROM curriculum_courses WHERE curriculum_id = :curriculum_id;
+    """
+    stmt = select(CurriculumCourse.course_id).where(
+        CurriculumCourse.curriculum_id == curriculum_id
+    )
+    return set(await db.scalars(stmt))

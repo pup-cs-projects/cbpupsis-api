@@ -61,6 +61,22 @@ standing, and missing curriculum load as `isEligible: false` reasons in a 200
 response. Those are state, not request errors. Missing `ReadEnrollment` remains
 the standard 403 missing-permission response.
 
+## Add and drop requests (US-ENRL-004)
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 409 | `ENROLL_ADD_DROP_PERIOD_CLOSED` | The add and drop request was filed outside the academic term's add/drop deadline. `details` includes `periodStart` and `periodEnd`. |
+| 409 | `ENROLL_BELOW_MINIMUM_LOAD` | Dropping course(s) takes total credit load below the minimum regular load of 12.0 units. `details` includes `minimumLoad` and `unitsAfter`. |
+| 409 | `ENROLL_PREREQUISITE_NOT_MET` | A course requested to be added has unmet prerequisites. |
+| 409 | `ENROLL_SECTION_FULL` | An added section had no available seat at commit time. |
+| 409 | `ENROLL_SCHEDULE_CONFLICT` | An added section conflicts in schedule with another added or retained enrolled section. |
+| 409 | `ENROLL_UNIT_CEILING_EXCEEDED` | The resulting schedule exceeds the student's curriculum-derived unit ceiling. |
+| 409 | `REQUEST_ALREADY_DECIDED` | An add/drop request already has an approved or rejected decision. |
+| 409 | `REQUEST_CONCURRENCY_CONFLICT` | A concurrent update changed the request version before decision commit. |
+| 422 | `DECISION_REMARKS_REQUIRED` | A Chairperson or Dean rejected an add/drop request without non-blank remarks. |
+| 404 | `RESOURCE_NOT_FOUND` | Student attempting to read another student's request, or admin reviewing a request outside their department/college scope (anti-probing). |
+| 403 | — | Registrar attempting to mutate/decide an add/drop request lacks the required permission (`require_permission(APPROVE_ADD_DROP)`). |
+
 ## The envelope
 
 Every known application error has the same body:

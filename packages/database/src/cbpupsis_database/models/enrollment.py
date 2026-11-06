@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 import sqlalchemy as sa
 from sqlalchemy import (
@@ -12,13 +13,15 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    Integer,
+    Numeric,
     SmallInteger,
     String,
     Text,
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from cbpupsis_database.base import Base, UUIDMixin
 
@@ -137,26 +140,54 @@ class AddDropRequest(UUIDMixin, Base):
     __tablename__ = "add_drop_requests"
 
     student_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE")
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    section_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("course_sections.id", ondelete="CASCADE")
+    academic_term_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("academic_terms.id", ondelete="CASCADE"), default=None, index=True
     )
-    request_type: Mapped[str] = mapped_column(String(20))
-    reason: Mapped[str] = mapped_column(String(100))
     comments: Mapped[str | None] = mapped_column(Text, default=None)
     status: Mapped[str] = mapped_column(
         String(20), default="submitted", server_default="submitted"
+    )
+    state: Mapped[str] = mapped_column(
+        String(20), default="PENDING", server_default="PENDING", index=True
     )
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), default=None
     )
     review_notes: Mapped[str | None] = mapped_column(Text, default=None)
+    remarks: Mapped[str | None] = mapped_column(Text, default=None)
+    units_before: Mapped[Decimal | None] = mapped_column(Numeric(4, 1), default=None)
+    units_after: Mapped[Decimal | None] = mapped_column(Numeric(4, 1), default=None)
     reviewed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+    items: Mapped[list[AddDropRequestItem]] = relationship(
+        "AddDropRequestItem", back_populates="request", cascade="all, delete-orphan"
+    )
+
+
+class AddDropRequestItem(UUIDMixin, Base):
+    """Individual course section added or dropped within an AddDropRequest."""
+
+    __tablename__ = "add_drop_request_items"
+
+    request_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("add_drop_requests.id", ondelete="CASCADE"), index=True
+    )
+    section_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("course_sections.id", ondelete="RESTRICT"), index=True
+    )
+    action: Mapped[str] = mapped_column(String(10))  # "ADD" or "DROP"
+    reason: Mapped[str | None] = mapped_column(String(100), default=None)
+
+    request: Mapped[AddDropRequest] = relationship(
+        "AddDropRequest", back_populates="items"
     )
 
 

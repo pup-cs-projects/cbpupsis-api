@@ -302,3 +302,78 @@ class OverloadRequestRead(BaseModel):
     remarks: str | None = None
     created_at: datetime = Field(serialization_alias="createdAt")
     reviewed_at: datetime | None = Field(default=None, serialization_alias="reviewedAt")
+
+
+class AddSectionItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    section_id: uuid.UUID = Field(alias="sectionId")
+
+
+class DropSectionItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    section_id: uuid.UUID = Field(alias="sectionId")
+    reason: str
+
+
+class AddDropRequestCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    add: list[AddSectionItem] = Field(default_factory=list)
+    drop: list[DropSectionItem] = Field(default_factory=list)
+    comments: str | None = None
+
+
+class AddDropCourseRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    section_id: uuid.UUID = Field(alias="sectionId")
+    course_code: str = Field(alias="courseCode")
+    course_title: str = Field(alias="courseTitle")
+    units: Decimal
+    tag: Literal["PENDING_ADD", "PENDING_DROP"]
+    reason: str | None = None
+
+
+class AddDropRequestRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    request_id: uuid.UUID = Field(alias="requestId")
+    student_id: uuid.UUID = Field(alias="studentId")
+    academic_term_id: uuid.UUID = Field(alias="academicTermId")
+    state: Literal["PENDING", "APPROVED", "REJECTED"]
+    units_before: Decimal = Field(alias="unitsBefore")
+    units_after: Decimal = Field(alias="unitsAfter")
+    comments: str | None = None
+    remarks: str | None = None
+    version: int = 1
+    courses: list[AddDropCourseRead] = Field(default_factory=list)
+    created_at: datetime = Field(alias="createdAt")
+    reviewed_at: datetime | None = Field(default=None, alias="reviewedAt")
+    reviewed_by: uuid.UUID | None = Field(default=None, alias="reviewedBy")
+
+
+class AddDropDecisionRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    decision: Literal["APPROVE", "REJECT"]
+    remarks: str | None = None
+    version: int
+
+
+class AdminAddDropRequestRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    request_id: uuid.UUID = Field(alias="requestId")
+    student_id: uuid.UUID = Field(alias="studentId")
+    student_number: str = Field(alias="studentNumber")
+    student_name: str = Field(alias="studentName")
+    program_code: str = Field(alias="programCode")
+    department: str
+    college: str | None
+    term: str
+    academic_term_id: uuid.UUID = Field(alias="academicTermId")
+    state: Literal["PENDING", "APPROVED", "REJECTED"]
+    units_before: Decimal = Field(alias="unitsBefore")
+    units_after: Decimal = Field(alias="unitsAfter")
+    comments: str | None = None
+    remarks: str | None = None
+    version: int = 1
+    courses: list[AddDropCourseRead] = Field(default_factory=list)
+    created_at: datetime = Field(alias="createdAt")
+    reviewed_at: datetime | None = Field(default=None, alias="reviewedAt")
+    reviewed_by: uuid.UUID | None = Field(default=None, alias="reviewedBy")

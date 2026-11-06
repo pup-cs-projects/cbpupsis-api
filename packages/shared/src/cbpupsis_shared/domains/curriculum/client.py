@@ -30,6 +30,7 @@ __all__ = [
     "get_curriculum",
     "get_prescribed_load",
     "get_program",
+    "list_curriculum_course_ids",
     "program_ids_in_scope",
     "programs_by_ids",
     "record_courses",
@@ -124,3 +125,9 @@ async def program_ids_in_scope(
     return await service.program_ids_in_scope(
         db, department=department, college=college
     )
+
+
+async def list_curriculum_course_ids(
+    db: AsyncSession, curriculum_id: uuid.UUID
+) -> set[uuid.UUID]:
+    return await service.list_curriculum_course_ids(db, curriculum_id)

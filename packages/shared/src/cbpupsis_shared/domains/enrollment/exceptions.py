@@ -205,7 +205,7 @@ class DecisionRemarksRequiredError(ValidationError):
     code = "DECISION_REMARKS_REQUIRED"
 
     def __init__(
-        self, detail: str = "Remarks are required when rejecting an overload request."
+        self, detail: str = "Remarks are required when rejecting a request."
     ) -> None:
         super().__init__(detail)
 
@@ -213,9 +213,7 @@ class DecisionRemarksRequiredError(ValidationError):
 class RequestAlreadyDecidedError(ConflictError):
     code = "REQUEST_ALREADY_DECIDED"
 
-    def __init__(
-        self, detail: str = "This overload request has already been decided."
-    ) -> None:
+    def __init__(self, detail: str = "This request has already been decided.") -> None:
         super().__init__(detail)
 
 
@@ -249,3 +247,44 @@ class CertificateUnavailable(AppError):
 
     def __init__(self):
         super().__init__("Certificate service is unavailable.")
+
+
+class AddDropPeriodClosedError(ConflictError):
+    code = "ENROLL_ADD_DROP_PERIOD_CLOSED"
+
+    def __init__(self, *, period_start: str, period_end: str) -> None:
+        super().__init__(
+            "Add and drop period is closed.",
+            response_fields={
+                "details": {
+                    "periodStart": period_start,
+                    "periodEnd": period_end,
+                }
+            },
+        )
+
+
+class BelowMinimumLoadError(ConflictError):
+    code = "ENROLL_BELOW_MINIMUM_LOAD"
+
+    def __init__(self, *, minimum_load: Decimal, units_after: Decimal) -> None:
+        super().__init__(
+            f"Dropping this course takes total units ({_display_units(units_after)}) "
+            f"below the minimum load of {_display_units(minimum_load)} units.",
+            response_fields={
+                "details": {
+                    "minimumLoad": _display_units(minimum_load),
+                    "unitsAfter": _display_units(units_after),
+                }
+            },
+        )
+
+
+class PrerequisiteNotMetError(ConflictError):
+    code = "ENROLL_PREREQUISITE_NOT_MET"
+
+    def __init__(self, *, course_code: str, details: dict | None = None) -> None:
+        super().__init__(
+            f"Prerequisite requirements for {course_code} are not satisfied.",
+            response_fields={"details": details or {"courseCode": course_code}},
+        )
