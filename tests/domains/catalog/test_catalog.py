@@ -935,6 +935,20 @@ async def test_ac_enrl_005_6_substitution_approval_updates_named_students_progre
     assert by_code_other["COMP 401"]["completed"] is False
     assert by_code_other["COMP 401"]["substitutedByCourseCode"] is None
 
+    # Check degree progress scope enforcement: foreign department student returns 404
+    foreign_student, _ = await _make_student(
+        db,
+        email="foreign.student@pup.edu.ph",
+        student_number="2024-99999-MN-0",
+        program_code="BSMATH",
+        year_level=2,
+    )
+    foreign_prog = await client.get(
+        f"{ADMIN_CATALOG}/students/{foreign_student.id}/degree-progress",
+        headers=headers,
+    )
+    assert foreign_prog.status_code == 404
+
 
 async def test_ac_enrl_005_7_chair_scope_courses_and_cross_department_404(
     client: AsyncClient, db: AsyncSession, catalog_env
@@ -972,6 +986,19 @@ async def test_ac_enrl_005_7_chair_scope_courses_and_cross_department_404(
     )
     assert patch_foreign.status_code == 404, patch_foreign.text
     assert patch_foreign.json()["code"] == "RESOURCE_NOT_FOUND"
+
+    create_foreign_college = await client.post(
+        f"{ADMIN_CATALOG}/courses",
+        headers=chair_headers,
+        json={
+            "courseCode": "COMP 599",
+            "title": "Invalid College Course",
+            "lectureUnits": 3,
+            "labUnits": 0,
+            "college": catalog_env["cs_college"],
+        },
+    )
+    assert create_foreign_college.status_code == 422
 
 
 async def test_ac_enrl_005_8_dean_registrar_and_student_scope_and_write_refusals(

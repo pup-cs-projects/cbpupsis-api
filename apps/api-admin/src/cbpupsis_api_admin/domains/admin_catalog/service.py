@@ -188,6 +188,17 @@ async def approve_substitution(
 
 
 async def get_student_degree_progress(
-    db: AsyncSession, *, student_id: uuid.UUID
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    position: str,
+    department_id: str | None,
+    college_id: str | None,
 ) -> StudentDegreeProgressRead:
-    return await curriculum_client.get_student_degree_progress(db, student_id)
+    return await curriculum_client.get_student_degree_progress(
+        db,
+        student_id,
+        position=position,
+        department_id=department_id,
+        college_id=college_id,
+    )

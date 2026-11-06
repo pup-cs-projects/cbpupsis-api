@@ -160,16 +160,7 @@ async def get_prescribed_load(
         )
     )
     units = await db.scalar(stmt)
-    if units is not None:
-        return Decimal(str(units))
-    fallback_stmt = (
-        select(func.sum(Course.lecture_units + Course.lab_units))
-        .select_from(CurriculumCourse)
-        .join(Course, Course.id == CurriculumCourse.course_id)
-        .where(CurriculumCourse.curriculum_id == curriculum_id)
-    )
-    fallback_units = await db.scalar(fallback_stmt)
-    return Decimal(str(fallback_units)) if fallback_units else Decimal("26")
+    return Decimal(str(units)) if units is not None else Decimal("0")
 
 
 async def list_all_courses(db: AsyncSession) -> list[Course]:
@@ -220,6 +211,9 @@ def add_course(
     college: str | None,
     lecture_units: Decimal,
     lab_units: Decimal,
+    lecture_hours: int = 0,
+    lab_hours: int = 0,
+    term_offered: str | None = None,
     grading_mode: str,
     is_active: bool,
 ) -> Course:
@@ -228,10 +222,11 @@ def add_course(
     SQL::
 
         INSERT INTO courses (id, course_code, title, description, department,
-                             college, lecture_units, lab_units, grading_mode,
-                             is_active)
+                             college, lecture_units, lab_units, lecture_hours,
+                             lab_hours, term_offered, grading_mode, is_active)
         VALUES (:id, :course_code, :title, :description, :department, :college,
-                :lecture_units, :lab_units, :grading_mode, :is_active)
+                :lecture_units, :lab_units, :lecture_hours, :lab_hours,
+                :term_offered, :grading_mode, :is_active)
     """
     course = Course(
         course_code=course_code,
@@ -241,6 +236,9 @@ def add_course(
         college=college,
         lecture_units=lecture_units,
         lab_units=lab_units,
+        lecture_hours=lecture_hours,
+        lab_hours=lab_hours,
+        term_offered=term_offered,
         grading_mode=grading_mode,
         is_active=is_active,
     )

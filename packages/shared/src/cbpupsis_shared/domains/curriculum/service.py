@@ -10,7 +10,7 @@ from decimal import Decimal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_core.exceptions import ConflictError
+from cbpupsis_core.exceptions import ConflictError, ValidationError
 from cbpupsis_database.models.curriculum import Course, CoursePrerequisite, Program
 from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.auth.exceptions import (
@@ -41,9 +41,6 @@ from cbpupsis_shared.domains.curriculum.schemas import (
 )
 from cbpupsis_shared.domains.enrollment import client as enrollment_client
 from cbpupsis_shared.domains.users import client as users_client
-
-_COURSE_HOURS: dict[uuid.UUID, tuple[int, int]] = {}
-_COURSE_TERM_OFFERED: dict[uuid.UUID, str | None] = {}
 
 
 async def record_courses(db: AsyncSession, ids: Collection[uuid.UUID]):
@@ -171,10 +168,15 @@ def _build_course_reads(
         total = (course.lecture_units or Decimal("0")) + (
             course.lab_units or Decimal("0")
         )
-        default_lec_hours = int(course.lecture_units or 0)
-        default_lab_hours = int(course.lab_units or 0)
-        lec_hours, lab_hours = _COURSE_HOURS.get(
-            course.id, (default_lec_hours, default_lab_hours)
+        lec_hours = (
+            course.lecture_hours
+            if course.lecture_hours is not None
+            else int(course.lecture_units or 0)
+        )
+        lab_hours = (
+            course.lab_hours
+            if course.lab_hours is not None
+            else int(course.lab_units or 0)
         )
         reads.append(
             CatalogCourseRead(
@@ -192,7 +194,7 @@ def _build_course_reads(
                 lab_hours=lab_hours,
                 total_units=total,
                 grading_mode=course.grading_mode,
-                term_offered=_COURSE_TERM_OFFERED.get(course.id),
+                term_offered=course.term_offered,
                 is_active=course.is_active,
                 prerequisite_ids=p_ids,
                 corequisite_ids=c_ids,
@@ -357,12 +359,23 @@ async def create_catalog_course(
         raise InsufficientRoleError
 
     programs = await repository.list_all_programs(db)
-    resolved_college = payload.college or college_id
+    resolved_college = college_id
     if resolved_college is None and department_id is not None:
         for prog in programs:
             if prog.department == department_id and prog.college is not None:
                 resolved_college = prog.college
                 break
+    if position == "chairperson":
+        if (
+            payload.college is not None
+            and resolved_college is not None
+            and payload.college != resolved_college
+        ):
+            raise ValidationError(
+                "Chairpersons cannot create courses for another college."
+            )
+    else:
+        resolved_college = payload.college or resolved_college
 
     all_courses = await repository.list_all_courses(db)
     existing_edges = await repository.list_all_course_prerequisites(db)
@@ -389,6 +402,16 @@ async def create_catalog_course(
         existing_edges=existing_edges,
     )
 
+    lec_h = (
+        payload.lecture_hours
+        if payload.lecture_hours is not None
+        else int(payload.lecture_units or 0)
+    )
+    lab_h = (
+        payload.lab_hours
+        if payload.lab_hours is not None
+        else int(payload.lab_units or 0)
+    )
     course = repository.add_course(
         db,
         course_code=payload.course_code.strip(),
@@ -398,6 +421,9 @@ async def create_catalog_course(
         college=resolved_college,
         lecture_units=payload.lecture_units,
         lab_units=payload.lab_units,
+        lecture_hours=lec_h,
+        lab_hours=lab_h,
+        term_offered=payload.term_offered,
         grading_mode=payload.grading_mode,
         is_active=payload.is_active,
     )
@@ -419,19 +445,6 @@ async def create_catalog_course(
         )
         await db.flush()
 
-    if payload.lecture_hours is not None or payload.lab_hours is not None:
-        _COURSE_HOURS[course.id] = (
-            payload.lecture_hours
-            if payload.lecture_hours is not None
-            else int(course.lecture_units or 0),
-            payload.lab_hours
-            if payload.lab_hours is not None
-            else int(course.lab_units or 0),
-        )
-
-    if payload.term_offered is not None:
-        _COURSE_TERM_OFFERED[course.id] = payload.term_offered
-
     occurred_at = datetime.now(UTC)
     new_state = {
         "id": str(course.id),
@@ -442,7 +455,7 @@ async def create_catalog_course(
         "college": course.college,
         "lectureUnits": str(course.lecture_units),
         "labUnits": str(course.lab_units),
-        "termOffered": _COURSE_TERM_OFFERED.get(course.id),
+        "termOffered": course.term_offered,
         "isActive": course.is_active,
         "prerequisiteIds": [str(i) for i in prereq_ids],
         "corequisiteIds": [str(i) for i in coreq_ids],
@@ -579,18 +592,13 @@ async def update_catalog_course(
             corequisite_ids=coreq_ids,
         )
 
-    if payload.lecture_hours is not None or payload.lab_hours is not None:
-        prev_lec, prev_lab = _COURSE_HOURS.get(
-            course.id,
-            (int(course.lecture_units or 0), int(course.lab_units or 0)),
-        )
-        _COURSE_HOURS[course.id] = (
-            payload.lecture_hours if payload.lecture_hours is not None else prev_lec,
-            payload.lab_hours if payload.lab_hours is not None else prev_lab,
-        )
+    if payload.lecture_hours is not None:
+        course.lecture_hours = payload.lecture_hours
+    if payload.lab_hours is not None:
+        course.lab_hours = payload.lab_hours
 
     if "term_offered" in payload.model_fields_set:
-        _COURSE_TERM_OFFERED[course.id] = payload.term_offered
+        course.term_offered = payload.term_offered
 
     await db.flush()
     occurred_at = datetime.now(UTC)
@@ -603,7 +611,7 @@ async def update_catalog_course(
         "department": course_dept,
         "lectureUnits": str(course.lecture_units),
         "labUnits": str(course.lab_units),
-        "termOffered": _COURSE_TERM_OFFERED.get(course.id),
+        "termOffered": course.term_offered,
         "gradingMode": course.grading_mode,
         "isActive": course.is_active,
         "prerequisiteIds": [str(i) for i in prereq_ids],
@@ -831,13 +839,32 @@ async def delete_curriculum_version(
 
 
 async def get_student_degree_progress(
-    db: AsyncSession, student_id: uuid.UUID
+    db: AsyncSession,
+    student_id: uuid.UUID,
+    *,
+    position: str = "registrar",
+    department_id: str | None = None,
+    college_id: str | None = None,
 ) -> StudentDegreeProgressRead:
     """Compute a student's curriculum degree progress with approved substitutions."""
     profile = await users_client.get_student_profile(db, student_id)
     if profile is None:
         raise ResourceNotFoundError
     program = await repository.get_program(db, profile.program_id)
+    if program is None:
+        raise ResourceNotFoundError
+
+    if position in {"registrar", "superadmin"}:
+        pass
+    elif position == "chairperson":
+        if department_id is None or program.department != department_id:
+            raise ResourceNotFoundError
+    elif position == "dean":
+        if college_id is None or program.college != college_id:
+            raise ResourceNotFoundError
+    else:
+        raise ResourceNotFoundError
+
     total_required = (
         program.total_units_required if program is not None else Decimal("0")
     )

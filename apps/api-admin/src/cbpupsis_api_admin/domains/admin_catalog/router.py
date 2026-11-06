@@ -235,7 +235,13 @@ async def approve_course_substitution(
 )
 async def get_student_degree_progress(
     student_id: uuid.UUID,
-    _admin: AdminSession = Depends(require_admin_permission(READ_CATALOG)),
+    admin: AdminSession = Depends(require_admin_permission(READ_CATALOG)),
     db: AsyncSession = Depends(get_db),
 ) -> StudentDegreeProgressRead:
-    return await service.get_student_degree_progress(db, student_id=student_id)
+    return await service.get_student_degree_progress(
+        db,
+        student_id=student_id,
+        position=admin.position,
+        department_id=admin.department_id,
+        college_id=admin.college_id,
+    )

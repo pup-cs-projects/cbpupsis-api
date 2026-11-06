@@ -17,6 +17,15 @@ def upgrade() -> None:
     op.add_column("courses", sa.Column("department", sa.String(100), nullable=True))
     op.add_column("courses", sa.Column("college", sa.String(100), nullable=True))
     op.add_column(
+        "courses",
+        sa.Column("lecture_hours", sa.SmallInteger(), nullable=False, server_default="0"),
+    )
+    op.add_column(
+        "courses",
+        sa.Column("lab_hours", sa.SmallInteger(), nullable=False, server_default="0"),
+    )
+    op.add_column("courses", sa.Column("term_offered", sa.String(50), nullable=True))
+    op.add_column(
         "curricula",
         sa.Column("effective_admission_year", sa.SmallInteger(), nullable=True),
     )
@@ -80,5 +89,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("course_substitutions")
     op.drop_column("curricula", "effective_admission_year")
+    op.drop_column("courses", "term_offered")
+    op.drop_column("courses", "lab_hours")
+    op.drop_column("courses", "lecture_hours")
     op.drop_column("courses", "college")
     op.drop_column("courses", "department")

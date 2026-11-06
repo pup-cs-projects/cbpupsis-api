@@ -78,6 +78,11 @@ class Course(UUIDMixin, Base):
     lab_units: Mapped[Decimal] = mapped_column(
         Numeric(precision=3, scale=1), default=Decimal("0.0"), server_default="0"
     )
+    lecture_hours: Mapped[int] = mapped_column(
+        SmallInteger, default=0, server_default="0"
+    )
+    lab_hours: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
+    term_offered: Mapped[str | None] = mapped_column(String(50), default=None)
     total_units: Mapped[Decimal | None] = mapped_column(
         Numeric(precision=3, scale=1),
         Computed("lecture_units + lab_units", persisted=True),
