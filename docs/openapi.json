@@ -2036,6 +2036,56 @@
         ]
       }
     },
+    "/api/v1/student/enrollment/waiver": {
+      "post": {
+        "tags": [
+          "student-enrollment"
+        ],
+        "summary": "File Waiver",
+        "description": "File a session-owned unmet-edge waiver with CreateWaiverRequest.",
+        "operationId": "file_waiver_api_v1_student_enrollment_waiver_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaiverFile"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WaiverFiled"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Unmet waiver eligibility, pending waiver, or a request already decided. Eligibility is verified server-side."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/student/enrollment/overload": {
       "post": {
         "tags": [
@@ -2123,7 +2173,7 @@
             "description": "The term or a selected section is not available to the signed-in student's curriculum."
           },
           "409": {
-            "description": "The first failed enrollment check. Codes, in order: ENROLL_PERIOD_CLOSED, ENROLL_FINANCIAL_HOLD, ENROLL_HOLD_ACTIVE, ENROLL_STANDING_BLOCKED, the unit-ceiling codes, ENROLL_SCHEDULE_CONFLICT, prerequisite codes when enabled, and ENROLL_SECTION_FULL. No enrollment or seat is written."
+            "description": "The first failed enrollment check. Codes, in order: ENROLL_PERIOD_CLOSED, ENROLL_FINANCIAL_HOLD, ENROLL_HOLD_ACTIVE, ENROLL_STANDING_BLOCKED, the unit-ceiling codes, ENROLL_SCHEDULE_CONFLICT, the academic prerequisite/waiver, third-year gate and PE checks, and ENROLL_SECTION_FULL. No enrollment or seat is written."
           },
           "422": {
             "description": "Validation Error",
@@ -2221,6 +2271,155 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/student/enrollment/add-drop": {
+      "get": {
+        "tags": [
+          "student-enrollment"
+        ],
+        "summary": "List Add Drop Requests",
+        "operationId": "list_student_add_drop_requests",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AddDropRequestRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Student Add Drop Requests"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A live student bearer session is required."
+          },
+          "403": {
+            "description": "ReadAddDropRequest permission is required."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "student-enrollment"
+        ],
+        "summary": "Create Add Drop Request",
+        "operationId": "create_student_add_drop_request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddDropRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddDropRequestRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A live student bearer session is required."
+          },
+          "403": {
+            "description": "CreateAddDropRequest permission is required."
+          },
+          "404": {
+            "description": "Resource not found."
+          },
+          "409": {
+            "description": "Filing refusal: closed period, below minimum load, section full, schedule conflict, unit ceiling exceeded, or prerequisite unmet."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/student/enrollment/add-drop/{request_id}": {
+      "get": {
+        "tags": [
+          "student-enrollment"
+        ],
+        "summary": "Get Add Drop Request",
+        "operationId": "get_student_add_drop_request",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddDropRequestRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A live student bearer session is required."
+          },
+          "403": {
+            "description": "ReadAddDropRequest permission is required."
+          },
+          "404": {
+            "description": "Resource not found."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/students/me/schedule": {
@@ -2877,6 +3076,261 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/student/schedule/cor": {
+      "post": {
+        "tags": [
+          "student-certificate"
+        ],
+        "summary": "Issue",
+        "description": "Atomically issue; retries preserve certificate identity/token and one audit.",
+        "operationId": "issue_api_v1_student_schedule_cor_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueCertificate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateMetadata"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A live student bearer session is required."
+          },
+          "403": {
+            "description": "Student role and operation permission are required."
+          },
+          "409": {
+            "description": "COR_NOT_ENROLLED, or COR_ENROLLMENT_NOT_FINAL with details.unmet: HOLD, PREREQUISITE_VIOLATION, NO_ASSESSMENT."
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE; no partial document. Includes unavailable dependency, encryption or renderer."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "student-certificate"
+        ],
+        "summary": "Read",
+        "description": "Read immutable issued content; never issue, assess or repair enrollment.",
+        "operationId": "read_api_v1_student_schedule_cor_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "term",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Stored academic-term UUID (shared producer integration pending).",
+              "title": "Term"
+            },
+            "description": "Stored academic-term UUID (shared producer integration pending)."
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "pdf",
+                "json"
+              ],
+              "type": "string",
+              "default": "pdf",
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateRead"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A live student bearer session is required."
+          },
+          "403": {
+            "description": "Student role and operation permission are required."
+          },
+          "409": {
+            "description": "COR_NOT_ENROLLED, or COR_ENROLLMENT_NOT_FINAL with details.unmet: HOLD, PREREQUISITE_VIOLATION, NO_ASSESSMENT."
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE; no partial document. Includes unavailable dependency, encryption or renderer."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/student/assessment": {
+      "get": {
+        "tags": [
+          "student-certificate"
+        ],
+        "summary": "Assessment",
+        "description": "Read stored shared assessment only. Every amount is a decimal string.",
+        "operationId": "assessment_api_v1_student_assessment_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "term",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Stored academic-term UUID (shared producer integration pending).",
+              "title": "Term"
+            },
+            "description": "Stored academic-term UUID (shared producer integration pending)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A live student bearer session is required."
+          },
+          "403": {
+            "description": "Student role and operation permission are required."
+          },
+          "409": {
+            "description": "COR_NOT_ENROLLED, or COR_ENROLLMENT_NOT_FINAL with details.unmet: HOLD, PREREQUISITE_VIOLATION, NO_ASSESSMENT."
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE; no partial document. Includes unavailable dependency, encryption or renderer."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public/cor/verify/{token}": {
+      "get": {
+        "tags": [
+          "public-certificate"
+        ],
+        "summary": "Verify",
+        "description": "Anonymous, non-cacheable: five fields, no database IDs or assessment.",
+        "operationId": "verify_api_v1_public_cor_verify__token__get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationRead"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: unknown or malformed token."
+          },
+          "429": {
+            "description": "rate_limited: at most ten checks/minute/IP across all tokens."
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE; no partial document. Includes unavailable dependency, encryption or renderer."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/auth/faculty/login": {
@@ -3950,6 +4404,105 @@
           },
           "409": {
             "description": "REQUEST_ALREADY_DECIDED."
+          },
+          "422": {
+            "description": "DECISION_REMARKS_REQUIRED for a blank rejection."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/add-drop": {
+      "get": {
+        "tags": [
+          "admin-add-drop"
+        ],
+        "summary": "List Add Drop Requests",
+        "operationId": "list_admin_add_drop_requests",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminAddDropRequestRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Admin Add Drop Requests"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "An admin session is required."
+          },
+          "403": {
+            "description": "ReadAddDropRequest permission is required."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/add-drop/{request_id}": {
+      "patch": {
+        "tags": [
+          "admin-add-drop"
+        ],
+        "summary": "Decide Add Drop Request",
+        "operationId": "decide_admin_add_drop_request",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddDropDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAddDropRequestRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "An admin session is required."
+          },
+          "403": {
+            "description": "ApproveAddDrop permission is required."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when outside the Chair's department or Dean's college."
+          },
+          "409": {
+            "description": "REQUEST_ALREADY_DECIDED, REQUEST_CONCURRENCY_CONFLICT, the submit check codes for additions, or COR_ENROLLMENT_NOT_FINAL when the assessment or certificate cannot be updated. Nothing changes on a refusal."
           },
           "422": {
             "description": "DECISION_REMARKS_REQUIRED for a blank rejection."
@@ -5676,6 +6229,126 @@
         ]
       }
     },
+    "/api/v1/admin/waiver-requests": {
+      "get": {
+        "tags": [
+          "waiver-requests"
+        ],
+        "summary": "List Waivers",
+        "description": "Read MFA/permission-protected position-scoped waivers.\n\nChair: own department; Dean: own explicitly mapped college;\nRegistrar: institution-wide. Finance/other positions and students refused.",
+        "operationId": "list_waivers_api_v1_admin_waiver_requests_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_WaiverRead_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/waiver-requests/{waiverRequestId}": {
+      "patch": {
+        "tags": [
+          "waiver-requests"
+        ],
+        "summary": "Decide Waiver",
+        "description": "Record one locked assigned-step decision, audit and durable student notice.\n\nRequires a live MFA-completed Admin session and ApproveWaiverRequest.\nChair -> Dean -> Registrar; rejection is terminal at any pending step.\nFinal approval records an external VPAA reference, not a credential.",
+        "operationId": "decide_waiver_api_v1_admin_waiver_requests__waiverRequestId__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "waiverRequestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Waiverrequestid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaiverDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WaiverRead"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND, including outside-scope targets."
+          },
+          "409": {
+            "description": "ENROLL_WAIVER_STEP_MISMATCH or REQUEST_ALREADY_DECIDED."
+          },
+          "422": {
+            "description": "DECISION_REMARKS_REQUIRED for rejection; VALIDATION_ERROR for final approval without vpaaReference."
+          }
+        }
+      }
+    },
     "/api/v1/admin/catalog/courses": {
       "get": {
         "tags": [
@@ -6256,6 +6929,52 @@
   },
   "components": {
     "schemas": {
+      "AcademicBlock": {
+        "properties": {
+          "rule": {
+            "type": "string",
+            "title": "Rule"
+          },
+          "courseCode": {
+            "type": "string",
+            "title": "Coursecode"
+          },
+          "blockingMark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blockingmark"
+          },
+          "requiredRange": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requiredrange"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rule",
+          "courseCode"
+        ],
+        "title": "AcademicBlock"
+      },
       "AcademicEventRead": {
         "properties": {
           "id": {
@@ -6377,9 +7096,15 @@
             "title": "Semester"
           },
           "term_type": {
-            "type": "string",
-            "title": "Term Type",
-            "default": "REGULAR"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term Type"
           },
           "is_current": {
             "type": "boolean",
@@ -6623,6 +7348,246 @@
         "title": "AccountRole",
         "description": "The ``role`` a Superadmin gives a new account, one per CSV row."
       },
+      "AddDropCourseRead": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "courseCode": {
+            "type": "string",
+            "title": "Coursecode"
+          },
+          "courseTitle": {
+            "type": "string",
+            "title": "Coursetitle"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units"
+          },
+          "tag": {
+            "type": "string",
+            "enum": [
+              "PENDING_ADD",
+              "PENDING_DROP"
+            ],
+            "title": "Tag"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectionId",
+          "courseCode",
+          "courseTitle",
+          "units",
+          "tag"
+        ],
+        "title": "AddDropCourseRead"
+      },
+      "AddDropDecisionRequest": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVE",
+              "REJECT"
+            ],
+            "title": "Decision"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision",
+          "version"
+        ],
+        "title": "AddDropDecisionRequest"
+      },
+      "AddDropRequestCreate": {
+        "properties": {
+          "add": {
+            "items": {
+              "$ref": "#/components/schemas/AddSectionItem"
+            },
+            "type": "array",
+            "title": "Add"
+          },
+          "drop": {
+            "items": {
+              "$ref": "#/components/schemas/DropSectionItem"
+            },
+            "type": "array",
+            "title": "Drop"
+          },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          }
+        },
+        "type": "object",
+        "title": "AddDropRequestCreate"
+      },
+      "AddDropRequestRead": {
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Requestid"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "academicTermId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Academictermid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED"
+            ],
+            "title": "State"
+          },
+          "unitsBefore": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Unitsbefore"
+          },
+          "unitsAfter": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Unitsafter"
+          },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "default": 1
+          },
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/AddDropCourseRead"
+            },
+            "type": "array",
+            "title": "Courses"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "reviewedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedat"
+          },
+          "reviewedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedby"
+          }
+        },
+        "type": "object",
+        "required": [
+          "requestId",
+          "studentId",
+          "academicTermId",
+          "state",
+          "unitsBefore",
+          "unitsAfter",
+          "createdAt"
+        ],
+        "title": "AddDropRequestRead"
+      },
+      "AddSectionItem": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectionId"
+        ],
+        "title": "AddSectionItem"
+      },
       "AddUserToGroupRequest": {
         "properties": {
           "user_id": {
@@ -6637,6 +7602,155 @@
         ],
         "title": "AddUserToGroupRequest",
         "description": "Body for adding a user to a group."
+      },
+      "AdminAddDropRequestRead": {
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Requestid"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "studentName": {
+            "type": "string",
+            "title": "Studentname"
+          },
+          "programCode": {
+            "type": "string",
+            "title": "Programcode"
+          },
+          "department": {
+            "type": "string",
+            "title": "Department"
+          },
+          "college": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "College"
+          },
+          "term": {
+            "type": "string",
+            "title": "Term"
+          },
+          "academicTermId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Academictermid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED"
+            ],
+            "title": "State"
+          },
+          "unitsBefore": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Unitsbefore"
+          },
+          "unitsAfter": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Unitsafter"
+          },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "default": 1
+          },
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/AddDropCourseRead"
+            },
+            "type": "array",
+            "title": "Courses"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "reviewedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedat"
+          },
+          "reviewedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedby"
+          }
+        },
+        "type": "object",
+        "required": [
+          "requestId",
+          "studentId",
+          "studentNumber",
+          "studentName",
+          "programCode",
+          "department",
+          "college",
+          "term",
+          "academicTermId",
+          "state",
+          "unitsBefore",
+          "unitsAfter",
+          "createdAt"
+        ],
+        "title": "AdminAddDropRequestRead"
       },
       "AdminLoginChallenge": {
         "properties": {
@@ -7125,6 +8239,79 @@
         "title": "AnnouncementRead",
         "description": "An institution-wide or academic announcement."
       },
+      "AssessmentLine": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "amount"
+        ],
+        "title": "AssessmentLine"
+      },
+      "AssessmentRead": {
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/AssessmentLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "amountAssessed": {
+            "type": "string",
+            "title": "Amountassessed"
+          },
+          "subsidyApplied": {
+            "type": "string",
+            "title": "Subsidyapplied"
+          },
+          "netPayable": {
+            "type": "string",
+            "title": "Netpayable"
+          },
+          "fheQualified": {
+            "type": "boolean",
+            "title": "Fhequalified"
+          },
+          "fheForfeited": {
+            "type": "boolean",
+            "title": "Fheforfeited"
+          },
+          "fheForfeitureReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fheforfeiturereason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "lines",
+          "amountAssessed",
+          "subsidyApplied",
+          "netPayable",
+          "fheQualified",
+          "fheForfeited",
+          "fheForfeitureReason"
+        ],
+        "title": "AssessmentRead"
+      },
       "AttachPolicyRequest": {
         "properties": {
           "policy_id": {
@@ -7319,6 +8506,18 @@
               }
             ],
             "title": "Blockreason"
+          },
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicBlock"
+            },
+            "type": "array",
+            "title": "Blocks"
+          },
+          "waiverAvailable": {
+            "type": "boolean",
+            "title": "Waiveravailable",
+            "default": false
           },
           "conflictsWith": {
             "items": {
@@ -7955,6 +9154,241 @@
         "title": "CatalogCourseUpdate",
         "description": "Payload to edit an existing course in the caller's department."
       },
+      "CertificateCourse": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "section": {
+            "type": "string",
+            "title": "Section"
+          },
+          "schedule": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateMeeting"
+            },
+            "type": "array",
+            "title": "Schedule"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "faculty": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Faculty"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectionId",
+          "code",
+          "title",
+          "section",
+          "schedule",
+          "room",
+          "faculty",
+          "units"
+        ],
+        "title": "CertificateCourse"
+      },
+      "CertificateMeeting": {
+        "properties": {
+          "dayOfWeek": {
+            "type": "integer",
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Dayofweek"
+          },
+          "startTime": {
+            "type": "string",
+            "format": "time",
+            "title": "Starttime"
+          },
+          "endTime": {
+            "type": "string",
+            "format": "time",
+            "title": "Endtime"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dayOfWeek",
+          "startTime",
+          "endTime",
+          "room",
+          "type"
+        ],
+        "title": "CertificateMeeting"
+      },
+      "CertificateMetadata": {
+        "properties": {
+          "certificateId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Certificateid"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Issuedat"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CURRENT",
+              "SUPERSEDED"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "certificateId",
+          "issuedAt",
+          "status"
+        ],
+        "title": "CertificateMetadata"
+      },
+      "CertificateRead": {
+        "properties": {
+          "certificateId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Certificateid"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Issuedat"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CURRENT",
+              "SUPERSEDED"
+            ],
+            "title": "Status"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "program": {
+            "type": "string",
+            "title": "Program"
+          },
+          "term": {
+            "$ref": "#/components/schemas/CertificateTerm"
+          },
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateCourse"
+            },
+            "type": "array",
+            "title": "Courses"
+          },
+          "totalUnits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Totalunits"
+          },
+          "assessment": {
+            "$ref": "#/components/schemas/AssessmentRead"
+          },
+          "verificationUrl": {
+            "type": "string",
+            "title": "Verificationurl"
+          }
+        },
+        "type": "object",
+        "required": [
+          "certificateId",
+          "issuedAt",
+          "status",
+          "name",
+          "studentNumber",
+          "program",
+          "term",
+          "courses",
+          "totalUnits",
+          "assessment",
+          "verificationUrl"
+        ],
+        "title": "CertificateRead"
+      },
+      "CertificateTerm": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "year": {
+            "type": "string",
+            "title": "Year"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "year",
+          "semester"
+        ],
+        "title": "CertificateTerm"
+      },
       "ChallengeRequest": {
         "properties": {
           "challenge_token": {
@@ -8375,6 +9809,25 @@
         ],
         "title": "DeleteAccountRequest",
         "description": "Payload for deleting your own account.\n\nThe password is re-checked even though the caller is already authenticated:\nit proves a live human holds the credential, so a stolen access token alone\ncannot destroy the account."
+      },
+      "DropSectionItem": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectionId",
+          "reason"
+        ],
+        "title": "DropSectionItem"
       },
       "EffectivePermissionsRead": {
         "properties": {
@@ -9550,6 +11003,22 @@
         "title": "HoldRead",
         "description": "A student administrative or financial hold."
       },
+      "IssueCertificate": {
+        "properties": {
+          "term": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Term",
+            "description": "Stored academic-term UUID; #168/#169 integration must share this selector."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "term"
+        ],
+        "title": "IssueCertificate"
+      },
       "ItemCreate": {
         "properties": {
           "name": {
@@ -10489,6 +11958,37 @@
           "offset"
         ],
         "title": "Page[UserRead]"
+      },
+      "Page_WaiverRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WaiverRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[WaiverRead]"
       },
       "PermissionCreate": {
         "properties": {
@@ -12610,6 +14110,61 @@
         ],
         "title": "ValidationError"
       },
+      "VerificationRead": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "term": {
+            "$ref": "#/components/schemas/VerificationTerm"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Issuedat"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CURRENT",
+              "SUPERSEDED"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "studentNumber",
+          "term",
+          "issuedAt",
+          "status"
+        ],
+        "title": "VerificationRead"
+      },
+      "VerificationTerm": {
+        "properties": {
+          "year": {
+            "type": "string",
+            "title": "Year"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          }
+        },
+        "type": "object",
+        "required": [
+          "year",
+          "semester"
+        ],
+        "title": "VerificationTerm"
+      },
       "VerifyEmailRequest": {
         "properties": {
           "token": {
@@ -12647,6 +14202,184 @@
         ],
         "title": "VerifyResetTokenRequest",
         "description": "Non-consuming check on the reset endpoint before displaying the form."
+      },
+      "WaiverDecision": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVE",
+              "REJECT"
+            ],
+            "title": "Decision"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "vpaaReference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vpaareference"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "title": "WaiverDecision"
+      },
+      "WaiverFile": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "prerequisiteCourseCode": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Prerequisitecoursecode"
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "REPEATED_PREREQUISITE",
+              "SUPERIOR_STANDING",
+              "GRADUATING"
+            ],
+            "title": "Condition"
+          },
+          "justification": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Justification"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sectionId",
+          "prerequisiteCourseCode",
+          "condition",
+          "justification"
+        ],
+        "title": "WaiverFile"
+      },
+      "WaiverFiled": {
+        "properties": {
+          "waiverRequestId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Waiverrequestid"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "waiverRequestId",
+          "state"
+        ],
+        "title": "WaiverFiled"
+      },
+      "WaiverRead": {
+        "properties": {
+          "waiverRequestId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Waiverrequestid"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "prerequisiteCourseCode": {
+            "type": "string",
+            "title": "Prerequisitecoursecode"
+          },
+          "condition": {
+            "type": "string",
+            "title": "Condition"
+          },
+          "justification": {
+            "type": "string",
+            "title": "Justification"
+          },
+          "reviewRemarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewremarks"
+          },
+          "vpaaReference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vpaareference"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "waiverRequestId",
+          "state",
+          "studentId",
+          "sectionId",
+          "prerequisiteCourseCode",
+          "condition",
+          "justification",
+          "reviewRemarks",
+          "vpaaReference",
+          "createdAt"
+        ],
+        "title": "WaiverRead"
       },
       "WebAuthnEnrollmentConfirmRequest": {
         "properties": {

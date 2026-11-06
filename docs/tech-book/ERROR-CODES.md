@@ -67,12 +67,16 @@ the standard 403 missing-permission response.
 |---|---|---|
 | 409 | `ENROLL_ADD_DROP_PERIOD_CLOSED` | The add and drop request was filed outside the academic term's add/drop deadline. `details` includes `periodStart` and `periodEnd`. |
 | 409 | `ENROLL_BELOW_MINIMUM_LOAD` | Dropping course(s) takes total credit load below the minimum regular load of 12.0 units. `details` includes `minimumLoad` and `unitsAfter`. |
+| 409 | `ENROLL_CURRICULUM_LOAD_UNAVAILABLE` | The student's curriculum has no prescribed load for this year level and semester. |
 | 409 | `ENROLL_PREREQUISITE_NOT_MET` | A course requested to be added has unmet prerequisites. |
 | 409 | `ENROLL_SECTION_FULL` | An added section had no available seat at commit time. |
 | 409 | `ENROLL_SCHEDULE_CONFLICT` | An added section conflicts in schedule with another added or retained enrolled section. |
 | 409 | `ENROLL_UNIT_CEILING_EXCEEDED` | The resulting schedule exceeds the student's curriculum-derived unit ceiling. |
 | 409 | `REQUEST_ALREADY_DECIDED` | An add/drop request already has an approved or rejected decision. |
 | 409 | `REQUEST_CONCURRENCY_CONFLICT` | A concurrent update changed the request version before decision commit. |
+| 409 | `REQUEST_ALREADY_PENDING` | The student already has a pending add/drop request for this term. |
+| 409 | `ENROLL_DUPLICATE_COURSE` | The resulting load holds two sections of the same course. |
+| 409 | `COR_ENROLLMENT_NOT_FINAL` | Approving an add/drop request cannot update the assessment (`details.unmet` holds `NO_ASSESSMENT`) or the current certificate. Nothing changes. |
 | 422 | `DECISION_REMARKS_REQUIRED` | A Chairperson or Dean rejected an add/drop request without non-blank remarks. |
 | 404 | `RESOURCE_NOT_FOUND` | Student attempting to read another student's request, or admin reviewing a request outside their department/college scope (anti-probing). |
 | 403 | — | Registrar attempting to mutate/decide an add/drop request lacks the required permission (`require_permission(APPROVE_ADD_DROP)`). |
@@ -320,6 +324,9 @@ arrive through the outbox.
 | 422 | `CATALOG_PREREQUISITE_CYCLE` | Prerequisite or co-requisite creates a cycle. | Creating or editing a course or publishing a curriculum version where prerequisite or co-requisite relationships form a direct self-reference or multi-course cycle. Extra field `details.cycle` listing the course codes in the cycle. | `curriculum/exceptions.py` |
 | 409 | `CATALOG_VERSION_IN_USE` | Cannot delete a curriculum version with bound students. | Deleting a curriculum version while one or more student profiles remain bound to it. | `curriculum/exceptions.py` |
 | 409 | `SECTION_CAPACITY_BELOW_ENROLLED` | Section capacity cannot be lower than the enrolled count. | Updating a section's capacity to a value lower than the number of active enrollments in that section. Extra field `details.enrolled` containing the current enrolled count. | `sections/exceptions.py` |
+| 409 | `COURSE_ALREADY_EXISTS` | The course code is already in the catalog. | Creating or renaming a course to a code that exists. |
+| 409 | `CURRICULUM_VERSION_ALREADY_EXISTS` | The program already has this curriculum version. | Publishing a version with an existing year. |
+| 409 | `SECTION_ALREADY_EXISTS` | The section already exists for this course and term. | Creating a duplicate section. |
 | 404 | `RESOURCE_NOT_FOUND` | Resource not found. | The course, program, curriculum version, section, faculty member, or student does not exist or is outside the caller's department or college scope. | `auth/exceptions.py` (raised by `curriculum/service.py`, `sections/service.py`, `admin_catalog/service.py`) |
 | 403 | `AUTH_INSUFFICIENT_ROLE` | This action is not available to your role | A College Dean, Registrar, or non-Admin attempts an admin catalog write (`ManageCatalog` or `ApproveSubstitution`), or a non-Admin attempts to read the admin catalog (`ReadCatalog`). | `auth/exceptions.py` (raised by `admin_auth/dependencies.py`) |
 
