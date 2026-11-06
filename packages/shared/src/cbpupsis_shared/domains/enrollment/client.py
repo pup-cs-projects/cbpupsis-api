@@ -14,6 +14,8 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     OverloadRequestFiledRead,
     OverloadRequestRead,
     TermEnrollmentRead,
+    WaiverFile,
+    WaiverFiled,
 )
 from cbpupsis_shared.domains.enrollment.service import (
     assess_overload_eligibility,
@@ -37,13 +39,16 @@ __all__ = [
     "compute_effective_ceiling",
     "decide_overload_request",
     "enrolled_sections",
+    "evaluate_academics",
     "file_overload_request",
+    "file_waiver",
     "get_approved_overload_units",
     "get_enrollment_summary",
     "get_term_enrollment",
     "list_available_courses",
     "list_overload_requests",
     "record_enrollments",
+    "require_academics",
     "submit_enrollment",
 ]
 
@@ -135,6 +140,34 @@ async def submit_enrollment(
         client_ip=client_ip,
         role=role,
     )
+
+
+async def evaluate_academics(db: AsyncSession, *, student_id, term, section_ids):
+    # Grading reads enrollment history; defer the orchestration import so the
+    # two domain clients do not create an import-time cycle.
+    from cbpupsis_shared.domains.enrollment.academic import (  # noqa: PLC0415
+        evaluate_academics as evaluate,
+    )
+
+    return await evaluate(db, student_id=student_id, term=term, section_ids=section_ids)
+
+
+async def file_waiver(
+    db: AsyncSession, *, student_id: uuid.UUID, data: WaiverFile, ip_address: str | None
+) -> WaiverFiled:
+    from cbpupsis_shared.domains.enrollment import waiver  # noqa: PLC0415
+
+    return await waiver.file_waiver(
+        db, student_id=student_id, data=data, ip_address=ip_address
+    )
+
+
+def require_academics(verdict):
+    from cbpupsis_shared.domains.enrollment.academic import (  # noqa: PLC0415
+        require_academics as require,
+    )
+
+    return require(verdict)
 
 
 async def get_term_enrollment(

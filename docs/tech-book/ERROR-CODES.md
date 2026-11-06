@@ -319,6 +319,26 @@ status, not a new HTTP error envelope: see [the integration guide](GOOGLE-CALEND
 `calendarCreationUncertain` need connection/operator attention. Transient quota,
 provider, source or deadline failures have a backed-off `next_sync_at`.
 
+## Academic enrollment and waivers (#99)
+
+| Status | Code | When / client action |
+| --- | --- | --- |
+| 409 | `ENROLL_PREREQUISITE_NOT_MET` | Final prerequisite pass absent or filing condition unsupported. Inspect `details.unmet` course, mark, requiredRange (1.00-3.00). |
+| 409 | `ENROLL_THIRD_YEAR_GATE` | PE 1-4 or six earned NSTP units incomplete; inspect peCompleted/peRequired/nstpCompleted/nstpRequired. |
+| 409 | `ENROLL_PE_SEQUENCE` | Multiple PE courses this regular term without server-confirmed graduating final-term exception. |
+| 409 | `ENROLL_WAIVER_PENDING` | Matching waiver is not fully approved, or a duplicate live filing exists. |
+| 409 | `ENROLL_WAIVER_STEP_MISMATCH` | Reviewer is not assigned to the current pending step. |
+| 409 | `REQUEST_ALREADY_DECIDED` | Terminal waiver cannot be acted on again. |
+| 422 | `DECISION_REMARKS_REQUIRED` | Supply nonblank remarks when rejecting. |
+| 422 | `VALIDATION_ERROR` | Registrar final approval requires a nonblank external vpaaReference. |
+| 409 | `ENROLL_ACADEMIC_DATA_UNAVAILABLE` | Authoritative curriculum/classification/term metadata is unavailable; contact the owning academic data team. Do not bypass checks. |
+| 422 | `CURRICULUM_PREREQUISITE_CYCLE` | Internal guarded catalogue writer would introduce a self/multicourse cycle; no edges are persisted. |
+
+Waiver admin scope violations use existing 404 `RESOURCE_NOT_FOUND`, not 403;
+non-reviewer positions use 403 `PERMISSION_DENIED`. See
+[the academic enrollment contract](ENROLLMENT-ACADEMIC-CHECKS.md) for dependencies,
+authorization, provisional policy and production-data readiness gates.
+
 ## Adding a code
 
 1. Raise the semantic error **from the service layer**, never from a router and

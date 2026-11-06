@@ -9,11 +9,12 @@ import uuid
 from collections.abc import Collection
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.models.curriculum import (
     Course,
+    CoursePrerequisite,
     Curriculum,
     CurriculumCourse,
     Program,
@@ -180,3 +181,163 @@ async def list_enrollment_courses(
         .order_by(Course.course_code, Course.id)
     )
     return list(result)
+
+
+async def lock_prerequisite_graph(db: AsyncSession) -> None:
+    """Serialize all guarded catalogue graph writers until their transaction ends.
+
+    READ COMMITTED ensures a writer waiting for the lock then reads its
+    predecessor's committed edges, even when its transaction started earlier.
+    SQLite is supported for focused tests, not as concurrency evidence.
+
+    SQL::
+
+        SELECT pg_advisory_xact_lock(99002001);
+    """
+    if db.get_bind().dialect.name == "sqlite":
+        return
+    if db.get_bind().dialect.name != "postgresql":
+        raise RuntimeError("Prerequisite graph writes require PostgreSQL")
+    connection = await db.connection()
+    if await connection.get_isolation_level() != "READ COMMITTED":
+        raise RuntimeError("Prerequisite graph writes require READ COMMITTED")
+    await db.execute(text("SELECT pg_advisory_xact_lock(99002001)"))
+
+
+async def prerequisite_graph(
+    db: AsyncSession,
+) -> set[tuple[uuid.UUID, uuid.UUID]]:
+    """Read the complete catalogue graph after taking the graph writer lock.
+
+    SQL::
+
+        SELECT course_id, prerequisite_course_id FROM course_prerequisites;
+    """
+    return {
+        (row.course_id, row.prerequisite_course_id)
+        for row in await db.execute(
+            select(
+                CoursePrerequisite.course_id,
+                CoursePrerequisite.prerequisite_course_id,
+            )
+        )
+    }
+
+
+async def stage_replace_prerequisites(
+    db: AsyncSession,
+    *,
+    course_id: uuid.UUID,
+    prerequisite_course_ids: Collection[uuid.UUID],
+    previous_ids: Collection[uuid.UUID],
+) -> None:
+    """Stage a validated replacement, preserving retained edges' metadata.
+
+    The service holds the graph lock and validates before calling this writer.
+    New edges use the catalogue's standard 3.00 prerequisite defaults.
+
+    SQL::
+
+        DELETE FROM course_prerequisites WHERE course_id = :course_id
+          AND prerequisite_course_id IN (:removed_ids);
+        INSERT INTO course_prerequisites
+          (course_id, prerequisite_course_id, min_grade, is_corequisite)
+        VALUES (:course_id, :new_id, '3.00', false);
+    """
+    wanted, previous = set(prerequisite_course_ids), set(previous_ids)
+    removed = previous - wanted
+    if removed:
+        await db.execute(
+            delete(CoursePrerequisite).where(
+                CoursePrerequisite.course_id == course_id,
+                CoursePrerequisite.prerequisite_course_id.in_(removed),
+            )
+        )
+    db.add_all(
+        CoursePrerequisite(course_id=course_id, prerequisite_course_id=prerequisite_id)
+        for prerequisite_id in wanted - previous
+    )
+    await db.flush()
+
+
+async def academic_catalog(
+    db: AsyncSession,
+    curriculum_id: uuid.UUID | None,
+    course_ids: Collection[uuid.UUID],
+) -> tuple[list[Course], list[CoursePrerequisite], dict[uuid.UUID, int]]:
+    """Batch the student's curriculum, selected edges, and prerequisite courses.
+
+    No classification is inferred from codes, titles or student year level.
+
+    SQL::
+
+        SELECT course_id, year_level FROM curriculum_courses
+        WHERE curriculum_id = :curriculum_id;
+        SELECT * FROM course_prerequisites WHERE course_id IN (:course_ids);
+        SELECT * FROM courses WHERE id IN (:curriculum_selected_and_prerequisite_ids);
+    """
+    placements = (
+        dict(
+            (
+                await db.execute(
+                    select(
+                        CurriculumCourse.course_id, CurriculumCourse.year_level
+                    ).where(CurriculumCourse.curriculum_id == curriculum_id)
+                )
+            ).all()
+        )
+        if curriculum_id is not None
+        else {}
+    )
+    edges = (
+        list(
+            await db.scalars(
+                select(CoursePrerequisite).where(
+                    CoursePrerequisite.course_id.in_(course_ids)
+                )
+            )
+        )
+        if course_ids
+        else []
+    )
+    wanted = set(placements) | set(course_ids)
+    wanted.update(edge.prerequisite_course_id for edge in edges)
+    courses = await list_record_courses(db, wanted)
+    return courses, edges, placements
+
+
+async def program_ids_in_scope(
+    db: AsyncSession,
+    *,
+    department: str | None = None,
+    college: str | None = None,
+) -> list[uuid.UUID]:
+    """Read explicit department/college membership, never equate the two.
+
+    Unreviewed or blank program scope metadata grants no access. This operation
+    intentionally does not implement institution-wide access: the caller must
+    explicitly authorize that reviewer position.
+
+    SQL::
+
+        SELECT id FROM programs WHERE department IS NOT NULL AND department != ''
+          AND college IS NOT NULL AND college != ''
+          AND department = :department AND college = :college;
+    """
+    if department is None and college is None:
+        return []
+    if (department is not None and not department.strip()) or (
+        college is not None and not college.strip()
+    ):
+        return []
+    stmt = select(Program.id).where(
+        Program.department.is_not(None),
+        Program.department != "",
+        Program.college.is_not(None),
+        Program.college != "",
+    )
+    if department is not None:
+        stmt = stmt.where(Program.department == department)
+    if college is not None:
+        stmt = stmt.where(Program.college == college)
+    return list(await db.scalars(stmt))

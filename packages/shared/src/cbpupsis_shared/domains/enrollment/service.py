@@ -17,7 +17,7 @@ from cbpupsis_shared.domains.audit import client as audit
 from cbpupsis_shared.domains.auth.exceptions import ResourceNotFoundError
 from cbpupsis_shared.domains.billing import client as billing
 from cbpupsis_shared.domains.curriculum import client as curriculum
-from cbpupsis_shared.domains.enrollment import repository
+from cbpupsis_shared.domains.enrollment import academic, repository
 from cbpupsis_shared.domains.enrollment.constants import (
     BLOCKED_ACADEMIC_STANDINGS,
     ENROLLED_PENDING,
@@ -367,6 +367,9 @@ async def list_available_courses(
         return []
 
     section_ids = [section.id for section in section_rows]
+    verdicts = await academic.preview_academics(
+        db, student_id=student_id, term=term, section_ids=section_ids
+    )
     seat_counts = await repository.count_active_section_enrollments(db, section_ids)
     enrolled = await repository.enrolled_sections(db, student_id, term.id)
     enrolled_schedules = await sections.schedule_sections(
@@ -386,7 +389,8 @@ async def list_available_courses(
     available: list[AvailableCourseRead] = []
     for section in section_rows:
         course = courses_by_id.get(section.course_id)
-        if course is None:
+        verdict = verdicts.get(section.id)
+        if course is None or verdict is None:
             continue
         conflicts = sorted(
             (
@@ -420,8 +424,10 @@ async def list_available_courses(
                 ),
                 capacity=section.capacity,
                 available_slots=max(section.capacity - occupied, 0),
-                prerequisites_satisfied=True,
-                block_reason=None,
+                prerequisites_satisfied=verdict.prerequisites_satisfied,
+                block_reason=verdict.block_reason,
+                blocks=verdict.blocks,
+                waiver_available=verdict.waiver_available,
                 conflicts_with=conflicts,
             )
         )
@@ -539,6 +545,11 @@ async def submit_enrollment(
                 ConflictTerm(academic_term_id=term.id),
                 _selected_conflict_sections(term, selected, courses_by_id),
             )
+
+            verdict = await academic.evaluate_academics(
+                db, student_id=student_id, term=term, section_ids=section_ids
+            )
+            academic.require_academics(verdict)
 
             locked = await sections.lock_for_enrollment(db, section_ids)
             locked_by_id = {section.id: section for section in locked}

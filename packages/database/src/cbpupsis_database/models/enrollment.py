@@ -211,6 +211,9 @@ class CourseWaiver(UUIDMixin, Base):
         DateTime(timezone=True), default=None
     )
     vpaa_token: Mapped[str | None] = mapped_column(String(128), default=None)
+    registrar_approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
     vpaa_approved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
@@ -219,4 +222,15 @@ class CourseWaiver(UUIDMixin, Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    __table_args__ = (Index("idx_fk_course_waivers_student_id", "student_id"),)
+    __table_args__ = (
+        Index("idx_fk_course_waivers_student_id", "student_id"),
+        Index(
+            "uq_course_waivers_live_edge",
+            "student_id",
+            "section_id",
+            "prerequisite_course_code",
+            unique=True,
+            postgresql_where=sa.text("state <> 'REJECTED'"),
+            sqlite_where=sa.text("state <> 'REJECTED'"),
+        ),
+    )

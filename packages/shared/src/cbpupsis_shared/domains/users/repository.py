@@ -848,3 +848,19 @@ async def get_student_by_student_number(
     return await db.scalar(
         select(StudentProfile).where(StudentProfile.student_number == student_number)
     )
+
+
+async def student_ids_in_programs(db: AsyncSession, program_ids):
+    """Resolve scoped enrollment identities without exposing profiles.
+
+    SQL::
+
+        SELECT user_id FROM student_profiles WHERE program_id IN (:program_ids);
+    """
+    return list(
+        await db.scalars(
+            select(StudentProfile.user_id).where(
+                StudentProfile.program_id.in_(program_ids)
+            )
+        )
+    )

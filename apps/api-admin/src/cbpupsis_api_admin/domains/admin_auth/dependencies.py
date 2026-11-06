@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_api_admin.domains.admin_auth.constants import ADMIN_SESSION_COOKIE
 from cbpupsis_api_admin.domains.admin_auth.exceptions import AdminProfileRequiredError
-from cbpupsis_core.exceptions import AppError
+from cbpupsis_core.exceptions import AppError, ForbiddenError
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.auth import client as auth_client
 from cbpupsis_shared.domains.auth.constants import ROLE_ADMIN, ROLE_SUPERADMIN
@@ -26,6 +26,8 @@ from cbpupsis_shared.domains.auth.exceptions import (
     NotAuthenticatedError,
     ResourceNotFoundError,
 )
+from cbpupsis_shared.domains.enrollment.constants import REVIEW_STEPS
+from cbpupsis_shared.domains.enrollment.schemas import WaiverReviewer
 from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
 from cbpupsis_shared.domains.users import client as users_client
@@ -184,3 +186,26 @@ async def require_admin_or_superadmin_session(
                 role=ROLE_SUPERADMIN,
             )
     return await require_admin_session(request, credentials, db)
+
+
+def require_waiver_reviewer(permission):
+    async def checker(
+        admin: AdminSession = Depends(require_admin_session),
+        db: AsyncSession = Depends(get_db),
+    ) -> WaiverReviewer:
+        if (
+            admin.position not in REVIEW_STEPS
+            or permission
+            not in await iam_service.get_effective_permissions(db, admin.id)
+        ):
+            raise ForbiddenError(
+                "Waiver review is not permitted.", code="PERMISSION_DENIED"
+            )
+        return WaiverReviewer(
+            id=admin.id,
+            position=admin.position,
+            department=admin.department_id,
+            college=admin.college_id,
+        )
+
+    return checker

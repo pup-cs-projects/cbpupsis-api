@@ -27,6 +27,7 @@ class AcademicTerm(UUIDMixin, Base):
 
     academic_year: Mapped[str] = mapped_column(String(20))
     semester: Mapped[str] = mapped_column(String(30))
+    term_type: Mapped[str | None] = mapped_column(String(20), default=None)
     start_date: Mapped[date] = mapped_column(Date)
     end_date: Mapped[date] = mapped_column(Date)
     is_current: Mapped[bool] = mapped_column(

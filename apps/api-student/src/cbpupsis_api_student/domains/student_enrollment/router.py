@@ -16,14 +16,47 @@ from cbpupsis_api_student.domains.student_enrollment.schemas import (
 from cbpupsis_core.middleware import client_ip_or_none
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.auth.dependencies import CurrentUser
+from cbpupsis_shared.domains.enrollment import client as enrollment
 from cbpupsis_shared.domains.enrollment.constants import (
     CREATE_ENROLLMENT,
     CREATE_OVERLOAD_REQUEST,
+    CREATE_WAIVER_REQUEST,
     READ_ENROLLMENT,
 )
+from cbpupsis_shared.domains.enrollment.schemas import WaiverFile, WaiverFiled
 from cbpupsis_shared.domains.iam.dependencies import require_permission
 
 router = APIRouter()
+
+
+async def filing_student(
+    user: CurrentUser = Depends(require_student_session),
+    _authorized: CurrentUser = Depends(require_permission(CREATE_WAIVER_REQUEST)),
+) -> CurrentUser:
+    return user
+
+
+@router.post(
+    "/waiver",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=WaiverFiled,
+    responses={
+        409: {
+            "description": "Unmet waiver eligibility, pending waiver, or a request "
+            "already decided. Eligibility is verified server-side."
+        }
+    },
+)
+async def file_waiver(
+    request: Request,
+    data: WaiverFile,
+    user: CurrentUser = Depends(filing_student),
+    db: AsyncSession = Depends(get_db),
+) -> WaiverFiled:
+    """File a session-owned unmet-edge waiver with CreateWaiverRequest."""
+    return await enrollment.file_waiver(
+        db, student_id=user.id, data=data, ip_address=client_ip_or_none(request)
+    )
 
 
 @router.post(
@@ -72,7 +105,8 @@ async def create_overload_request(
             "description": "The first failed enrollment check. Codes, in order: "
             "ENROLL_PERIOD_CLOSED, ENROLL_FINANCIAL_HOLD, ENROLL_HOLD_ACTIVE, "
             "ENROLL_STANDING_BLOCKED, the unit-ceiling codes, "
-            "ENROLL_SCHEDULE_CONFLICT, prerequisite codes when enabled, and "
+            "ENROLL_SCHEDULE_CONFLICT, the academic prerequisite/waiver, "
+            "third-year gate and PE checks, and "
             "ENROLL_SECTION_FULL. No enrollment or seat is written."
         },
     },

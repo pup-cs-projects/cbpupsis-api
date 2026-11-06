@@ -78,6 +78,7 @@ async def _program_curriculum(
             title=f"Enrollment Course {index + 1}",
             lecture_units=Decimal("3"),
             lab_units=Decimal("0"),
+            is_nstp=False,
             is_active=True,
         )
         db.add(course)
@@ -86,7 +87,7 @@ async def _program_curriculum(
             CurriculumCourse(
                 curriculum_id=curriculum.id,
                 course_id=course.id,
-                year_level=3,
+                year_level=2,
                 semester=semester,
             )
         )
@@ -147,7 +148,7 @@ async def _student(
             student_number=number,
             program_id=program.id,
             curriculum_id=curriculum.id,
-            year_level=3,
+            year_level=2,
             enrollment_status="PENDING",
         )
     )
@@ -259,6 +260,82 @@ def _body(submission, **extra) -> dict[str, object]:
     }
     body.update(extra)
     return body
+
+
+async def test_stage_seven_refuses_without_seats_then_accepts_approved_waiver(
+    client, db, submission, grant, monkeypatch
+):
+    from unittest.mock import AsyncMock
+
+    from cbpupsis_database.models.curriculum import CoursePrerequisite
+    from cbpupsis_shared.domains.enrollment import waiver
+    from cbpupsis_shared.domains.enrollment.constants import CREATE_WAIVER_REQUEST
+    from cbpupsis_shared.domains.enrollment.schemas import (
+        WaiverDecision,
+        WaiverReviewer,
+    )
+    from cbpupsis_shared.domains.sections import client as sections
+
+    student_id = submission["student"].id
+    reviewer_id = submission["other"].id
+    term_id = submission["term"].id
+    target, prerequisite = submission["courses"]
+    section_id = str(submission["sections"][0].id)
+    prerequisite_code = prerequisite.course_code
+    submission["program"].college = "CCIS"
+    profile = await db.get(StudentProfile, student_id)
+    profile.is_graduating_senior = True
+    profile.graduating_final_term_id = term_id
+    db.add(
+        CoursePrerequisite(course_id=target.id, prerequisite_course_id=prerequisite.id)
+    )
+    await db.commit()
+    await grant(student_id, CREATE_WAIVER_REQUEST)
+    headers = await _headers(client, "2026-00169-MN-0")
+    body = _body(submission, sectionIds=[section_id])
+    lock = AsyncMock(wraps=sections.lock_for_enrollment)
+    monkeypatch.setattr(sections, "lock_for_enrollment", lock)
+
+    response = await client.post(URL, json=body, headers=headers)
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "ENROLL_PREREQUISITE_NOT_MET"
+    assert response.json()["details"]["unmet"][0]["course"] == prerequisite_code
+    lock.assert_not_awaited()
+    filed = await client.post(
+        "/api/v1/student/enrollment/waiver",
+        headers=headers,
+        json={
+            "sectionId": section_id,
+            "prerequisiteCourseCode": prerequisite_code,
+            "condition": "GRADUATING",
+            "justification": "Synthetic graduating final-term fixture",
+        },
+    )
+    assert filed.status_code == 202, filed.text
+    waiver_id = uuid.UUID(filed.json()["waiverRequestId"])
+    pending = await client.post(URL, json=body, headers=headers)
+    assert pending.status_code == 409, pending.text
+    assert pending.json()["code"] == "ENROLL_WAIVER_PENDING"
+    lock.assert_not_awaited()
+    assert not await db.scalar(
+        select(TermEnrollment.id).where(TermEnrollment.student_id == student_id)
+    )
+    for position in ("chairperson", "dean", "registrar"):
+        await waiver.decide_waiver(
+            db,
+            reviewer=WaiverReviewer(
+                id=reviewer_id,
+                position=position,
+                department="Computer Science",
+                college="CCIS",
+            ),
+            waiver_id=waiver_id,
+            data=WaiverDecision(decision="APPROVE", vpaa_reference="SYNTHETIC-213"),
+        )
+    accepted = await client.post(URL, json=body, headers=headers)
+    assert accepted.status_code == 201, accepted.text
+    assert accepted.json()["status"] == ENROLLED_PENDING
+    lock.assert_awaited_once()
 
 
 async def test_ac_enrl_001_1_success_returns_pending_assessment(
@@ -497,6 +574,7 @@ async def test_ac_enrl_001_11_last_seat_never_oversells_in_100_submits(
                 title=f"Race Course {index}",
                 lecture_units=Decimal("1"),
                 lab_units=Decimal("0"),
+                is_nstp=False,
                 is_active=True,
             )
             setup_db.add(course)
@@ -505,7 +583,7 @@ async def test_ac_enrl_001_11_last_seat_never_oversells_in_100_submits(
                 CurriculumCourse(
                     curriculum_id=curriculum.id,
                     course_id=course.id,
-                    year_level=3,
+                    year_level=2,
                     semester="Race",
                 )
             )

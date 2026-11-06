@@ -933,6 +933,11 @@ each build creates its own.
 
 ## Conventions worth keeping
 
+Academic enrollment checks and prerequisite waivers follow the
+[#99 contract](ENROLLMENT-ACADEMIC-CHECKS.md). Available-courses reports
+per-candidate academic blockers; submit recomputes them before locking seats.
+Review, manual acceptance and approved data readiness are separate delivery gates.
+
 Student schedule reads and exports follow the
 [US-STU-003 contract](STUDENT-SCHEDULE.md), including weekly contact-hour totals,
 snake_case fields, private documents, and durable calendar revisions. Schedule

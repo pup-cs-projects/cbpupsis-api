@@ -2036,6 +2036,56 @@
         ]
       }
     },
+    "/api/v1/student/enrollment/waiver": {
+      "post": {
+        "tags": [
+          "student-enrollment"
+        ],
+        "summary": "File Waiver",
+        "description": "File a session-owned unmet-edge waiver with CreateWaiverRequest.",
+        "operationId": "file_waiver_api_v1_student_enrollment_waiver_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaiverFile"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WaiverFiled"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Unmet waiver eligibility, pending waiver, or a request already decided. Eligibility is verified server-side."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/student/enrollment/overload": {
       "post": {
         "tags": [
@@ -2123,7 +2173,7 @@
             "description": "The term or a selected section is not available to the signed-in student's curriculum."
           },
           "409": {
-            "description": "The first failed enrollment check. Codes, in order: ENROLL_PERIOD_CLOSED, ENROLL_FINANCIAL_HOLD, ENROLL_HOLD_ACTIVE, ENROLL_STANDING_BLOCKED, the unit-ceiling codes, ENROLL_SCHEDULE_CONFLICT, prerequisite codes when enabled, and ENROLL_SECTION_FULL. No enrollment or seat is written."
+            "description": "The first failed enrollment check. Codes, in order: ENROLL_PERIOD_CLOSED, ENROLL_FINANCIAL_HOLD, ENROLL_HOLD_ACTIVE, ENROLL_STANDING_BLOCKED, the unit-ceiling codes, ENROLL_SCHEDULE_CONFLICT, the academic prerequisite/waiver, third-year gate and PE checks, and ENROLL_SECTION_FULL. No enrollment or seat is written."
           },
           "422": {
             "description": "Validation Error",
@@ -5474,6 +5524,126 @@
         ]
       }
     },
+    "/api/v1/admin/waiver-requests": {
+      "get": {
+        "tags": [
+          "waiver-requests"
+        ],
+        "summary": "List Waivers",
+        "description": "Read MFA/permission-protected position-scoped waivers.\n\nChair: own department; Dean: own explicitly mapped college;\nRegistrar: institution-wide. Finance/other positions and students refused.",
+        "operationId": "list_waivers_api_v1_admin_waiver_requests_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_WaiverRead_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/waiver-requests/{waiverRequestId}": {
+      "patch": {
+        "tags": [
+          "waiver-requests"
+        ],
+        "summary": "Decide Waiver",
+        "description": "Record one locked assigned-step decision, audit and durable student notice.\n\nRequires a live MFA-completed Admin session and ApproveWaiverRequest.\nChair -> Dean -> Registrar; rejection is terminal at any pending step.\nFinal approval records an external VPAA reference, not a credential.",
+        "operationId": "decide_waiver_api_v1_admin_waiver_requests__waiverRequestId__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "waiverRequestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Waiverrequestid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaiverDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WaiverRead"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND, including outside-scope targets."
+          },
+          "409": {
+            "description": "ENROLL_WAIVER_STEP_MISMATCH or REQUEST_ALREADY_DECIDED."
+          },
+          "422": {
+            "description": "DECISION_REMARKS_REQUIRED for rejection; VALIDATION_ERROR for final approval without vpaaReference."
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -5529,6 +5699,52 @@
   },
   "components": {
     "schemas": {
+      "AcademicBlock": {
+        "properties": {
+          "rule": {
+            "type": "string",
+            "title": "Rule"
+          },
+          "courseCode": {
+            "type": "string",
+            "title": "Coursecode"
+          },
+          "blockingMark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blockingmark"
+          },
+          "requiredRange": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requiredrange"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rule",
+          "courseCode"
+        ],
+        "title": "AcademicBlock"
+      },
       "AcademicEventRead": {
         "properties": {
           "id": {
@@ -5650,9 +5866,15 @@
             "title": "Semester"
           },
           "term_type": {
-            "type": "string",
-            "title": "Term Type",
-            "default": "REGULAR"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term Type"
           },
           "is_current": {
             "type": "boolean",
@@ -6353,6 +6575,18 @@
               }
             ],
             "title": "Blockreason"
+          },
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicBlock"
+            },
+            "type": "array",
+            "title": "Blocks"
+          },
+          "waiverAvailable": {
+            "type": "boolean",
+            "title": "Waiveravailable",
+            "default": false
           },
           "conflictsWith": {
             "items": {
@@ -8735,6 +8969,37 @@
         ],
         "title": "Page[UserRead]"
       },
+      "Page_WaiverRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WaiverRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[WaiverRead]"
+      },
       "PermissionCreate": {
         "properties": {
           "action": {
@@ -10606,6 +10871,184 @@
         ],
         "title": "VerifyResetTokenRequest",
         "description": "Non-consuming check on the reset endpoint before displaying the form."
+      },
+      "WaiverDecision": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVE",
+              "REJECT"
+            ],
+            "title": "Decision"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "vpaaReference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vpaareference"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "title": "WaiverDecision"
+      },
+      "WaiverFile": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "prerequisiteCourseCode": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Prerequisitecoursecode"
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "REPEATED_PREREQUISITE",
+              "SUPERIOR_STANDING",
+              "GRADUATING"
+            ],
+            "title": "Condition"
+          },
+          "justification": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Justification"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sectionId",
+          "prerequisiteCourseCode",
+          "condition",
+          "justification"
+        ],
+        "title": "WaiverFile"
+      },
+      "WaiverFiled": {
+        "properties": {
+          "waiverRequestId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Waiverrequestid"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "waiverRequestId",
+          "state"
+        ],
+        "title": "WaiverFiled"
+      },
+      "WaiverRead": {
+        "properties": {
+          "waiverRequestId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Waiverrequestid"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "prerequisiteCourseCode": {
+            "type": "string",
+            "title": "Prerequisitecoursecode"
+          },
+          "condition": {
+            "type": "string",
+            "title": "Condition"
+          },
+          "justification": {
+            "type": "string",
+            "title": "Justification"
+          },
+          "reviewRemarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewremarks"
+          },
+          "vpaaReference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vpaareference"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "waiverRequestId",
+          "state",
+          "studentId",
+          "sectionId",
+          "prerequisiteCourseCode",
+          "condition",
+          "justification",
+          "reviewRemarks",
+          "vpaaReference",
+          "createdAt"
+        ],
+        "title": "WaiverRead"
       },
       "WebAuthnEnrollmentConfirmRequest": {
         "properties": {

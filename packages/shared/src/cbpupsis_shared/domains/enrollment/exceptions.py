@@ -1,3 +1,5 @@
+"""Stable academic enrollment and waiver refusals."""
+
 from __future__ import annotations
 
 import uuid
@@ -164,15 +166,58 @@ class OverloadNotEligibleError(ConflictError):
         )
 
 
+class AcademicRefusalError(ConflictError):
+    """A structured refusal from the shared academic evaluator."""
+
+
+class AcademicDataUnavailableError(ConflictError):
+    code = "ENROLL_ACADEMIC_DATA_UNAVAILABLE"
+
+    def __init__(self):
+        super().__init__("Reviewed academic metadata is unavailable.")
+
+
+class WaiverEligibilityError(ConflictError):
+    code = "ENROLL_PREREQUISITE_NOT_MET"
+
+    def __init__(self):
+        super().__init__("No qualifying unmet prerequisite and waiver condition.")
+
+
+class WaiverPendingError(ConflictError):
+    code = "ENROLL_WAIVER_PENDING"
+
+    def __init__(self):
+        super().__init__("A live waiver already exists.")
+
+
+class WaiverStepMismatchError(ConflictError):
+    code = "ENROLL_WAIVER_STEP_MISMATCH"
+
+    def __init__(self):
+        super().__init__("Reviewer is not assigned to this step.")
+
+
 class DecisionRemarksRequiredError(ValidationError):
     code = "DECISION_REMARKS_REQUIRED"
 
-    def __init__(self) -> None:
-        super().__init__("Remarks are required when rejecting an overload request.")
+    def __init__(
+        self, detail: str = "Remarks are required when rejecting an overload request."
+    ) -> None:
+        super().__init__(detail)
 
 
 class RequestAlreadyDecidedError(ConflictError):
     code = "REQUEST_ALREADY_DECIDED"
 
-    def __init__(self) -> None:
-        super().__init__("This overload request has already been decided.")
+    def __init__(
+        self, detail: str = "This overload request has already been decided."
+    ) -> None:
+        super().__init__(detail)
+
+
+class VpaaReferenceRequiredError(ValidationError):
+    code = "VALIDATION_ERROR"
+
+    def __init__(self):
+        super().__init__("The external VPAA approval reference is required.")

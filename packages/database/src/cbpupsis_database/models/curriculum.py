@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Computed,
     ForeignKey,
     Numeric,
@@ -77,8 +78,18 @@ class Course(UUIDMixin, Base):
     grading_mode: Mapped[str] = mapped_column(
         String(30), default="NUMERIC", server_default="NUMERIC"
     )
+    # NULL classification is unreviewed, not evidence that a course is ordinary.
+    pe_sequence: Mapped[int | None] = mapped_column(SmallInteger, default=None)
+    is_nstp: Mapped[bool | None] = mapped_column(Boolean, default=None)
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "pe_sequence IS NULL OR (pe_sequence BETWEEN 1 AND 4 AND is_nstp IS FALSE)",
+            name="ck_courses_academic_classification",
+        ),
     )
 
 

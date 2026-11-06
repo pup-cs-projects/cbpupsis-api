@@ -93,6 +93,9 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ReadGrade", "Read your own finalized grades"),
     ("ReadTranscript", "Read and export your own transcript"),
     ("ReadSchedule", "Read and export your own student course schedule"),
+    ("CreateWaiverRequest", "File your own prerequisite waiver request"),
+    ("ReadWaiverRequest", "Read position-scoped prerequisite waiver requests"),
+    ("ApproveWaiverRequest", "Record the assigned prerequisite waiver decision"),
     ("ReadEnrollment", "Read your own enrollment eligibility and unit ceiling"),
     ("CreateEnrollment", "Submit your own enrollment section selections"),
     ("CreateOverloadRequest", "File your own enrollment overload request"),
@@ -116,6 +119,8 @@ POLICIES: dict[str, list[str]] = {
     "GradeReader": ["ReadGrade"],
     "TranscriptReader": ["ReadTranscript"],
     "ScheduleReader": ["ReadSchedule"],
+    "WaiverRequestAuthor": ["CreateWaiverRequest"],
+    "WaiverRequestAdmin": ["ReadWaiverRequest", "ApproveWaiverRequest"],
     "EnrollmentReader": ["ReadEnrollment"],
     "EnrollmentAuthor": ["CreateEnrollment"],
     "OverloadRequestAuthor": ["CreateOverloadRequest"],
@@ -150,13 +155,14 @@ GROUPS: dict[str, list[str]] = {
     # product permissions (Home, Calendar, Courses, Enrollment) will be attached
     # by those domains. User administration, IAM, and audit reading belong to
     # the separate Superadmin story and must not leak through this seed.
-    ADMIN_GROUP: [],
+    ADMIN_GROUP: ["WaiverRequestAdmin"],
     FACULTY_GROUP: ["CourseSectionReader"],
     # Superadmin-created student accounts join this group.
     STUDENT_GROUP: [
         "GradeReader",
         "TranscriptReader",
         "ScheduleReader",
+        "WaiverRequestAuthor",
         "EnrollmentReader",
         "EnrollmentAuthor",
         "OverloadRequestAuthor",
