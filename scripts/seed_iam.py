@@ -101,6 +101,8 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("CreateOverloadRequest", "File your own enrollment overload request"),
     ("ReadOverloadRequest", "Read overload requests within your Admin scope"),
     ("ApproveOverloadRequest", "Approve or reject an in-scope overload request"),
+    ("IssueCertificate", "Issue your own Certificate of Registration"),
+    ("ReadAssessment", "Read your own stored term assessment"),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -126,6 +128,8 @@ POLICIES: dict[str, list[str]] = {
     "OverloadRequestAuthor": ["CreateOverloadRequest"],
     "OverloadRequestReader": ["ReadOverloadRequest"],
     "OverloadRequestAdmin": ["ReadOverloadRequest", "ApproveOverloadRequest"],
+    "CertificateAuthor": ["IssueCertificate"],
+    "AssessmentReader": ["ReadAssessment"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
@@ -166,6 +170,8 @@ GROUPS: dict[str, list[str]] = {
         "EnrollmentReader",
         "EnrollmentAuthor",
         "OverloadRequestAuthor",
+        "CertificateAuthor",
+        "AssessmentReader",
     ],
     SUPERADMIN_GROUP: list(POLICIES),
 }

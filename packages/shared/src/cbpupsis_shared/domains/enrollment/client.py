@@ -7,6 +7,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.academics.schemas import AcademicTermRead
 from cbpupsis_shared.domains.enrollment import service
+from cbpupsis_shared.domains.enrollment.certificate import (
+    issue_certificate,
+    read_assessment,
+    read_certificate,
+    stage_reissue,
+    verify_certificate,
+)
+from cbpupsis_shared.domains.enrollment.certificate_schemas import (
+    CertificateMetadata,
+    CertificateRead,
+    IssueCertificate,
+    VerificationRead,
+)
+from cbpupsis_shared.domains.enrollment.repository import begin_certificate_snapshot
 from cbpupsis_shared.domains.enrollment.schemas import (
     AvailableCourseRead,
     EnrollmentSubmitRead,
@@ -28,12 +42,17 @@ from cbpupsis_shared.domains.enrollment.service import (
 
 __all__ = [
     "AvailableCourseRead",
+    "CertificateMetadata",
+    "CertificateRead",
     "EnrollmentSubmitRead",
     "EnrollmentSummaryRead",
+    "IssueCertificate",
     "OverloadRequestFiledRead",
     "OverloadRequestRead",
     "TermEnrollmentRead",
+    "VerificationRead",
     "assess_overload_eligibility",
+    "begin_certificate_snapshot",
     "check_schedule_conflict",
     "check_unit_ceiling",
     "compute_effective_ceiling",
@@ -45,11 +64,16 @@ __all__ = [
     "get_approved_overload_units",
     "get_enrollment_summary",
     "get_term_enrollment",
+    "issue_certificate",
     "list_available_courses",
     "list_overload_requests",
+    "read_assessment",
+    "read_certificate",
     "record_enrollments",
     "require_academics",
+    "stage_reissue",
     "submit_enrollment",
+    "verify_certificate",
 ]
 
 

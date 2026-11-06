@@ -231,13 +231,22 @@ def register_exception_handlers(app: FastAPI) -> None:
         fragment to the client. The correlation id is the bridge between the
         generic response and the full detail in the logs.
         """
-        logger.exception(
-            "Unhandled error on %s %s (request_id=%s)",
-            request.method,
-            request_log_path(request),
-            request_id_of(request),
-            exc_info=exc,
-        )
+        if getattr(request.state, "safe_error_metadata", False):
+            logger.error(
+                "request.unexpected_error",
+                extra={
+                    "path": request_log_path(request),
+                    "error_type": type(exc).__name__,
+                },
+            )
+        else:
+            logger.exception(
+                "Unhandled error on %s %s (request_id=%s)",
+                request.method,
+                request_log_path(request),
+                request_id_of(request),
+                exc_info=exc,
+            )
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={

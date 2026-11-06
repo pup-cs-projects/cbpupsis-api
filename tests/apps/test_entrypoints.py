@@ -38,7 +38,15 @@ APPS: dict[str, FastAPI] = {
 #: The router prefixes under /api/v1 each app serves.
 EXPECTED_PREFIXES: dict[str, set[str]] = {
     # Role sign-ins live under /auth/<role>, so they share the "auth" prefix.
-    "student": {"auth", "users", "notifications", "items", "student", "students"},
+    "student": {
+        "auth",
+        "users",
+        "notifications",
+        "items",
+        "student",
+        "students",
+        "public",
+    },
     "faculty": {"auth", "users", "notifications", "sections"},
     "admin": {"auth", "users", "notifications", "admin", "superadmin", "iam", "audit"},
 }
@@ -73,6 +81,9 @@ def test_student_records_have_one_public_route_per_operation(app: FastAPI) -> No
     }
     assert paths == {
         ("post", "/api/v1/student/enrollment/waiver"),
+        ("post", "/api/v1/student/schedule/cor"),
+        ("get", "/api/v1/student/schedule/cor"),
+        ("get", "/api/v1/student/assessment"),
         ("get", "/api/v1/students/me/grades"),
         ("get", "/api/v1/students/me/transcript"),
         ("get", "/api/v1/students/me/transcript/export"),

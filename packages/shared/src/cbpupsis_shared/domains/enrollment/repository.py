@@ -1,4 +1,4 @@
-"""Owner-scoped enrollment queries; no enrollment mutations.
+"""Owner-scoped enrollment reads and transaction-compatible COR persistence.
 
 Only this module builds SQL or calls into the session for term enrollments
 and course registrations.
@@ -14,6 +14,7 @@ from sqlalchemy import Uuid, bindparam, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.models.enrollment import (
+    CorIssuance,
     CourseWaiver,
     OverloadRequest,
     StudentCourseEnrollment,
@@ -23,6 +24,115 @@ from cbpupsis_shared.domains.enrollment.constants import (
     ACTIVE_COURSE_ENROLLMENT_STATUSES,
     ACTIVE_TERM_ENROLLMENT_STATUSES,
 )
+
+
+async def begin_certificate_snapshot(db):
+    """First statement of the owner's transaction for coherent domain reads.
+
+    SQL::
+
+        SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+    """
+    if db.bind.dialect.name == "postgresql":
+        await db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
+
+
+async def certificate_snapshot_is_consistent(db):
+    """Cannot upgrade an active snapshot.
+
+    SQL::
+
+        SHOW transaction_isolation;
+    """
+    if db.bind.dialect.name != "postgresql":
+        return True
+    return await db.scalar(text("SHOW transaction_isolation")) in {
+        "repeatable read",
+        "serializable",
+    }
+
+
+async def enrollment(db, student_id, term_id, *, lock=False):
+    """Lock or read a session-owned term enrollment.
+
+    SQL::
+
+        SELECT * FROM term_enrollments
+        WHERE student_id=:s AND academic_term_id=:t [FOR UPDATE];
+    """
+    stmt = select(TermEnrollment).where(
+        TermEnrollment.student_id == student_id,
+        TermEnrollment.academic_term_id == term_id,
+    )
+    if lock:
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
+    return await db.scalar(stmt)
+
+
+async def current(db, enrollment_id, *, lock=False):
+    """Read the single current issuance, optionally locking it.
+
+    SQL::
+
+        SELECT * FROM cor_issuances
+        WHERE term_enrollment_id=:e AND status='CURRENT' [FOR UPDATE];
+    """
+    stmt = select(CorIssuance).where(
+        CorIssuance.term_enrollment_id == enrollment_id, CorIssuance.status == "CURRENT"
+    )
+    if lock:
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
+    return await db.scalar(stmt)
+
+
+async def registrations(db, enrollment_id, term_id):
+    """Read registrations with an overflow sentinel.
+
+    SQL::
+
+        SELECT * FROM student_course_enrollments
+        WHERE term_enrollment_id=:e AND academic_term_id=:t AND status='enrolled'
+        ORDER BY section_id LIMIT 101;
+    """
+    return list(
+        await db.scalars(
+            select(StudentCourseEnrollment)
+            .where(
+                StudentCourseEnrollment.term_enrollment_id == enrollment_id,
+                StudentCourseEnrollment.academic_term_id == term_id,
+                StudentCourseEnrollment.status == "enrolled",
+            )
+            .order_by(StudentCourseEnrollment.section_id)
+            .limit(101)
+        )
+    )
+
+
+async def by_hash(db, digest):
+    """Unique indexed token lookup.
+
+    SQL::
+
+        SELECT * FROM cor_issuances WHERE verification_token_hash=:h;
+    """
+    return await db.scalar(
+        select(CorIssuance).where(CorIssuance.verification_token_hash == digest)
+    )
+
+
+def add(db, **fields):
+    """Stage encrypted content and hash without committing.
+
+    SQL::
+
+        INSERT INTO cor_issuances (id, student_id, term_enrollment_id,
+            verification_token_hash, token_envelope, snapshot_envelope,
+            status, issued_at) VALUES (:id, :student, :enrollment,
+            :hash, :token_envelope, :snapshot_envelope, :status, :issued_at);
+    """
+    row = CorIssuance(**fields)
+    db.add(row)
+    return row
 
 
 async def get_term_enrollment(
@@ -245,7 +355,8 @@ async def enrolled_sections(
         JOIN term_enrollments AS te ON te.id = sce.term_enrollment_id
         WHERE te.student_id = :student_id AND te.academic_term_id = :term_id
           AND sce.academic_term_id = :term_id
-          AND te.enrollment_status IN ('enrolled', 'ENROLLED_PENDING')
+          AND te.enrollment_status IN ('enrolled', 'ENROLLED_PENDING',
+              'OFFICIALLY_ENROLLED')
           AND sce.status IN ('enrolled', 'ENROLLED_PENDING')
         ORDER BY sce.section_id LIMIT 101;
     """

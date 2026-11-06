@@ -67,6 +67,8 @@ class CorIssuance(UUIDMixin, Base):
         ForeignKey("term_enrollments.id", ondelete="CASCADE")
     )
     verification_token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    token_envelope: Mapped[str | None] = mapped_column(Text, default=None)
+    snapshot_envelope: Mapped[str | None] = mapped_column(Text, default=None)
     status: Mapped[str] = mapped_column(
         String(20), default="CURRENT", server_default="CURRENT"
     )
@@ -79,6 +81,13 @@ class CorIssuance(UUIDMixin, Base):
 
     __table_args__ = (
         Index("idx_fk_cor_issuances_enrollment_id", "term_enrollment_id"),
+        Index(
+            "uq_cor_current_enrollment",
+            "term_enrollment_id",
+            unique=True,
+            postgresql_where=sa.text("status = 'CURRENT'"),
+            sqlite_where=sa.text("status = 'CURRENT'"),
+        ),
     )
 
 

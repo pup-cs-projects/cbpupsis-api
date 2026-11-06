@@ -8,14 +8,34 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.billing import service
+from cbpupsis_shared.domains.billing.assessment import (
+    AssessmentCourse,
+    AssessmentInputs,
+    AssessmentInvalid,
+    AssessmentLine,
+    AssessmentRead,
+    StoredAssessment,
+    calculate_assessment,
+    read_stored_assessment,
+    stage_assessment,
+)
 from cbpupsis_shared.domains.billing.schemas import HoldRead, StudentBillingAccountRead
 
 __all__ = [
+    "AssessmentCourse",
+    "AssessmentInputs",
+    "AssessmentInvalid",
+    "AssessmentLine",
+    "AssessmentRead",
     "HoldRead",
+    "StoredAssessment",
     "StudentBillingAccountRead",
+    "calculate_assessment",
     "get_student_billing",
     "get_student_holds",
     "get_total_outstanding_balance",
+    "read_stored_assessment",
+    "stage_assessment",
 ]
 
 

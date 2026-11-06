@@ -13,6 +13,20 @@ Add the row in the same commit as the code that raises it.
 | **Last updated** | 2026-11-05 |
 | **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications`, and `enrollment` in `packages/shared`; `items` and `student_profile` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The `student_auth`, `faculty_auth`, and `sections` domains raise the shared `auth` classes and add none of their own; `curriculum` raises none. |
 
+## Certificate of Registration (US-ENRL-003)
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 409 | `COR_NOT_ENROLLED` | No session-owned term enrollment; no certificate or assessment. |
+| 409 | `COR_ENROLLMENT_NOT_FINAL` | Not issued/final; `details.unmet` lists `HOLD`, `PREREQUISITE_VIOLATION`, and/or `NO_ASSESSMENT` when known. |
+| 404 | `RESOURCE_NOT_FOUND` | Unknown/malformed public verification token or inaccessible identity. |
+| 429 | `rate_limited` | More than ten public checks per minute per IP, across all token URLs. |
+| 503 | `SERVICE_UNAVAILABLE` | COR dependency, encryption, source consistency or buffered renderer unavailable; no partial attachment. |
+
+Existing session/permission errors are unchanged. All COR/assessment/verification
+responses are non-cacheable. See [CERTIFICATE.md](CERTIFICATE.md) for contracts,
+provisional finance policy, key provisioning and unresolved integration gates.
+
 ## Student academic records (US-STU-004)
 
 | HTTP | Code | Meaning |
