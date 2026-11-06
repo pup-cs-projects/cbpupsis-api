@@ -2,6 +2,13 @@
 
 Revision ID: e171_add_drop_requests
 Revises: e170_program_college
+
+Note on data backfill & downgrade:
+Legacy single-course columns (`section_id`, `request_type`, and `reason`) on
+`add_drop_requests` are dropped in this migration without data backfill into
+`add_drop_request_items`. This migration assumes staging and production have no
+existing add/drop records prior to rollout. On downgrade, the legacy columns are
+restored as nullable, but items records are dropped without backfill.
 """
 
 import sqlalchemy as sa

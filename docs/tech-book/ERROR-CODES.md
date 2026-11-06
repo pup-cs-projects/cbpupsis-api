@@ -61,7 +61,7 @@ the standard 403 missing-permission response.
 | 409 | `REQUEST_CONCURRENCY_CONFLICT` | A concurrent update changed the request version before decision commit. |
 | 422 | `DECISION_REMARKS_REQUIRED` | A Chairperson or Dean rejected an add/drop request without non-blank remarks. |
 | 404 | `RESOURCE_NOT_FOUND` | Student attempting to read another student's request, or admin reviewing a request outside their department/college scope (anti-probing). |
-| 403 | `AUTH_INSUFFICIENT_ROLE` | Registrar attempting to mutate/decide an add/drop request (read-only role). |
+| 403 | — | Registrar attempting to mutate/decide an add/drop request lacks the required permission (`require_permission(APPROVE_ADD_DROP)`). |
 
 ## The envelope
 

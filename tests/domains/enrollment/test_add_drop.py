@@ -445,6 +445,24 @@ async def test_ac_enrl_004_1_file_request_success_pending_unchanged_enrollment(
         ],
         "comments": "Requesting section change due to shift adjustment",
     }
+    # Snapshot all enrollment rows before filing
+    before_rows = [
+        await repository.get_student_course_enrollment(db, s["te"].id, sec.id)
+        for sec in s["sections"]
+    ]
+    before_snapshots = [
+        {
+            "id": r.id,
+            "term_enrollment_id": r.term_enrollment_id,
+            "academic_term_id": r.academic_term_id,
+            "section_id": r.section_id,
+            "status": r.status,
+            "created_at": r.created_at,
+        }
+        for r in before_rows
+        if r is not None
+    ]
+
     response = await client.post(STUDENT_URL, headers=headers, json=payload)
     assert response.status_code == 201, response.text
     data = response.json()
@@ -463,12 +481,24 @@ async def test_ac_enrl_004_1_file_request_success_pending_unchanged_enrollment(
     assert courses[str(s["sections"][4].id)]["tag"] == TAG_PENDING_DROP
     assert courses[str(s["sections"][4].id)]["reason"] == "Schedule Conflict with Work"
 
-    # Enrollment rows in database remain completely identical
-    dropped_sec = await repository.get_student_course_enrollment(
-        db, s["te"].id, s["sections"][4].id
-    )
-    assert dropped_sec is not None
-    assert dropped_sec.status == "enrolled"
+    # All enrollment rows in database remain completely identical field-by-field
+    after_rows = [
+        await repository.get_student_course_enrollment(db, s["te"].id, sec.id)
+        for sec in s["sections"]
+    ]
+    after_snapshots = [
+        {
+            "id": r.id,
+            "term_enrollment_id": r.term_enrollment_id,
+            "academic_term_id": r.academic_term_id,
+            "section_id": r.section_id,
+            "status": r.status,
+            "created_at": r.created_at,
+        }
+        for r in after_rows
+        if r is not None
+    ]
+    assert before_snapshots == after_snapshots
 
     added_sec = await repository.get_student_course_enrollment(
         db, s["te"].id, s["s6"].id
@@ -522,6 +552,11 @@ async def test_ac_enrl_004_2_chair_or_dean_approves_updates_enrollment_and_asses
     )
     assert added_sec is not None
     assert added_sec.status == "enrolled"
+
+    # Note on billing assessment & COR reissue:
+    # Staging assessment (billing.stage_assessment) and COR reissue
+    # (certificate.stage_reissue) integrate via PR #214 (Issue #100).
+    # Assessment staging assertions will be added upon merging PR #214.
 
 
 async def test_ac_enrl_004_2_failure_rollback_preserves_pending(
@@ -1023,6 +1058,7 @@ async def test_ac_enrl_004_11_registrar_read_only_403(
         json={"decision": "APPROVE", "remarks": "Approved.", "version": 1},
     )
     assert reg_patch.status_code == 403
+    assert "Missing required permission" in reg_patch.json()["detail"]
 
 
 async def test_ac_enrl_004_student_admin_patch_forbidden_403(
@@ -1036,6 +1072,7 @@ async def test_ac_enrl_004_student_admin_patch_forbidden_403(
         json={"decision": "APPROVE", "version": 1},
     )
     assert resp.status_code == 403
+    assert resp.json()["code"] == "AUTH_INSUFFICIENT_ROLE"
 
 
 async def test_ac_enrl_004_audit_rows_logged(
