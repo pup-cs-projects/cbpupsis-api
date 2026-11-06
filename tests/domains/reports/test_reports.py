@@ -501,6 +501,74 @@ async def test_ac_rpt_001_3_export_numbers_match_report_numbers(
 
 
 @pytest.mark.asyncio
+async def test_ac_rpt_001_3_export_pdf_with_special_characters_escaped(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """AC-RPT-001.3: Group values and term labels with < or & are escaped cleanly."""
+    term = await _create_term(db, "2026-2027", "1-XML&<Test>")
+    prog = await _create_program(
+        db,
+        code="BS<IT>&CS",
+        name="IT & CS",
+        department="Computer Science",
+        college="CCIS",
+    )
+    await _create_student_enrollment(
+        db,
+        term_id=term.id,
+        program_id=prog.id,
+        year_level=1,
+        student_number_suffix=399,
+    )
+    _, headers = await _create_admin(
+        db, email="registrar_xml@example.com", position=AdminPosition.registrar
+    )
+
+    pdf_res = await client.get(
+        f"{EXPORT_URL}?termId={term.id}&groupBy=program&format=pdf",
+        headers=headers,
+    )
+    assert pdf_res.status_code == 200
+    assert "application/pdf" in pdf_res.headers["content-type"]
+    assert pdf_res.content.startswith(b"%PDF")
+
+    pdf_reader = PdfReader(BytesIO(pdf_res.content))
+    extracted_text = "".join(page.extract_text() for page in pdf_reader.pages)
+    assert "BS<IT>&CS" in extracted_text
+
+
+@pytest.mark.asyncio
+async def test_ac_rpt_001_admin_position_policies_staged_for_api_created_admins(
+    db: AsyncSession,
+) -> None:
+    """Admin accounts created through accounts service stage EnrollmentReportReader."""
+    from cbpupsis_shared.domains.iam import service as iam_service
+    from scripts import seed_iam
+
+    await seed_iam.seed(db)
+
+    for position in ("chairperson", "dean", "registrar"):
+        user = User(
+            email=f"api-admin-{position}@example.com",
+            full_name=f"API Admin {position.title()}",
+            password_hash=hash_password(TEST_PASSWORD),
+            is_active=True,
+            email_verified_at=datetime.now(UTC),
+        )
+        db.add(user)
+        await db.flush()
+        db.add(AdminProfile(user_id=user.id, position=position, is_active=True))
+
+        await iam_service.stage_admin_position_policies(db, [(user.id, position)])
+        await db.commit()
+
+        perms = await iam_service.get_effective_permissions(db, user.id)
+        assert READ_ENROLLMENT_REPORT in perms, (
+            f"{position} must hold READ_ENROLLMENT_REPORT"
+        )
+
+
+@pytest.mark.asyncio
 async def test_ac_rpt_001_4_scope_chair_dean_registrar_finance(
     client: AsyncClient, db: AsyncSession
 ) -> None:
@@ -631,6 +699,46 @@ async def test_ac_rpt_001_4_scope_chair_dean_registrar_finance(
     )
     assert res_fin_export.status_code == 403
     assert res_fin_export.json()["code"] == "AUTH_INSUFFICIENT_ROLE"
+
+    # 5. Scope leak prevention: Chair with NULL department -> Forbidden 403
+    _, chair_null_headers = await _create_admin(
+        db,
+        email="chair_null_dept@example.com",
+        position=AdminPosition.chairperson,
+        department=None,
+        college="CCIS",
+    )
+    res_chair_null = await client.get(
+        f"{REPORT_URL}?termId={term.id}&groupBy=program", headers=chair_null_headers
+    )
+    assert res_chair_null.status_code == 403
+    assert res_chair_null.json()["code"] == "AUTH_INSUFFICIENT_ROLE"
+
+    res_chair_null_export = await client.get(
+        f"{EXPORT_URL}?termId={term.id}&groupBy=program", headers=chair_null_headers
+    )
+    assert res_chair_null_export.status_code == 403
+    assert res_chair_null_export.json()["code"] == "AUTH_INSUFFICIENT_ROLE"
+
+    # 6. Scope leak prevention: Dean with NULL college -> Forbidden 403
+    _, dean_null_headers = await _create_admin(
+        db,
+        email="dean_null_college@example.com",
+        position=AdminPosition.dean,
+        department=None,
+        college=None,
+    )
+    res_dean_null = await client.get(
+        f"{REPORT_URL}?termId={term.id}&groupBy=program", headers=dean_null_headers
+    )
+    assert res_dean_null.status_code == 403
+    assert res_dean_null.json()["code"] == "AUTH_INSUFFICIENT_ROLE"
+
+    res_dean_null_export = await client.get(
+        f"{EXPORT_URL}?termId={term.id}&groupBy=program", headers=dean_null_headers
+    )
+    assert res_dean_null_export.status_code == 403
+    assert res_dean_null_export.json()["code"] == "AUTH_INSUFFICIENT_ROLE"
 
 
 @pytest.mark.asyncio
@@ -784,38 +892,61 @@ async def test_ac_rpt_001_6_no_names_student_numbers_emails_in_any_response(
 
 
 @pytest.mark.asyncio
-async def test_ac_rpt_001_responses_unknown_term_id_404(
+async def test_ac_rpt_001_7_responses_term_id_validation_400_and_unknown_404(
     client: AsyncClient, db: AsyncSession
 ) -> None:
-    """Responses table: Unknown termId returns 404 RESOURCE_NOT_FOUND."""
+    """AC-RPT-001.7: Missing/malformed termId gives 400, unknown UUID gives 404."""
     _, headers = await _create_admin(
         db, email="registrar_err1@example.com", position=AdminPosition.registrar
     )
 
-    # Unknown UUID
+    # Missing termId -> 400 INVALID_INPUT
+    res_missing = await client.get(REPORT_URL, headers=headers)
+    assert res_missing.status_code == 400
+    assert res_missing.json()["code"] == "INVALID_INPUT"
+
+    # Empty termId -> 400 INVALID_INPUT
+    res_empty = await client.get(f"{REPORT_URL}?termId=", headers=headers)
+    assert res_empty.status_code == 400
+    assert res_empty.json()["code"] == "INVALID_INPUT"
+
+    # Malformed termId string -> 400 INVALID_INPUT
+    res_malformed = await client.get(
+        f"{REPORT_URL}?termId=not-a-valid-uuid", headers=headers
+    )
+    assert res_malformed.status_code == 400
+    assert res_malformed.json()["code"] == "INVALID_INPUT"
+
+    # Export with missing termId -> 400 INVALID_INPUT
+    res_export_missing = await client.get(EXPORT_URL, headers=headers)
+    assert res_export_missing.status_code == 400
+    assert res_export_missing.json()["code"] == "INVALID_INPUT"
+
+    # Export with malformed termId -> 400 INVALID_INPUT
+    res_export_malformed = await client.get(
+        f"{EXPORT_URL}?termId=not-a-uuid", headers=headers
+    )
+    assert res_export_malformed.status_code == 400
+    assert res_export_malformed.json()["code"] == "INVALID_INPUT"
+
+    # Unknown UUID (syntactically valid but not in database) -> 404 RESOURCE_NOT_FOUND
     unknown_uuid = uuid.uuid4()
     res = await client.get(f"{REPORT_URL}?termId={unknown_uuid}", headers=headers)
     assert res.status_code == 404
     assert res.json()["code"] == "RESOURCE_NOT_FOUND"
 
-    # Malformed termId string
-    res_malformed = await client.get(
-        f"{REPORT_URL}?termId=not-a-valid-uuid", headers=headers
+    res_export_unknown = await client.get(
+        f"{EXPORT_URL}?termId={unknown_uuid}", headers=headers
     )
-    assert res_malformed.status_code == 404
-    assert res_malformed.json()["code"] == "RESOURCE_NOT_FOUND"
-
-    # Missing termId
-    res_missing = await client.get(REPORT_URL, headers=headers)
-    assert res_missing.status_code == 404
-    assert res_missing.json()["code"] == "RESOURCE_NOT_FOUND"
+    assert res_export_unknown.status_code == 404
+    assert res_export_unknown.json()["code"] == "RESOURCE_NOT_FOUND"
 
 
 @pytest.mark.asyncio
-async def test_ac_rpt_001_responses_unknown_group_by_400(
+async def test_ac_rpt_001_8_responses_unknown_group_by_400(
     client: AsyncClient, db: AsyncSession
 ) -> None:
-    """Responses table: Unknown groupBy returns 400 INVALID_INPUT."""
+    """AC-RPT-001.8 / Responses: Unknown groupBy returns 400 INVALID_INPUT."""
     term = await _create_term(db, "2026-2027", "1-ERR2")
     _, headers = await _create_admin(
         db, email="registrar_err2@example.com", position=AdminPosition.registrar
@@ -841,7 +972,7 @@ async def test_ac_rpt_001_responses_unknown_group_by_400(
 
 
 @pytest.mark.asyncio
-async def test_ac_rpt_001_performance_15000_enrollments_under_3_seconds(
+async def test_ac_rpt_001_9_performance_15000_enrollments_under_3_seconds(
     client: AsyncClient, db: AsyncSession
 ) -> None:
     """Quality target: 15,000 seeded enrollments returns in at most 3 seconds in CI."""

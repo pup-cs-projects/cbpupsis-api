@@ -98,6 +98,8 @@ async def require_report_scope(
         return ReportScope(position=position, is_all=True)
 
     if position in (AdminPosition.dean, "dean"):
+        if not profile.college or not profile.college.strip():
+            raise InsufficientRoleError
         return ReportScope(
             position=position,
             college_id=profile.college,
@@ -105,6 +107,8 @@ async def require_report_scope(
         )
 
     if position in (AdminPosition.chairperson, "chairperson", "chair"):
+        if not profile.department or not profile.department.strip():
+            raise InsufficientRoleError
         return ReportScope(
             position=position,
             department_id=profile.department,

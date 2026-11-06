@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import html
 import io
 from io import BytesIO
 
@@ -75,15 +76,18 @@ def render_pdf(report: EnrollmentReportRead, term_label: str = "") -> bytes:
     ]
 
     if term_label:
-        elements.append(Paragraph(f"Academic Term: {term_label}", subtitle_style))
+        elements.append(
+            Paragraph(f"Academic Term: {html.escape(str(term_label))}", subtitle_style)
+        )
 
     elements.append(Spacer(1, 14))
 
     table_data = [[Paragraph("Group", cell_bold), Paragraph("Count", cell_bold)]]
     for row in report.rows:
+        escaped_group = html.escape(str(row.group))
         table_data.append(
             [
-                Paragraph(str(row.group), cell_style),
+                Paragraph(escaped_group, cell_style),
                 Paragraph(str(row.count), cell_style),
             ]
         )

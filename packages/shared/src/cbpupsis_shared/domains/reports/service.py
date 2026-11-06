@@ -25,14 +25,14 @@ from cbpupsis_shared.domains.reports.schemas import (
 
 
 def _parse_term_id(term_id: str | uuid.UUID | None) -> uuid.UUID:
-    if term_id is None:
-        raise ResourceNotFoundError("termId is required")
+    if term_id is None or (isinstance(term_id, str) and not term_id.strip()):
+        raise InvalidInputError("termId is required")
     if isinstance(term_id, uuid.UUID):
         return term_id
     try:
-        return uuid.UUID(str(term_id))
+        return uuid.UUID(str(term_id).strip())
     except (ValueError, TypeError, AttributeError):
-        raise ResourceNotFoundError(f"Unknown termId: {term_id}") from None
+        raise InvalidInputError(f"Invalid termId: {term_id}") from None
 
 
 async def generate_enrollment_report(
