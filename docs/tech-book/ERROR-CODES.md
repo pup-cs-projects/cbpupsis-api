@@ -10,8 +10,8 @@ Add the row in the same commit as the code that raises it.
 
 | | |
 |---|---|
-| **Last updated** | 2026-10-23 |
-| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications`, `curriculum`, `sections` in `packages/shared`; `items` and `student_profile` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The `student_auth` and `faculty_auth` domains raise the shared `auth` classes and add none of their own. |
+| **Last updated** | 2026-11-06 |
+| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications`, `curriculum`, `sections`, and `enrollment` in `packages/shared`; `items` and `student_profile` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The `student_auth` and `faculty_auth` domains raise the shared `auth` classes and add none of their own. |
 
 ## Student academic records (US-STU-004)
 
@@ -24,6 +24,28 @@ These routes preserve existing 401 authentication/session errors, 403
 `PASSWORD_CHANGE_REQUIRED`, 403 missing-permission responses (without a machine
 code), and 422 selector/pagination validation responses. Every response is
 private/no-store. See [STUDENT-GRADES.md](STUDENT-GRADES.md).
+
+## Enrollment eligibility (US-ENRL-001)
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 409 | `ENROLL_UNIT_CEILING_EXCEEDED` | The selected sections exceed the curriculum-derived effective ceiling. `details` includes the prescribed load, approved overload, standing reduction, effective ceiling, attempted units, and units remaining. |
+| 409 | `ENROLL_OVERLOAD_CAP_EXCEEDED` | The selected load is more than 9 units above the prescribed curriculum load. |
+| 409 | `ENROLL_OVERLOAD_NOT_ELIGIBLE` | The student has neither completed 85% of the curriculum nor earned a previous regular-term GWA of 1.75 or better. `details` includes the graduating flag, GWA, and required GWA. |
+| 409 | `ENROLL_SUMMER_SUBJECT_LIMIT` | A transferee, shiftee, returnee, or student taking a back subject selected more than two summer subjects. |
+| 409 | `ENROLL_SCHEDULE_CONFLICT` | Two selected sections overlap. `details` identifies both course codes and section IDs plus the overlapping day and time. |
+| 409 | `ENROLL_PERIOD_CLOSED` | Enrollment submission is outside the configured period. `details` includes its start and end. |
+| 409 | `ENROLL_FINANCIAL_HOLD` | An unresolved financial hold blocks submission. `details` includes the office and outstanding amount. |
+| 409 | `ENROLL_HOLD_ACTIVE` | An unresolved administrative or disciplinary hold blocks submission. `details` includes the office and hold type. |
+| 409 | `ENROLL_STANDING_BLOCKED` | Stored College Dropping or University Dismissal standing blocks submission. |
+| 409 | `ENROLL_SECTION_FULL` | A selected section had no seat at commit time. `details` includes the section id. |
+| 422 | `DECISION_REMARKS_REQUIRED` | A Dean rejected an overload request without non-blank remarks. |
+| 409 | `REQUEST_ALREADY_DECIDED` | An overload request already has an approved or rejected decision. |
+
+`GET /api/v1/student/enrollment/eligibility` reports holds, a closed period, blocked
+standing, and missing curriculum load as `isEligible: false` reasons in a 200
+response. Those are state, not request errors. Missing `ReadEnrollment` remains
+the standard 403 missing-permission response.
 
 ## The envelope
 

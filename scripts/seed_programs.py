@@ -38,6 +38,11 @@ PROGRAMS: list[tuple[str, str, str, Decimal]] = [
     ),
 ]
 
+PROGRAM_COLLEGES: dict[str, str] = {
+    "BSCS": "CCIS",
+    "BSIT": "CCIS",
+}
+
 
 async def seed() -> None:
     """Create each program in ``PROGRAMS`` whose code is not already present."""
@@ -52,6 +57,7 @@ async def seed() -> None:
                         code=code,
                         name=name,
                         department=department,
+                        college=PROGRAM_COLLEGES.get(code),
                         total_units_required=units,
                         is_active=True,
                     )

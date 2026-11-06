@@ -50,7 +50,6 @@ from scripts.seed_iam import GROUPS, PERMISSIONS
 DOMAIN_CONSTANTS: dict[str, ModuleType] = {
     "auth": auth_constants,
     "curriculum": curriculum_constants,
-    "enrollment": enrollment_constants,
     "users": users_constants,
     "iam": iam_constants,
     "items": items_constants,
@@ -58,6 +57,7 @@ DOMAIN_CONSTANTS: dict[str, ModuleType] = {
     "sections": sections_constants,
     "student_profile": student_profile_constants,
     "grading": grading_constants,
+    "enrollment": enrollment_constants,
     "schedule": schedule_constants,
     "superadmin_ops": superadmin_ops_constants,
 }

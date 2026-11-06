@@ -1,34 +1,24 @@
 """Add catalog scope columns, curriculum effective admission year, and substitutions.
 
 Revision ID: c187_admin_catalog
-Revises: a098_user_avatars
+Revises: e170_program_college
 """
 
 import sqlalchemy as sa
 from alembic import op
 
 revision = "c187_admin_catalog"
-down_revision = "a098_user_avatars"
+down_revision = "e170_program_college"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("programs", sa.Column("college", sa.String(100), nullable=True))
     op.add_column("courses", sa.Column("department", sa.String(100), nullable=True))
     op.add_column("courses", sa.Column("college", sa.String(100), nullable=True))
     op.add_column(
         "curricula",
         sa.Column("effective_admission_year", sa.SmallInteger(), nullable=True),
-    )
-    op.add_column(
-        "student_profiles",
-        sa.Column(
-            "admission_status",
-            sa.String(30),
-            nullable=False,
-            server_default="REGULAR",
-        ),
     )
     op.create_table(
         "course_substitutions",
@@ -89,8 +79,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("course_substitutions")
-    op.drop_column("student_profiles", "admission_status")
     op.drop_column("curricula", "effective_admission_year")
     op.drop_column("courses", "college")
     op.drop_column("courses", "department")
-    op.drop_column("programs", "college")

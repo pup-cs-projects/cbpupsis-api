@@ -33,9 +33,9 @@ FACULTY_GROUP = "Faculty"
 STUDENT_GROUP = "Students"
 
 ADMIN_POSITION_POLICIES: dict[str, tuple[str, ...]] = {
-    "chairperson": ("CatalogAdmin",),
-    "dean": ("CatalogReader",),
-    "registrar": ("CatalogReader",),
+    "chairperson": ("CatalogAdmin", "OverloadRequestReader"),
+    "dean": ("CatalogReader", "OverloadRequestAdmin"),
+    "registrar": ("CatalogReader", "OverloadRequestReader"),
 }
 
 SUPERADMIN_ACTIONS = frozenset(

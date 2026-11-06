@@ -137,7 +137,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         content.update(exc.response_fields)
         return JSONResponse(
             status_code=exc.status_code,
-            content=content,
+            content=jsonable_encoder(content),
             headers=exc.headers or None,
         )
 

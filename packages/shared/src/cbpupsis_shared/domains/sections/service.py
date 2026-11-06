@@ -64,9 +64,64 @@ async def schedule_sections(
             course_id=row.course_id,
             faculty_id=row.faculty_id,
             section_name=row.section_name,
+            capacity=row.capacity,
+            status=row.status,
             meetings=by_section.get(row.id, []),
         )
         for row in sections
+    ]
+
+
+async def available_sections(
+    db: AsyncSession,
+    *,
+    academic_term_id: uuid.UUID,
+    course_ids: Collection[uuid.UUID],
+) -> list[ScheduleSection]:
+    rows, meetings = await repository.list_available_sections(
+        db, academic_term_id=academic_term_id, course_ids=course_ids
+    )
+    by_section: dict[uuid.UUID, list[MeetingSlot]] = {}
+    for meeting in meetings:
+        by_section.setdefault(meeting.section_id, []).append(
+            MeetingSlot.model_validate(meeting)
+        )
+    return [
+        ScheduleSection(
+            id=row.id,
+            academic_term_id=row.academic_term_id,
+            course_id=row.course_id,
+            faculty_id=row.faculty_id,
+            section_name=row.section_name,
+            capacity=row.capacity,
+            status=row.status,
+            meetings=by_section.get(row.id, []),
+        )
+        for row in rows
+    ]
+
+
+async def lock_for_enrollment(
+    db: AsyncSession, ids: Collection[uuid.UUID]
+) -> list[ScheduleSection]:
+    rows, meetings = await repository.lock_sections_for_enrollment(db, ids)
+    by_section: dict[uuid.UUID, list[MeetingSlot]] = {}
+    for meeting in meetings:
+        by_section.setdefault(meeting.section_id, []).append(
+            MeetingSlot.model_validate(meeting)
+        )
+    return [
+        ScheduleSection(
+            id=row.id,
+            academic_term_id=row.academic_term_id,
+            course_id=row.course_id,
+            faculty_id=row.faculty_id,
+            section_name=row.section_name,
+            capacity=row.capacity,
+            status=row.status,
+            meetings=by_section.get(row.id, []),
+        )
+        for row in rows
     ]
 
 

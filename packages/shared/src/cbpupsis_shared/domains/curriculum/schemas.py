@@ -431,3 +431,15 @@ class SubstitutionApprovalRead(BaseModel):
     degree_progress: list[StudentDegreeProgressRead] = Field(
         default_factory=list, serialization_alias="degreeProgress"
     )
+
+
+class EnrollmentCourse(BaseModel):
+    """Curriculum course fields used while composing enrollment choices."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    course_code: str
+    title: str
+    lecture_units: Decimal
+    lab_units: Decimal

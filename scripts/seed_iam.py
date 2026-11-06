@@ -1,17 +1,8 @@
-"""Seed the IAM tables with a baseline set of permissions, policies, and groups.
+"""Seed baseline IAM permissions, policies, and groups idempotently.
 
-This script encodes the *initial* authorization model as reproducible data. It
-is idempotent: it inserts rows only when they are missing, so it is safe to run
-repeatedly (e.g. on deploy, or after adding a new permission below).
-
-Because permissions and policies are data, evolving "who can do what" is often
-just an edit here plus a re-run—no application code changes. The permission set
-is application-specific; the ``*Item`` actions below match this template's
-reference domain—replace them with the actions your application authorizes.
-
-Run with::
-
-    uv run python -m scripts.seed_iam
+Run on clean databases, during system bootstrap, and before tests that assert on
+the authorization structure. Existing records are left intact: running this
+twice produces the exact same database state.
 """
 
 from __future__ import annotations
@@ -38,45 +29,18 @@ from cbpupsis_shared.domains.iam.constants import (
     SUPERADMIN_GROUP,
 )
 
-# --------------------------------------------------------------------------- #
-# Declarative seed data. Edit these three structures to change the baseline.
-#
-# Permissions and policies follow a FIXED vocabulary, so two developers naming
-# the same capability land on the same string. Only GROUPS carries this
-# project's own words.
-#
-#   Permission   Create<X> Read<X> Update<X> Delete<X>   -- own records only
-#                ReadAll<X> Moderate<X> Manage<X>        -- crosses ownership
-#   Policy       <X>Reader <X>Author <X>Moderator <X>Admin
-#
-# Never invent a synonym (View/Get/List/Edit/Modify/Remove) -- a codebase with
-# both ReadItem and ViewItem has a 403 in it that no test will catch. Real state
-# transitions (ApproveRefund, PublishListing) keep their business verb.
-# See docs/tech-book/API-GUIDE.md (Authorization) for how this set is derived.
-#
-# The actions below stay LITERAL strings even though every one of them also has
-# a constant in its domain's constants.py. That duplication is the point: this
-# file is the independent declaration of what exists in the database, and
-# tests/domains/iam/test_permission_constants.py checks the constants against
-# it. Importing the constants here would make that test compare a value with
-# itself, so a misspelled constant would seed its own typo and the check would
-# pass while every guard using it denied all callers.
-# ADMIN_GROUP is the deliberate exception: bootstrap_admin LOOKS UP the group
-# this file CREATES, so there the two must be the same object, not two copies.
-# --------------------------------------------------------------------------- #
-
-#: All actions the application understands. (action, description)
+#: VerbNoun permissions the application enforces. (action, description)
 PERMISSIONS: list[tuple[str, str]] = [
-    ("CreateUser", "Create a user account as Superadmin"),
-    # Ordinary verbs: always paired with an ownership check in the service.
-    ("CreateItem", "Create an item"),
-    ("ReadItem", "View your own items"),
-    ("UpdateItem", "Update an item you own"),
-    ("DeleteItem", "Delete an item you own"),
-    # Elevated verbs: each one IS the grant that crosses ownership.
-    ("ReadAllItem", "View items belonging to anyone"),
-    ("ModerateItem", "Update or delete ANY item, regardless of owner"),
-    ("ReadAllUser", "View any user's profile, not just your own"),
+    # Resources: items (a simple user-authored resource used for CRUD tests).
+    ("CreateItem", "Create new items belonging to you"),
+    ("ReadItem", "Read items you created"),
+    ("UpdateItem", "Update items you created"),
+    ("DeleteItem", "Delete items you created"),
+    ("ReadAllItem", "Read items created by any user"),
+    ("ModerateItem", "Update or delete items created by any user"),
+    # Resources: users.
+    ("CreateUser", "Provision new user accounts"),
+    ("ReadAllUser", "List and read any user account"),
     ("ManageUser", "Deactivate or reactivate any user account"),
     ("ReadAllAuditEntry", "Read the administrative audit trail"),
     ("ReadAllNotification", "Read notifications belonging to anyone"),
@@ -103,6 +67,10 @@ PERMISSIONS: list[tuple[str, str]] = [
         "ApproveSubstitution",
         "Approve course substitutions for students in your department",
     ),
+    ("CreateEnrollment", "Submit your own enrollment section selections"),
+    ("CreateOverloadRequest", "File your own enrollment overload request"),
+    ("ReadOverloadRequest", "Read overload requests within your Admin scope"),
+    ("ApproveOverloadRequest", "Approve or reject an in-scope overload request"),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -124,6 +92,10 @@ POLICIES: dict[str, list[str]] = {
     "EnrollmentReader": ["ReadEnrollment"],
     "CatalogReader": ["ReadCatalog"],
     "CatalogAdmin": ["ReadCatalog", "ManageCatalog", "ApproveSubstitution"],
+    "EnrollmentAuthor": ["CreateEnrollment"],
+    "OverloadRequestAuthor": ["CreateOverloadRequest"],
+    "OverloadRequestReader": ["ReadOverloadRequest"],
+    "OverloadRequestAdmin": ["ReadOverloadRequest", "ApproveOverloadRequest"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
@@ -161,6 +133,8 @@ GROUPS: dict[str, list[str]] = {
         "TranscriptReader",
         "ScheduleReader",
         "EnrollmentReader",
+        "EnrollmentAuthor",
+        "OverloadRequestAuthor",
     ],
     SUPERADMIN_GROUP: list(POLICIES),
 }
@@ -182,7 +156,7 @@ async def _get_or_create_permission(
 
 
 async def _get_or_create_policy(session, name: str) -> Policy:
-    """Return the policy named ``name``, creating it if absent."""
+    """Return the policy with ``name``, creating it if absent."""
     existing = await session.scalar(select(Policy).where(Policy.name == name))
     if existing is not None:
         return existing
@@ -190,17 +164,6 @@ async def _get_or_create_policy(session, name: str) -> Policy:
     session.add(policy)
     await session.flush()
     return policy
-
-
-async def _get_or_create_group(session, name: str) -> Group:
-    """Return the group named ``name``, creating it if absent."""
-    existing = await session.scalar(select(Group).where(Group.name == name))
-    if existing is not None:
-        return existing
-    group = Group(name=name)
-    session.add(group)
-    await session.flush()
-    return group
 
 
 async def _ensure_policy_permission(
@@ -215,6 +178,17 @@ async def _ensure_policy_permission(
     )
     if exists is None:
         session.add(PolicyPermission(policy_id=policy_id, permission_id=permission_id))
+
+
+async def _get_or_create_group(session, name: str) -> Group:
+    """Return the group with ``name``, creating it if absent."""
+    existing = await session.scalar(select(Group).where(Group.name == name))
+    if existing is not None:
+        return existing
+    group = Group(name=name)
+    session.add(group)
+    await session.flush()
+    return group
 
 
 async def _ensure_group_policy(session, group_id: int, policy_id: int) -> None:
