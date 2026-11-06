@@ -296,9 +296,16 @@ async def test_cor_postgresql_legacy_rows_and_duplicate_migration_preflight():
                         "PASSWORD 'cor_runtime_local_only'"
                     )
                 )
-        await asyncio.to_thread(migrate, "upgrade", "a098_user_avatars", url=LEGACY_URL)
+        # Seed through the current models, then step back to the revision before
+        # e100 so the raw inserts below are genuine pre-certificate rows.
+        await asyncio.to_thread(migrate, "upgrade", "head", url=LEGACY_URL)
         async with sessions() as db:
             data = await seed_schedule(db, "!synthetic-no-login")
+            await db.commit()
+        await asyncio.to_thread(
+            migrate, "downgrade", "e099_academic_waivers", url=LEGACY_URL
+        )
+        async with sessions() as db:
             legacy_ids = [uuid.uuid4(), uuid.uuid4()]
             for row_id, digest in zip(legacy_ids, ("a" * 64, "b" * 64), strict=True):
                 await db.execute(
@@ -325,7 +332,7 @@ async def test_cor_postgresql_legacy_rows_and_duplicate_migration_preflight():
         async with sessions() as db:
             assert (
                 await db.scalar(text("SELECT version_num FROM alembic_version"))
-                == "a098_user_avatars"
+                == "e099_academic_waivers"
             )
             assert await db.scalar(text("SELECT count(*) FROM cor_issuances")) == 2
             assert not await db.scalar(
