@@ -24,6 +24,9 @@ from cbpupsis_api_admin.domains.admin_auth.router import (
     superadmin_auth_router,
     superadmin_protected_router,
 )
+from cbpupsis_api_admin.domains.admin_catalog.router import (
+    router as admin_catalog_router,
+)
 from cbpupsis_api_admin.domains.overload_requests.router import (
     router as overload_requests_router,
 )
@@ -43,6 +46,7 @@ from cbpupsis_shared.routes import AUDIT, COMMON_MOUNTS, IAM, USER_MANAGEMENT
 
 ADMIN_AUTH = RouterMount(admin_auth_router, "/auth/admin", "admin-auth")
 ADMIN = RouterMount(admin_router, "/admin", "admin")
+ADMIN_CATALOG = RouterMount(admin_catalog_router, "/admin/catalog", "admin-catalog")
 
 MOUNTS: tuple[RouterMount, ...] = (
     *COMMON_MOUNTS,
@@ -76,6 +80,7 @@ MOUNTS: tuple[RouterMount, ...] = (
         "/admin/waiver-requests",
         "waiver-requests",
     ),
+    ADMIN_CATALOG,
 )
 
 # SQLAdmin bypasses service-layer MFA, justification, and immutable audit staging.

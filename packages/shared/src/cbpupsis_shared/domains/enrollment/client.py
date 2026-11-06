@@ -1,3 +1,8 @@
+"""Internal client for the enrollment domain.
+
+Other domains use this client rather than importing ``service.py`` directly.
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -40,6 +45,7 @@ from cbpupsis_shared.domains.enrollment.service import (
     check_schedule_conflict,
     check_unit_ceiling,
     compute_effective_ceiling,
+    count_section_enrollments,
     enrolled_sections,
     record_enrollments,
 )
@@ -64,6 +70,7 @@ __all__ = [
     "check_schedule_conflict",
     "check_unit_ceiling",
     "compute_effective_ceiling",
+    "count_section_enrollments",
     "decide_add_drop_request",
     "decide_overload_request",
     "enrolled_sections",

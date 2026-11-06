@@ -274,6 +274,8 @@ async def test_ac_enrl_001_1_eligibility_returns_every_field(
     expected = {
         "isEligible",
         "termType",
+        "curriculumId",
+        "curriculumVersion",
         "prescribedLoad",
         "approvedOverloadUnits",
         "standingReduction",

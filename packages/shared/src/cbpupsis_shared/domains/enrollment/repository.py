@@ -477,6 +477,28 @@ def stage_waiver(db: AsyncSession, **fields):
     return row
 
 
+async def count_section_enrollments(db: AsyncSession, section_id: uuid.UUID) -> int:
+    """Count active enrolled seats in a course section.
+
+    SQL::
+
+        SELECT count(*) FROM student_course_enrollments
+        WHERE section_id = :section_id
+          AND lower(status) IN ('enrolled', 'pending', 'enrolled_pending');
+    """
+    count = await db.scalar(
+        select(func.count())
+        .select_from(StudentCourseEnrollment)
+        .where(
+            StudentCourseEnrollment.section_id == section_id,
+            func.lower(StudentCourseEnrollment.status).in_(
+                ["enrolled", "pending", "enrolled_pending"]
+            ),
+        )
+    )
+    return count or 0
+
+
 async def count_active_section_enrollments(
     db: AsyncSession, section_ids: Collection[uuid.UUID]
 ) -> dict[uuid.UUID, int]:

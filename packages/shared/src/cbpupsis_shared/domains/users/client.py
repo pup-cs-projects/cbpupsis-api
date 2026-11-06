@@ -44,6 +44,8 @@ __all__ = [
     "StudentProfileRead",
     "UserProfileRead",
     "admin_scope",
+    "bind_students_for_curriculum_version",
+    "count_students_by_curriculum",
     "find_account_problems",
     "get_active_user",
     "get_admin_profile",
@@ -60,6 +62,7 @@ __all__ = [
     "get_user_profile",
     "invalidate_role_sessions",
     "list_emergency_contacts",
+    "list_student_profiles",
     "lock_active_user",
     "lock_role_subject",
     "overload_student_identities",
@@ -294,3 +297,30 @@ async def get_student_by_number(
 
 async def student_ids_in_programs(db: AsyncSession, program_ids):
     return await service.student_ids_in_programs(db, program_ids)
+
+
+async def count_students_by_curriculum(
+    db: AsyncSession, curriculum_id: uuid.UUID
+) -> int:
+    return await service.count_students_by_curriculum(db, curriculum_id)
+
+
+async def list_student_profiles(
+    db: AsyncSession, user_ids: Sequence[uuid.UUID]
+) -> list[StudentProfileRead]:
+    return await service.list_student_profiles(db, user_ids)
+
+
+async def bind_students_for_curriculum_version(
+    db: AsyncSession,
+    *,
+    program_id: uuid.UUID,
+    curriculum_id: uuid.UUID,
+    effective_admission_year: int,
+) -> list[uuid.UUID]:
+    return await service.bind_students_for_curriculum_version(
+        db,
+        program_id=program_id,
+        curriculum_id=curriculum_id,
+        effective_admission_year=effective_admission_year,
+    )

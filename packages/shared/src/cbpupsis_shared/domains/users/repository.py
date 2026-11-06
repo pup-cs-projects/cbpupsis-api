@@ -864,3 +864,69 @@ async def student_ids_in_programs(db: AsyncSession, program_ids):
             )
         )
     )
+
+
+async def count_students_by_curriculum(
+    db: AsyncSession, curriculum_id: uuid.UUID
+) -> int:
+    """Count student profiles bound to a curriculum version.
+
+    SQL::
+
+        SELECT count(*) FROM student_profiles
+        WHERE curriculum_id = :curriculum_id
+    """
+    count = await db.scalar(
+        select(func.count())
+        .select_from(StudentProfile)
+        .where(StudentProfile.curriculum_id == curriculum_id)
+    )
+    return count or 0
+
+
+async def list_students_by_program(
+    db: AsyncSession, program_id: uuid.UUID
+) -> list[StudentProfile]:
+    """List student profiles in a degree program.
+
+    SQL::
+
+        SELECT * FROM student_profiles WHERE program_id = :program_id
+    """
+    return list(
+        await db.scalars(
+            select(StudentProfile).where(StudentProfile.program_id == program_id)
+        )
+    )
+
+
+async def list_student_profiles_by_ids(
+    db: AsyncSession, user_ids: Collection[uuid.UUID]
+) -> list[StudentProfile]:
+    """List student profiles for a bounded set of user ids.
+
+    SQL::
+
+        SELECT * FROM student_profiles WHERE user_id IN (:user_ids)
+    """
+    if not user_ids:
+        return []
+    return list(
+        await db.scalars(
+            select(StudentProfile).where(StudentProfile.user_id.in_(list(user_ids)))
+        )
+    )
+
+
+def update_student_curriculum(
+    profile: StudentProfile, curriculum_id: uuid.UUID
+) -> StudentProfile:
+    """Stage a curriculum binding change onto a student profile.
+
+    SQL::
+
+        UPDATE student_profiles SET curriculum_id = :curriculum_id
+        WHERE user_id = :user_id
+    """
+    profile.curriculum_id = curriculum_id
+    return profile

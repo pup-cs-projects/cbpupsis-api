@@ -172,6 +172,12 @@ class EnrollmentEligibilityRead(BaseModel):
 
     is_eligible: bool = Field(serialization_alias="isEligible")
     term_type: Literal["REGULAR", "SUMMER"] = Field(serialization_alias="termType")
+    curriculum_id: uuid.UUID | None = Field(
+        default=None, serialization_alias="curriculumId"
+    )
+    curriculum_version: str | None = Field(
+        default=None, serialization_alias="curriculumVersion"
+    )
     prescribed_load: Decimal = Field(serialization_alias="prescribedLoad")
     approved_overload_units: Decimal = Field(
         serialization_alias="approvedOverloadUnits"

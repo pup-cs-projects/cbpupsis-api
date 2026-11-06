@@ -356,6 +356,10 @@ async def enrolled_sections(
     ]
 
 
+async def count_section_enrollments(db: AsyncSession, section_id: uuid.UUID) -> int:
+    return await repository.count_section_enrollments(db, section_id)
+
+
 async def list_available_courses(
     db: AsyncSession,
     *,

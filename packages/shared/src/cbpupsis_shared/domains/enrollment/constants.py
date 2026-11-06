@@ -1,5 +1,7 @@
 """Academic enrollment permissions and transition vocabulary."""
 
+from __future__ import annotations
+
 from decimal import Decimal
 
 READ_ENROLLMENT = "ReadEnrollment"

@@ -138,6 +138,11 @@ async def get_eligibility(
     if profile is None or term is None:
         raise ResourceNotFoundError
 
+    curr_read = (
+        await curriculum.get_curriculum(db, profile.curriculum_id)
+        if profile.curriculum_id is not None
+        else None
+    )
     prescribed_load = await curriculum.get_prescribed_load(
         db,
         curriculum_id=profile.curriculum_id,
@@ -234,6 +239,10 @@ async def get_eligibility(
     return EnrollmentEligibilityRead(
         is_eligible=not reasons,
         term_type=term_type,
+        curriculum_id=profile.curriculum_id,
+        curriculum_version=(
+            curr_read.curriculum_year if curr_read is not None else None
+        ),
         prescribed_load=prescribed_load,
         approved_overload_units=approved_overload,
         standing_reduction=ceiling_student.standing_reduction,

@@ -1117,3 +1117,44 @@ async def get_student_by_number(
 
 async def student_ids_in_programs(db: AsyncSession, program_ids):
     return await repository.student_ids_in_programs(db, program_ids)
+
+
+async def count_students_by_curriculum(
+    db: AsyncSession, curriculum_id: uuid.UUID
+) -> int:
+    """Return the number of students bound to a curriculum version."""
+    return await repository.count_students_by_curriculum(db, curriculum_id)
+
+
+async def list_student_profiles(
+    db: AsyncSession, user_ids: Sequence[uuid.UUID]
+) -> list[StudentProfileRead]:
+    """Return student profiles for the requested user ids."""
+    rows = await repository.list_student_profiles_by_ids(db, user_ids)
+    return [StudentProfileRead.model_validate(row) for row in rows]
+
+
+def _student_admission_year(student_number: str) -> int | None:
+    prefix = student_number.strip()[:4]
+    return int(prefix) if len(prefix) == 4 and prefix.isdigit() else None
+
+
+async def bind_students_for_curriculum_version(
+    db: AsyncSession,
+    *,
+    program_id: uuid.UUID,
+    curriculum_id: uuid.UUID,
+    effective_admission_year: int,
+) -> list[uuid.UUID]:
+    """Bind students in ``program_id`` admitted on/after ``effective_admission_year``.
+
+    Students admitted earlier retain their existing curriculum version.
+    """
+    profiles = await repository.list_students_by_program(db, program_id)
+    bound_ids: list[uuid.UUID] = []
+    for profile in profiles:
+        admission_year = _student_admission_year(profile.student_number)
+        if admission_year is not None and admission_year >= effective_admission_year:
+            repository.update_student_curriculum(profile, curriculum_id)
+            bound_ids.append(profile.user_id)
+    return bound_ids

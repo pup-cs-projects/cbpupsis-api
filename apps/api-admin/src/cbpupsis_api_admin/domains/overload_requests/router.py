@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_api_admin.domains.admin_auth.dependencies import (
     AdminSession,
-    require_admin_session,
+    require_admin_permission,
 )
 from cbpupsis_api_admin.domains.overload_requests import service
 from cbpupsis_api_admin.domains.overload_requests.schemas import (
@@ -16,12 +16,10 @@ from cbpupsis_api_admin.domains.overload_requests.schemas import (
 )
 from cbpupsis_core.middleware import client_ip_or_none
 from cbpupsis_database.session import get_db
-from cbpupsis_shared.domains.auth.dependencies import CurrentUser
 from cbpupsis_shared.domains.enrollment.constants import (
     APPROVE_OVERLOAD_REQUEST,
     READ_OVERLOAD_REQUEST,
 )
-from cbpupsis_shared.domains.iam.dependencies import require_permission
 
 router = APIRouter()
 
@@ -32,8 +30,7 @@ router = APIRouter()
     operation_id="list_admin_overload_requests",
 )
 async def list_overload_requests(
-    admin: AdminSession = Depends(require_admin_session),
-    _authorized: CurrentUser = Depends(require_permission(READ_OVERLOAD_REQUEST)),
+    admin: AdminSession = Depends(require_admin_permission(READ_OVERLOAD_REQUEST)),
     db: AsyncSession = Depends(get_db),
 ) -> list[OverloadRequestRead]:
     return await service.list_requests(
@@ -58,8 +55,7 @@ async def decide_overload_request(
     overload_request_id: uuid.UUID,
     body: OverloadDecisionRequest,
     request: Request,
-    admin: AdminSession = Depends(require_admin_session),
-    _authorized: CurrentUser = Depends(require_permission(APPROVE_OVERLOAD_REQUEST)),
+    admin: AdminSession = Depends(require_admin_permission(APPROVE_OVERLOAD_REQUEST)),
     db: AsyncSession = Depends(get_db),
 ) -> OverloadRequestRead:
     return await service.decide_request(
