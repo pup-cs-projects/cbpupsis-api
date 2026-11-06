@@ -19,6 +19,7 @@ from cbpupsis_shared.domains.auth.exceptions import (
     ResourceNotFoundError,
 )
 from cbpupsis_shared.domains.curriculum import repository
+from cbpupsis_shared.domains.curriculum.classification import classify_course_code
 from cbpupsis_shared.domains.curriculum.exceptions import (
     CurriculumVersionInUseError,
     PrerequisiteCycleError,
@@ -496,8 +497,11 @@ async def create_catalog_course(
         if payload.lab_hours is not None
         else int(payload.lab_units or 0)
     )
+    is_nstp, pe_sequence = classify_course_code(payload.course_code)
     course = repository.add_course(
         db,
+        is_nstp=is_nstp,
+        pe_sequence=pe_sequence,
         course_code=payload.course_code.strip(),
         title=payload.title.strip(),
         description=payload.description,
@@ -653,6 +657,7 @@ async def update_catalog_course(
     updates: dict[str, object] = {}
     if payload.course_code is not None:
         updates["course_code"] = new_code
+        updates["is_nstp"], updates["pe_sequence"] = classify_course_code(new_code)
     if payload.title is not None:
         updates["title"] = payload.title.strip()
     if "description" in payload.model_fields_set:

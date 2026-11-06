@@ -216,6 +216,8 @@ def add_course(
     term_offered: str | None = None,
     grading_mode: str,
     is_active: bool,
+    is_nstp: bool = False,
+    pe_sequence: int | None = None,
 ) -> Course:
     """Stage a new catalog course row.
 
@@ -223,10 +225,11 @@ def add_course(
 
         INSERT INTO courses (id, course_code, title, description, department,
                              college, lecture_units, lab_units, lecture_hours,
-                             lab_hours, term_offered, grading_mode, is_active)
+                             lab_hours, term_offered, grading_mode, is_active,
+                             is_nstp, pe_sequence)
         VALUES (:id, :course_code, :title, :description, :department, :college,
                 :lecture_units, :lab_units, :lecture_hours, :lab_hours,
-                :term_offered, :grading_mode, :is_active)
+                :term_offered, :grading_mode, :is_active, :is_nstp, :pe_sequence)
     """
     course = Course(
         course_code=course_code,
@@ -241,6 +244,8 @@ def add_course(
         term_offered=term_offered,
         grading_mode=grading_mode,
         is_active=is_active,
+        is_nstp=is_nstp,
+        pe_sequence=pe_sequence,
     )
     db.add(course)
     return course
@@ -607,7 +612,7 @@ async def academic_catalog(
 ) -> tuple[list[Course], list[CoursePrerequisite], dict[uuid.UUID, int]]:
     """Batch the student's curriculum, selected edges, and prerequisite courses.
 
-    No classification is inferred from codes, titles or student year level.
+    Classification is read as stored, never inferred here.
 
     SQL::
 

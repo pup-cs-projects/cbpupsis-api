@@ -123,15 +123,21 @@ tables. It adds nullable, explicit Course.pe_sequence/Course.is_nstp,
 AcademicTerm.term_type, StudentProfile.graduating_final_term_id and the
 Registrar reviewer field; e170 owns Program.college and its CCIS backfill.
 Downgrading e099 does not remove e170 data.
-`is_nstp = NULL` means unreviewed classification; false + null sequence means
-reviewed ordinary course. PE sequence must be 1-4 and not NSTP.
+`is_nstp = NULL` means an unclassified course, which the checks refuse; false +
+null sequence means an ordinary course. PE sequence must be 1-4 and not NSTP.
+
+Migration e099 backfills existing courses from their codes (NSTP, CWTS, LTS, ROTC
+are NSTP; PE, PED, PHED, PATHFIT 1-4 set the PE sequence; everything else is an
+ordinary course) and existing terms from their semester names. Catalog writes and
+`scripts.seed_demo_data` use the same defaults through
+`curriculum/classification.py`, so a normally seeded database is not refused.
 
 Stored term type is authoritative. Without it, explicit recognized semester
-labels (first/second, First/Second Semester, Summer/Summer Term/Summer Semester)
-resolve the type. Unknown labels are not defaulted to REGULAR.
+labels (first/second, 1st/2nd, First/Second Semester, Summer/Summer Term/Summer
+Semester) resolve the type. Unknown labels are not defaulted to REGULAR.
 
-Before deployment, catalogue owners must supply a reviewed JSON manifest
-of exact course codes. For example, using synthetic codes only:
+Catalogue owners can correct any default with a reviewed JSON manifest of exact
+course codes. For example, using synthetic codes only:
 
 ```json
 [
@@ -144,14 +150,12 @@ of exact course codes. For example, using synthetic codes only:
 Use `python -m scripts.seed_course_classifications <reviewed-manifest.json>`
 to validate without writing, then `--apply` only after the owner approves the
 target database and manifest. The import rejects unknown/duplicate codes and
-contradictory classifications; unspecified courses are not defaulted.
-Verify coverage for active curricula before enabling enrollment. Academics and
+contradictory classifications; unspecified courses keep their current values.
+Academics and
 users owners supply any nonstandard term types and applicable graduating final
 terms. Missing academic data returns
 ENROLL_ACADEMIC_DATA_UNAVAILABLE; missing department/college metadata grants
-no scoped reviewer access. Synthetic test mappings do not prove production
-readiness. A read-only dev Neon audit at e170 found 53 courses and no explicit
-classification columns; a reviewed mapping is still a rollout blocker.
+no scoped reviewer access.
 Existing duplicate live waiver edges require operator review before
 the unique index can be applied. No automatic rejection/deletion is performed.
 

@@ -34,7 +34,8 @@ from sqlalchemy import delete, select
 from cbpupsis_core.config import settings
 from cbpupsis_database.models.academics import AcademicEvent, AcademicTerm
 from cbpupsis_database.models.announcements import Announcement
-from cbpupsis_database.models.curriculum import Course
+from cbpupsis_database.models.billing import FeeStructure
+from cbpupsis_database.models.curriculum import Course, Curriculum, CurriculumCourse
 from cbpupsis_database.models.enrollment import (
     StudentCourseEnrollment,
     TermEnrollment,
@@ -47,6 +48,8 @@ from cbpupsis_database.models.users import (
     UserProfile,
 )
 from cbpupsis_database.session import AsyncSessionLocal
+from cbpupsis_shared.domains.billing import client as billing
+from cbpupsis_shared.domains.curriculum.classification import classify_course_code
 
 STUDENT_EMAIL = "demo-student@example.com"
 FACULTY_EMAIL = "demo-faculty@example.com"
@@ -59,6 +62,11 @@ TERM_START = date(2026, 8, 24)
 TERM_END = date(2026, 12, 19)
 
 SECTION = "BSCS 1-1"
+CURRICULUM_YEAR = "2026"
+TUITION_PER_UNIT = Decimal("200.00")
+REGISTRATION_FEE = Decimal("100.00")
+LAB_FEE = Decimal("300.00")
+MISC_FEE = Decimal("500.00")
 
 #: (code, title, lecture units, lab units, meetings: (day, start, end, room, type)).
 #: day_of_week: Monday = 0.
@@ -223,6 +231,8 @@ async def _current_term(session) -> AcademicTerm:
         )
         session.add(term)
     term.is_current = True
+    if term.term_type is None:
+        term.term_type = "SUMMER" if "summer" in term.semester.lower() else "REGULAR"
     await session.flush()
     return term
 
@@ -234,6 +244,8 @@ async def _course(session, code: str, title: str, lec: str, lab: str) -> Course:
         session.add(course)
     course.lecture_units = Decimal(lec)
     course.lab_units = Decimal(lab)
+    if course.is_nstp is None:
+        course.is_nstp, course.pe_sequence = classify_course_code(code)
     await session.flush()
     return course
 
@@ -318,6 +330,80 @@ async def _enroll(session, student_id, term, sections) -> None:
         )
 
 
+async def _curriculum(session, student_id, term, courses) -> None:
+    """Bind the demo student to a curriculum holding this term's courses."""
+    student = await session.get(StudentProfile, student_id)
+    if student is None:
+        return
+    curriculum = await session.scalar(
+        select(Curriculum).where(
+            Curriculum.program_id == student.program_id,
+            Curriculum.curriculum_year == CURRICULUM_YEAR,
+        )
+    )
+    if curriculum is None:
+        curriculum = Curriculum(
+            program_id=student.program_id, curriculum_year=CURRICULUM_YEAR
+        )
+        session.add(curriculum)
+        await session.flush()
+    student.curriculum_id = curriculum.id
+    for course in courses:
+        placed = await session.scalar(
+            select(CurriculumCourse).where(
+                CurriculumCourse.curriculum_id == curriculum.id,
+                CurriculumCourse.course_id == course.id,
+            )
+        )
+        if placed is None:
+            session.add(
+                CurriculumCourse(
+                    curriculum_id=curriculum.id,
+                    course_id=course.id,
+                    year_level=student.year_level,
+                    semester=term.semester,
+                )
+            )
+    await session.flush()
+
+
+async def _assessment(session, student_id, term, courses, sections) -> None:
+    """Store fees and the assessment the Certificate of Registration needs."""
+    student = await session.get(StudentProfile, student_id)
+    if student is None:
+        return
+    fee = await session.scalar(
+        select(FeeStructure).where(
+            FeeStructure.program_id == student.program_id,
+            FeeStructure.academic_term_id == term.id,
+        )
+    )
+    if fee is None:
+        session.add(
+            FeeStructure(
+                program_id=student.program_id,
+                academic_term_id=term.id,
+                tuition_per_unit=TUITION_PER_UNIT,
+                registration_fee=REGISTRATION_FEE,
+                lab_fee=LAB_FEE,
+                misc_fee=MISC_FEE,
+            )
+        )
+        await session.flush()
+    await billing.stage_assessment(
+        session,
+        student_id=student_id,
+        term_id=term.id,
+        courses=[
+            billing.AssessmentCourse(
+                section_id=section.id, units=course.lecture_units + course.lab_units
+            )
+            for course, section in zip(courses, sections, strict=True)
+        ],
+        due_date=term.end_date,
+    )
+
+
 async def _calendar(session, term: AcademicTerm) -> None:
     for title, offset, days, kind in EVENTS:
         start = (
@@ -365,12 +451,16 @@ async def seed_demo_data() -> int:
         admin_id = await _user_id(session, ADMIN_EMAIL)
 
         term = await _current_term(session)
+        courses = []
         sections = []
         for code, title, lec, lab, meetings in COURSES:
             course = await _course(session, code, title, lec, lab)
+            courses.append(course)
             sections.append(await _section(session, term, course, faculty_id, meetings))
         await _profile(session, student_id)
         await _enroll(session, student_id, term, sections)
+        await _curriculum(session, student_id, term, courses)
+        await _assessment(session, student_id, term, courses, sections)
         await _calendar(session, term)
         await _announcements(session, admin_id)
         await session.commit()

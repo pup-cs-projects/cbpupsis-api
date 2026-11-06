@@ -3,8 +3,10 @@
 Revision ID: e099_academic_waivers
 Revises: e170_program_college
 
-No institutional mappings are guessed. NULL classifications/final-term
-must be populated by a reviewed owner-run import before production readiness.
+The academic checks fail closed on a NULL classification, so existing courses
+and terms are backfilled from their codes and semester names. A reviewed
+manifest (scripts/seed_course_classifications.py) overrides these defaults.
+graduating_final_term_id stays NULL until an owner sets it.
 """
 
 import sqlalchemy as sa
@@ -27,6 +29,26 @@ def upgrade() -> None:
     op.add_column(
         "academic_terms", sa.Column("term_type", sa.String(20), nullable=True)
     )
+    # Same patterns as cbpupsis_shared.domains.curriculum.classification, frozen
+    # here so this revision keeps its meaning if that module changes.
+    op.execute(r"""
+        UPDATE courses SET
+            is_nstp = regexp_replace(upper(course_code), '[^A-Z0-9]', '', 'g')
+                ~ '^(NSTP|CWTS|LTS|ROTC)[0-9]*$',
+            pe_sequence = substring(
+                regexp_replace(upper(course_code), '[^A-Z0-9]', '', 'g')
+                FROM '^(?:PE|PED|PHED|PATHFIT)(?:10|0*)([1-4])$'
+            )::smallint
+    """)
+    op.execute("""
+        UPDATE academic_terms SET term_type = CASE
+            WHEN lower(semester) LIKE '%summer%' THEN 'SUMMER'
+            WHEN lower(semester) LIKE '%first%'
+              OR lower(semester) LIKE '%second%'
+              OR lower(semester) LIKE '1st%'
+              OR lower(semester) LIKE '2nd%' THEN 'REGULAR'
+        END
+    """)
     op.add_column(
         "student_profiles",
         sa.Column(
