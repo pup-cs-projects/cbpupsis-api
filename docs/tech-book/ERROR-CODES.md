@@ -378,6 +378,7 @@ provider, source or deadline failures have a backed-off `next_sync_at`.
 | 409 | `REQUEST_ALREADY_DECIDED` | Terminal waiver cannot be acted on again. |
 | 422 | `DECISION_REMARKS_REQUIRED` | Supply nonblank remarks when rejecting. |
 | 422 | `VALIDATION_ERROR` | Registrar final approval requires a nonblank external vpaaReference. |
+| 409 | `ENROLL_ASSESSMENT_UNAVAILABLE` | Submit could not compute an assessment (no fee structure for the program and term, or no student profile). Nothing is saved; contact the Registrar. |
 | 409 | `ENROLL_ACADEMIC_DATA_UNAVAILABLE` | Authoritative curriculum/classification/term metadata is unavailable; contact the owning academic data team. Do not bypass checks. |
 | 422 | `CURRICULUM_PREREQUISITE_CYCLE` | Internal guarded catalogue writer would introduce a self/multicourse cycle; no edges are persisted. |
 

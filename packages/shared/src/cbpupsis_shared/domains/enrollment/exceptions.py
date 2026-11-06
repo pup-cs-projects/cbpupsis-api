@@ -180,6 +180,16 @@ class AcademicDataUnavailableError(ConflictError):
         super().__init__("Reviewed academic metadata is unavailable.")
 
 
+class EnrollmentAssessmentUnavailableError(ConflictError):
+    code = "ENROLL_ASSESSMENT_UNAVAILABLE"
+
+    def __init__(self):
+        super().__init__(
+            "Your assessment cannot be computed for this term yet. "
+            "Please contact the Registrar."
+        )
+
+
 class WaiverEligibilityError(ConflictError):
     code = "ENROLL_PREREQUISITE_NOT_MET"
 

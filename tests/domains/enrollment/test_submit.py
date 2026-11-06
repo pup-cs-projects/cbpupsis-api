@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -44,6 +44,7 @@ from cbpupsis_shared.domains.enrollment.constants import (
     ENROLLMENT_SUBMITTED_EVENT,
 )
 from cbpupsis_shared.domains.enrollment.exceptions import (
+    EnrollmentAssessmentUnavailableError,
     EnrollmentSectionFullError,
 )
 
@@ -509,6 +510,28 @@ async def test_ac_enrl_001_10_assessment_failure_takes_no_seat(
     )
 
 
+async def test_ac_enrl_001_10_missing_fee_structure_refuses_with_a_conflict(
+    db: AsyncSession, submission
+) -> None:
+    await db.execute(delete(FeeStructure))
+    await db.commit()
+
+    with pytest.raises(EnrollmentAssessmentUnavailableError) as refused:
+        await enrollment_service.submit_enrollment(
+            db,
+            student_id=submission["student"].id,
+            term=AcademicTermRead.model_validate(submission["term"]),
+            section_ids=[section.id for section in submission["sections"]],
+            client_ip="127.0.0.1",
+        )
+
+    assert refused.value.code == "ENROLL_ASSESSMENT_UNAVAILABLE"
+    assert await db.scalar(select(func.count()).select_from(TermEnrollment)) == 0
+    assert (
+        await db.scalar(select(func.count()).select_from(StudentCourseEnrollment)) == 0
+    )
+
+
 async def test_ac_enrl_001_10_assessment_persistence_failure_rolls_back_enrollment(
     db: AsyncSession, submission, monkeypatch
 ) -> None:
@@ -520,7 +543,7 @@ async def test_ac_enrl_001_10_assessment_persistence_failure_rolls_back_enrollme
 
     monkeypatch.setattr(billing, "stage_assessment", fail_assessment)
 
-    with pytest.raises(billing.AssessmentInvalid):
+    with pytest.raises(EnrollmentAssessmentUnavailableError):
         await enrollment_service.submit_enrollment(
             db,
             student_id=submission["student"].id,

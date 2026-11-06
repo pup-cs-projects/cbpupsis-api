@@ -51,6 +51,7 @@ from cbpupsis_shared.domains.enrollment.exceptions import (
     BelowMinimumLoadError,
     CorNotFinal,
     DecisionRemarksRequiredError,
+    EnrollmentAssessmentUnavailableError,
     EnrollmentFinancialHoldError,
     EnrollmentHoldActiveError,
     EnrollmentPeriodClosedError,
@@ -635,22 +636,25 @@ async def submit_enrollment(
                 academic_term_id=term.id,
                 section_ids=sorted(section_ids, key=str),
             )
-            await billing.stage_assessment(
-                db,
-                student_id=student_id,
-                term_id=term.id,
-                courses=[
-                    billing.AssessmentCourse(
-                        section_id=section.id,
-                        units=(
-                            courses_by_id[section.course_id].lecture_units
-                            + courses_by_id[section.course_id].lab_units
-                        ),
-                    )
-                    for section in sorted(selected, key=lambda row: str(row.id))
-                ],
-                due_date=period_end.date(),
-            )
+            try:
+                await billing.stage_assessment(
+                    db,
+                    student_id=student_id,
+                    term_id=term.id,
+                    courses=[
+                        billing.AssessmentCourse(
+                            section_id=section.id,
+                            units=(
+                                courses_by_id[section.course_id].lecture_units
+                                + courses_by_id[section.course_id].lab_units
+                            ),
+                        )
+                        for section in sorted(selected, key=lambda row: str(row.id))
+                    ],
+                    due_date=period_end.date(),
+                )
+            except billing.AssessmentInvalid:
+                raise EnrollmentAssessmentUnavailableError from None
 
             response = await _submission_response(db, enrollment_row)
             occurred_at = datetime.now(UTC)

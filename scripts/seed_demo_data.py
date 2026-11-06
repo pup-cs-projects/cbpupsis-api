@@ -61,6 +61,9 @@ TERM_SEMESTER = "first"
 TERM_START = date(2026, 8, 24)
 TERM_END = date(2026, 12, 19)
 
+#: How long --open-windows keeps enrollment and add/drop open from today.
+OPEN_WINDOW_DAYS = 14
+
 SECTION = "BSCS 1-1"
 CURRICULUM_YEAR = "2026"
 TUITION_PER_UNIT = Decimal("200.00")
@@ -235,6 +238,14 @@ async def _current_term(session) -> AcademicTerm:
         term.term_type = "SUMMER" if "summer" in term.semester.lower() else "REGULAR"
     await session.flush()
     return term
+
+
+def _open_windows(term: AcademicTerm) -> None:
+    """Open enrollment and add/drop for local testing. Opt in: it moves term dates."""
+    now = datetime.now(UTC)
+    term.regular_enrollment_start = now - timedelta(days=1)
+    term.regular_enrollment_end = now + timedelta(days=OPEN_WINDOW_DAYS)
+    term.add_drop_deadline = now + timedelta(days=OPEN_WINDOW_DAYS)
 
 
 async def _course(session, code: str, title: str, lec: str, lab: str) -> Course:
@@ -441,7 +452,7 @@ async def _announcements(session, author_id: uuid.UUID) -> None:
         row.expires_at = None
 
 
-async def seed_demo_data() -> int:
+async def seed_demo_data(*, open_windows: bool = False) -> int:
     if settings.environment == "production":
         print("Refusing to seed demo data in production.", file=sys.stderr)
         return 1
@@ -451,6 +462,8 @@ async def seed_demo_data() -> int:
         admin_id = await _user_id(session, ADMIN_EMAIL)
 
         term = await _current_term(session)
+        if open_windows:
+            _open_windows(term)
         courses = []
         sections = []
         for code, title, lec, lab, meetings in COURSES:
@@ -476,7 +489,8 @@ async def seed_demo_data() -> int:
 
 
 def main() -> None:
-    sys.exit(asyncio.run(seed_demo_data()))
+    open_windows = "--open-windows" in sys.argv[1:]
+    sys.exit(asyncio.run(seed_demo_data(open_windows=open_windows)))
 
 
 if __name__ == "__main__":
