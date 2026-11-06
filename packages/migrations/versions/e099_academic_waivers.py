@@ -35,10 +35,11 @@ def upgrade() -> None:
         UPDATE courses SET
             is_nstp = regexp_replace(upper(course_code), '[^A-Z0-9]', '', 'g')
                 ~ '^(NSTP|CWTS|LTS|ROTC)[0-9]*$',
-            pe_sequence = substring(
-                regexp_replace(upper(course_code), '[^A-Z0-9]', '', 'g')
-                FROM '^(?:PE|PED|PHED|PATHFIT)(?:10|0*)([1-4])$'
-            )::smallint
+            pe_sequence = CASE
+                WHEN regexp_replace(upper(course_code), '[^A-Z0-9]', '', 'g')
+                    ~ '^(PE|PED|PHED|PATHFIT)(10|0*)[1-4]$'
+                THEN CAST(right(course_code, 1) AS smallint)
+            END
     """)
     op.execute("""
         UPDATE academic_terms SET term_type = CASE

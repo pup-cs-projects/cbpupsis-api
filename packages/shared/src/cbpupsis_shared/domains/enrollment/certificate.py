@@ -15,6 +15,7 @@ from cbpupsis_shared.domains.academics import client as academics
 from cbpupsis_shared.domains.audit import client as audit
 from cbpupsis_shared.domains.auth.exceptions import ResourceNotFoundError
 from cbpupsis_shared.domains.billing import client as billing
+from cbpupsis_shared.domains.billing.schemas import StoredAssessment
 from cbpupsis_shared.domains.curriculum import client as curriculum
 from cbpupsis_shared.domains.enrollment import academic_verdict, repository
 from cbpupsis_shared.domains.enrollment.certificate_schemas import (
@@ -318,7 +319,7 @@ async def stage_reissue(
     student_id,
     term_id,
     actor_id,
-    assessment: billing.StoredAssessment,
+    assessment: StoredAssessment,
     client_ip=None,
     actor_role="admin",
 ):

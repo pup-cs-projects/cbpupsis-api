@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from cbpupsis_shared.domains.billing.client import AssessmentRead
+from cbpupsis_shared.domains.billing.schemas import AssessmentRead
 
 
 class IssueCertificate(BaseModel):

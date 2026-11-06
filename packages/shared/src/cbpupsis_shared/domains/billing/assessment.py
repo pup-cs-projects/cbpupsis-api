@@ -4,56 +4,18 @@ import uuid
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, DecimalException
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.billing import repository
+from cbpupsis_shared.domains.billing.schemas import (
+    AssessmentCourse,
+    AssessmentInputs,
+    AssessmentLine,
+    AssessmentRead,
+    StoredAssessment,
+)
 from cbpupsis_shared.domains.users import client as users
-
-
-class AssessmentCourse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    section_id: uuid.UUID
-    units: Decimal = Field(ge=0, le=99, allow_inf_nan=False)
-
-
-class AssessmentInputs(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    student_id: uuid.UUID
-    term_id: uuid.UUID
-    program_id: uuid.UUID
-    fee_structure_id: uuid.UUID
-    courses: list[AssessmentCourse] = Field(min_length=1)
-    tuition_per_unit: Decimal = Field(ge=0, allow_inf_nan=False)
-    registration_fee: Decimal = Field(ge=0, allow_inf_nan=False)
-    lab_fee: Decimal = Field(ge=0, allow_inf_nan=False)
-    misc_fee: Decimal = Field(ge=0, allow_inf_nan=False)
-    fhe_qualified: bool
-    fhe_forfeited: bool
-    fhe_forfeiture_reason: str | None
-
-
-class AssessmentLine(BaseModel):
-    code: str
-    amount: str = Field(pattern=r"^\d+\.\d{2}$")
-
-
-class AssessmentRead(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    lines: list[AssessmentLine]
-    amountAssessed: str
-    subsidyApplied: str
-    netPayable: str
-    fheQualified: bool
-    fheForfeited: bool
-    fheForfeitureReason: str | None
-
-
-class StoredAssessment(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    version: int = 1
-    inputs: AssessmentInputs
-    assessment: AssessmentRead
 
 
 class AssessmentInvalid(ValueError):

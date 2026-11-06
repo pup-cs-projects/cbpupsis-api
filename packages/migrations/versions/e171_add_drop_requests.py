@@ -35,7 +35,7 @@ def upgrade() -> None:
         ondelete="CASCADE",
     )
     op.create_index(
-        "idx_fk_add_drop_requests_academic_term_id",
+        "ix_add_drop_requests_academic_term_id",
         "add_drop_requests",
         ["academic_term_id"],
     )
@@ -49,7 +49,10 @@ def upgrade() -> None:
         ),
     )
     op.create_index(
-        "idx_fk_add_drop_requests_state",
+        "ix_add_drop_requests_student_id", "add_drop_requests", ["student_id"]
+    )
+    op.create_index(
+        "ix_add_drop_requests_state",
         "add_drop_requests",
         ["state"],
     )
@@ -101,12 +104,12 @@ def upgrade() -> None:
         sa.Column("reason", sa.String(length=100), nullable=True),
     )
     op.create_index(
-        "idx_fk_add_drop_items_request_id",
+        "ix_add_drop_request_items_request_id",
         "add_drop_request_items",
         ["request_id"],
     )
     op.create_index(
-        "idx_fk_add_drop_items_section_id",
+        "ix_add_drop_request_items_section_id",
         "add_drop_request_items",
         ["section_id"],
     )
@@ -128,8 +131,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("idx_fk_add_drop_items_section_id", table_name="add_drop_request_items")
-    op.drop_index("idx_fk_add_drop_items_request_id", table_name="add_drop_request_items")
+    op.drop_index("ix_add_drop_request_items_section_id", table_name="add_drop_request_items")
+    op.drop_index("ix_add_drop_request_items_request_id", table_name="add_drop_request_items")
     op.drop_table("add_drop_request_items")
 
     with op.batch_alter_table("add_drop_requests") as batch_op:
@@ -148,8 +151,9 @@ def downgrade() -> None:
     op.drop_column("add_drop_requests", "units_after")
     op.drop_column("add_drop_requests", "units_before")
     op.drop_column("add_drop_requests", "remarks")
-    op.drop_index("idx_fk_add_drop_requests_state", table_name="add_drop_requests")
+    op.drop_index("ix_add_drop_requests_state", table_name="add_drop_requests")
+    op.drop_index("ix_add_drop_requests_student_id", table_name="add_drop_requests")
     op.drop_column("add_drop_requests", "state")
-    op.drop_index("idx_fk_add_drop_requests_academic_term_id", table_name="add_drop_requests")
+    op.drop_index("ix_add_drop_requests_academic_term_id", table_name="add_drop_requests")
     op.drop_constraint("fk_add_drop_requests_academic_term_id", "add_drop_requests", type_="foreignkey")
     op.drop_column("add_drop_requests", "academic_term_id")
