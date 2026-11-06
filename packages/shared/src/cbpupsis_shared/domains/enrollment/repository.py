@@ -6,11 +6,8 @@ and course registrations.
 
 from __future__ import annotations
 
-import hashlib
-import secrets
 import uuid
 from collections.abc import Collection
-from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import Uuid, bindparam, func, select, text
@@ -20,7 +17,6 @@ from sqlalchemy.orm import selectinload
 from cbpupsis_database.models.enrollment import (
     AddDropRequest,
     AddDropRequestItem,
-    CorIssuance,
     OverloadRequest,
     StudentCourseEnrollment,
     TermEnrollment,
@@ -28,6 +24,7 @@ from cbpupsis_database.models.enrollment import (
 from cbpupsis_shared.domains.enrollment.constants import (
     ACTIVE_COURSE_ENROLLMENT_STATUSES,
     ACTIVE_TERM_ENROLLMENT_STATUSES,
+    ADD_DROP_PENDING,
 )
 
 
@@ -563,51 +560,26 @@ async def get_student_course_enrollment(
     return await db.scalar(stmt)
 
 
-async def supersede_and_issue_cor(
-    db: AsyncSession,
-    *,
-    student_id: uuid.UUID,
-    term_enrollment_id: uuid.UUID,
-    now: datetime,
-) -> CorIssuance:
-    """Supersede existing CURRENT certificate and issue a fresh one.
+async def get_student_pending_add_drop_request(
+    db: AsyncSession, student_id: uuid.UUID, academic_term_id: uuid.UUID
+) -> AddDropRequest | None:
+    """Return an active pending add/drop request for the student and term, if any.
 
     SQL::
 
-        SELECT * FROM cor_issuances
-        WHERE term_enrollment_id = :term_enrollment_id
-          AND status = 'CURRENT';
-
-    On the service's commit::
-
-        UPDATE cor_issuances
-        SET status = 'SUPERSEDED', superseded_at = :now
-        WHERE id = :id;
-
-        INSERT INTO cor_issuances
-            (id, student_id, term_enrollment_id,
-             verification_token_hash, status, issued_at)
-        VALUES
-            (:id, :student_id, :term_enrollment_id,
-             :hash, 'CURRENT', :now);
+        SELECT * FROM add_drop_requests
+        WHERE student_id = :student_id
+          AND academic_term_id = :academic_term_id
+          AND state = 'PENDING'
+        LIMIT 1;
     """
-    existing = await db.scalars(
-        select(CorIssuance).where(
-            CorIssuance.term_enrollment_id == term_enrollment_id,
-            CorIssuance.status == "CURRENT",
+    stmt = (
+        select(AddDropRequest)
+        .where(
+            AddDropRequest.student_id == student_id,
+            AddDropRequest.academic_term_id == academic_term_id,
+            AddDropRequest.state == ADD_DROP_PENDING,
         )
+        .limit(1)
     )
-    for cor in existing:
-        cor.status = "SUPERSEDED"
-        cor.superseded_at = now
-
-    token_hash = hashlib.sha256(secrets.token_bytes(32)).hexdigest()
-    new_cor = CorIssuance(
-        student_id=student_id,
-        term_enrollment_id=term_enrollment_id,
-        verification_token_hash=token_hash,
-        status="CURRENT",
-        issued_at=now,
-    )
-    db.add(new_cor)
-    return new_cor
+    return await db.scalar(stmt)

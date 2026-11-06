@@ -34,7 +34,7 @@ async def decide_request(
     department_id: str | None,
     college_id: str | None,
     client_ip: str | None,
-    version: int = 1,
+    version: int,
 ) -> AdminAddDropRequestRead:
     return await enrollment.decide_add_drop_request(
         db,

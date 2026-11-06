@@ -281,7 +281,7 @@ class AddDropDecisionRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     decision: Literal["APPROVE", "REJECT"]
     remarks: str | None = None
-    version: int = 1
+    version: int
 
 
 class AdminAddDropRequestRead(BaseModel):

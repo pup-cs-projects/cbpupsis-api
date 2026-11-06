@@ -246,7 +246,7 @@ async def decide_add_drop_request(
     department: str | None,
     college: str | None,
     client_ip: str | None = None,
-    version: int = 1,
+    version: int,
 ) -> AdminAddDropRequestRead:
     return await service.decide_add_drop_request(
         db,

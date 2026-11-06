@@ -28,6 +28,7 @@ __all__ = [
     "get_curriculum",
     "get_prescribed_load",
     "get_program",
+    "list_curriculum_course_ids",
     "programs_by_ids",
     "record_courses",
     "schedule_courses",
@@ -89,3 +90,9 @@ async def get_prescribed_load(
     return await service.get_prescribed_load(
         db, curriculum_id=curriculum_id, year_level=year_level, semester=semester
     )
+
+
+async def list_curriculum_course_ids(
+    db: AsyncSession, curriculum_id: uuid.UUID
+) -> set[uuid.UUID]:
+    return await service.list_curriculum_course_ids(db, curriculum_id)

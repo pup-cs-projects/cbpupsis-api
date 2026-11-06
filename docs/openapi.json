@@ -6217,13 +6217,13 @@
           },
           "version": {
             "type": "integer",
-            "title": "Version",
-            "default": 1
+            "title": "Version"
           }
         },
         "type": "object",
         "required": [
-          "decision"
+          "decision",
+          "version"
         ],
         "title": "AddDropDecisionRequest"
       },

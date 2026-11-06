@@ -25,6 +25,7 @@ from cbpupsis_database.models.enrollment import (
     StudentCourseEnrollment,
     TermEnrollment,
 )
+from cbpupsis_database.models.grading import StudentTermGPA
 from cbpupsis_database.models.outbox import OutboxMessage
 from cbpupsis_database.models.sections import CourseSection, SectionSchedule
 from cbpupsis_database.models.users import (
@@ -522,16 +523,6 @@ async def test_ac_enrl_004_2_chair_or_dean_approves_updates_enrollment_and_asses
     assert added_sec is not None
     assert added_sec.status == "enrolled"
 
-    # COR superseded and new one issued
-    cors = list(
-        await db.scalars(
-            select(CorIssuance).where(CorIssuance.term_enrollment_id == s["te"].id)
-        )
-    )
-    assert len(cors) == 2
-    statuses = {c.status for c in cors}
-    assert statuses == {"SUPERSEDED", "CURRENT"}
-
 
 async def test_ac_enrl_004_2_failure_rollback_preserves_pending(
     client: AsyncClient, db: AsyncSession, add_drop_setup
@@ -556,11 +547,11 @@ async def test_ac_enrl_004_2_failure_rollback_preserves_pending(
     drop_section_id = s["sections"][4].id
     s6_id = s["s6"].id
 
-    # Force failure during supersede_and_issue_cor
+    # Force failure during enrollment mutation
     with (
         patch(
-            "cbpupsis_shared.domains.enrollment.repository.supersede_and_issue_cor",
-            side_effect=RuntimeError("Forced failure during COR update"),
+            "cbpupsis_shared.domains.enrollment.repository.add_course_enrollments",
+            side_effect=RuntimeError("Forced failure during enrollment update"),
         ),
         pytest.raises(RuntimeError),
     ):
@@ -1123,3 +1114,218 @@ async def test_student_list_and_get_own_requests(
     get_resp = await client.get(f"{STUDENT_URL}/{request_id}", headers=headers)
     assert get_resp.status_code == 200
     assert get_resp.json()["requestId"] == request_id
+
+
+async def test_ac_enrl_004_multiple_pending_requests_refused(
+    client: AsyncClient, db: AsyncSession, add_drop_setup
+) -> None:
+    """A student cannot file a second add/drop request while one is already PENDING."""
+    s = add_drop_setup
+    headers = await _student_headers(client, "2026-00101-MN-0")
+    first = await client.post(
+        STUDENT_URL,
+        headers=headers,
+        json={
+            "add": [{"sectionId": str(s["s6"].id)}],
+            "drop": [{"sectionId": str(s["sections"][4].id), "reason": "Conflict"}],
+        },
+    )
+    assert first.status_code == 201
+
+    second = await client.post(
+        STUDENT_URL,
+        headers=headers,
+        json={
+            "add": [{"sectionId": str(s["s6"].id)}],
+            "drop": [{"sectionId": str(s["sections"][4].id), "reason": "Conflict"}],
+        },
+    )
+    assert second.status_code == 409
+    assert second.json()["code"] == "REQUEST_ALREADY_PENDING"
+
+
+async def test_ac_enrl_004_holds_block_filing(
+    client: AsyncClient, db: AsyncSession, add_drop_setup
+) -> None:
+    """Financial and administrative holds block add/drop request filing."""
+    s = add_drop_setup
+    headers = await _student_headers(client, "2026-00101-MN-0")
+    profile = await db.scalar(
+        select(StudentProfile).where(StudentProfile.user_id == s["student"].id)
+    )
+    assert profile is not None
+
+    # 1. Financial hold
+    profile.has_financial_hold = True
+    await db.commit()
+
+    resp = await client.post(
+        STUDENT_URL,
+        headers=headers,
+        json={
+            "add": [{"sectionId": str(s["s6"].id)}],
+            "drop": [{"sectionId": str(s["sections"][4].id), "reason": "Conflict"}],
+        },
+    )
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "ENROLL_FINANCIAL_HOLD"
+
+    # 2. Administrative hold
+    profile.has_financial_hold = False
+    profile.has_academic_hold = True
+    await db.commit()
+
+    resp = await client.post(
+        STUDENT_URL,
+        headers=headers,
+        json={
+            "add": [{"sectionId": str(s["s6"].id)}],
+            "drop": [{"sectionId": str(s["sections"][4].id), "reason": "Conflict"}],
+        },
+    )
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "ENROLL_HOLD_ACTIVE"
+
+
+async def test_ac_enrl_004_blocked_standing_refused(
+    client: AsyncClient, db: AsyncSession, add_drop_setup
+) -> None:
+    """Students on blocked academic standing cannot file add/drop requests."""
+    s = add_drop_setup
+    headers = await _student_headers(client, "2026-00101-MN-0")
+    db.add(
+        StudentTermGPA(
+            student_id=s["student"].id,
+            academic_term_id=s["term"].id,
+            total_gpa_units=Decimal("18"),
+            term_gpa=Decimal("5"),
+            cumulative_gpa=Decimal("5"),
+            academic_standing="University Dismissal",
+        )
+    )
+    await db.commit()
+
+    resp = await client.post(
+        STUDENT_URL,
+        headers=headers,
+        json={
+            "add": [{"sectionId": str(s["s6"].id)}],
+            "drop": [{"sectionId": str(s["sections"][4].id), "reason": "Conflict"}],
+        },
+    )
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "ENROLL_STANDING_BLOCKED"
+
+
+async def test_ac_enrl_004_non_curriculum_addition_refused(
+    client: AsyncClient, db: AsyncSession, add_drop_setup
+) -> None:
+    """Adding a course that does not belong to the student's curriculum returns 404."""
+    s = add_drop_setup
+    headers = await _student_headers(client, "2026-00101-MN-0")
+
+    # Create another curriculum with course not in student's curriculum
+    _other_prog, other_curr = await _program(
+        db, code="BSIT", department="Information Technology", college="CCIS"
+    )
+    other_course = await _course(
+        db, curriculum=other_curr, code="IT311", title="IT Subject"
+    )
+    other_section = await _section(
+        db,
+        term=s["term"],
+        course=other_course,
+        name="IT311-1",
+        day=4,
+        start=time(14),
+        end=time(17),
+    )
+    await db.commit()
+
+    resp = await client.post(
+        STUDENT_URL,
+        headers=headers,
+        json={
+            "add": [{"sectionId": str(other_section.id)}],
+            "drop": [{"sectionId": str(s["sections"][4].id), "reason": "Conflict"}],
+        },
+    )
+    assert resp.status_code == 404
+
+
+async def test_ac_enrl_004_duplicate_course_refused(
+    client: AsyncClient, db: AsyncSession, add_drop_setup
+) -> None:
+    """Adding a second section of an already enrolled course is refused."""
+    s = add_drop_setup
+    headers = await _student_headers(client, "2026-00101-MN-0")
+
+    # s["courses"][0] is CS311, already enrolled in s["sections"][0]
+    sec2 = await _section(
+        db,
+        term=s["term"],
+        course=s["courses"][0],
+        name="CS311-2",
+        day=4,
+        start=time(14),
+        end=time(17),
+    )
+    await db.commit()
+
+    # Try to add sec2 without dropping s["sections"][0]
+    resp = await client.post(
+        STUDENT_URL,
+        headers=headers,
+        json={
+            "add": [{"sectionId": str(sec2.id)}],
+            "drop": [{"sectionId": str(s["sections"][4].id), "reason": "Conflict"}],
+        },
+    )
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "ENROLL_DUPLICATE_COURSE"
+
+
+async def test_ac_enrl_004_approval_seat_race_section_full_409(
+    client: AsyncClient, db: AsyncSession, add_drop_setup
+) -> None:
+    """If a section fills up before approval, approving fails with 409."""
+
+    s = add_drop_setup
+    headers = await _student_headers(client, "2026-00101-MN-0")
+
+    # File request adding S8 (capacity 1)
+    file_resp = await client.post(
+        STUDENT_URL,
+        headers=headers,
+        json={
+            "add": [{"sectionId": str(s["s8"].id)}],
+            "drop": [{"sectionId": str(s["sections"][4].id), "reason": "Conflict"}],
+        },
+    )
+    assert file_resp.status_code == 201
+    request_id = file_resp.json()["requestId"]
+
+    # In the meantime, another student takes the last seat in S8
+    other = await _student(
+        db,
+        number="2026-00198-MN-0",
+        program=s["program"],
+        curriculum=s["curriculum"],
+    )
+    await _enroll(db, student=other, term=s["term"], sections=[s["s8"]])
+    await db.commit()
+
+    # Chairperson attempts to APPROVE
+    chair, chair_headers = await _admin(
+        db, position="chairperson", department="Computer Science", college="CCIS"
+    )
+    await _grant_action(db, action=APPROVE_ADD_DROP, users=[chair])
+    await _grant_action(db, action=READ_ADD_DROP_REQUEST, users=[chair])
+
+    decide_resp = await client.patch(
+        f"{ADMIN_URL}/{request_id}",
+        headers=chair_headers,
+        json={"decision": "APPROVE", "remarks": "Approved.", "version": 1},
+    )
+    assert decide_resp.status_code == 409
+    assert decide_resp.json()["code"] == "ENROLL_SECTION_FULL"

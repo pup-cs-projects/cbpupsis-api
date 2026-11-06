@@ -105,3 +105,9 @@ async def enrollment_courses(
             semester=semester,
         )
     ]
+
+
+async def list_curriculum_course_ids(
+    db: AsyncSession, curriculum_id: uuid.UUID
+) -> set[uuid.UUID]:
+    return await repository.list_curriculum_course_ids(db, curriculum_id)
