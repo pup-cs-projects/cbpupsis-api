@@ -96,13 +96,13 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("CreateWaiverRequest", "File your own prerequisite waiver request"),
     ("ReadWaiverRequest", "Read position-scoped prerequisite waiver requests"),
     ("ApproveWaiverRequest", "Record the assigned prerequisite waiver decision"),
+    ("IssueCertificate", "Issue your own Certificate of Registration"),
+    ("ReadAssessment", "Read your own stored term assessment"),
     ("ReadEnrollment", "Read your own enrollment eligibility and unit ceiling"),
     ("CreateEnrollment", "Submit your own enrollment section selections"),
     ("CreateOverloadRequest", "File your own enrollment overload request"),
     ("ReadOverloadRequest", "Read overload requests within your Admin scope"),
     ("ApproveOverloadRequest", "Approve or reject an in-scope overload request"),
-    ("IssueCertificate", "Issue your own Certificate of Registration"),
-    ("ReadAssessment", "Read your own stored term assessment"),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -123,13 +123,13 @@ POLICIES: dict[str, list[str]] = {
     "ScheduleReader": ["ReadSchedule"],
     "WaiverRequestAuthor": ["CreateWaiverRequest"],
     "WaiverRequestAdmin": ["ReadWaiverRequest", "ApproveWaiverRequest"],
+    "CertificateAuthor": ["IssueCertificate"],
+    "AssessmentReader": ["ReadAssessment"],
     "EnrollmentReader": ["ReadEnrollment"],
     "EnrollmentAuthor": ["CreateEnrollment"],
     "OverloadRequestAuthor": ["CreateOverloadRequest"],
     "OverloadRequestReader": ["ReadOverloadRequest"],
     "OverloadRequestAdmin": ["ReadOverloadRequest", "ApproveOverloadRequest"],
-    "CertificateAuthor": ["IssueCertificate"],
-    "AssessmentReader": ["ReadAssessment"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
@@ -167,11 +167,11 @@ GROUPS: dict[str, list[str]] = {
         "TranscriptReader",
         "ScheduleReader",
         "WaiverRequestAuthor",
+        "CertificateAuthor",
+        "AssessmentReader",
         "EnrollmentReader",
         "EnrollmentAuthor",
         "OverloadRequestAuthor",
-        "CertificateAuthor",
-        "AssessmentReader",
     ],
     SUPERADMIN_GROUP: list(POLICIES),
 }
