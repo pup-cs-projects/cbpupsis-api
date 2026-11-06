@@ -62,6 +62,7 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ApproveWaiverRequest", "Record the assigned prerequisite waiver decision"),
     ("IssueCertificate", "Issue your own Certificate of Registration"),
     ("ReadAssessment", "Read your own stored term assessment"),
+    ("ReadEnrollmentReport", "Read enrollment counts and statistics report"),
     ("ReadEnrollment", "Read your own enrollment eligibility and unit ceiling"),
     ("ReadCatalog", "Read courses, curricula, and sections within your Admin scope"),
     (
@@ -101,6 +102,7 @@ POLICIES: dict[str, list[str]] = {
     "WaiverRequestAdmin": ["ReadWaiverRequest", "ApproveWaiverRequest"],
     "CertificateAuthor": ["IssueCertificate"],
     "AssessmentReader": ["ReadAssessment"],
+    "EnrollmentReportReader": ["ReadEnrollmentReport"],
     "EnrollmentReader": ["ReadEnrollment"],
     "CatalogReader": ["ReadCatalog"],
     "CatalogAdmin": ["ReadCatalog", "ManageCatalog", "ApproveSubstitution"],
@@ -258,6 +260,9 @@ async def _seed_session(session) -> None:
             await _ensure_group_policy(session, group.id, policies[policy_name].id)
 
     # 4) Position-specific policies for existing Admin accounts
+    # Admin is one login role, but permissions differ by position.
+    # Backfill direct policies for existing accounts; account creation uses
+    # the same mapping for new accounts.
     admin_profiles = list((await session.scalars(select(AdminProfile))).all())
     for profile in admin_profiles:
         for policy_name in ADMIN_POSITION_POLICIES.get(profile.position, ()):

@@ -360,6 +360,28 @@ async def count_section_enrollments(db: AsyncSession, section_id: uuid.UUID) -> 
     return await repository.count_section_enrollments(db, section_id)
 
 
+async def get_enrollment_report_counts(
+    db: AsyncSession,
+    *,
+    term_id: uuid.UUID,
+    group_by: str,
+    program_code: str | None = None,
+    status: str | None = None,
+    department: str | None = None,
+    college: str | None = None,
+) -> list[tuple[str, int]]:
+    """Return aggregated enrollment counts grouped by the selected field."""
+    return await repository.get_enrollment_report_counts(
+        db,
+        term_id=term_id,
+        group_by=group_by,
+        program_code=program_code,
+        status=status,
+        department=department,
+        college=college,
+    )
+
+
 async def list_available_courses(
     db: AsyncSession,
     *,

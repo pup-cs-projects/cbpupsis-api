@@ -79,6 +79,7 @@ __all__ = [
     "file_overload_request",
     "file_waiver",
     "get_approved_overload_units",
+    "get_enrollment_report_counts",
     "get_enrollment_summary",
     "get_student_add_drop_request",
     "get_term_enrollment",
@@ -234,6 +235,27 @@ async def get_enrollment_summary(
         academic_term_id=academic_term_id,
         prescribed_load=prescribed_load,
         standing_reduction=standing_reduction,
+    )
+
+
+async def get_enrollment_report_counts(
+    db: AsyncSession,
+    *,
+    term_id: uuid.UUID,
+    group_by: str,
+    program_code: str | None = None,
+    status: str | None = None,
+    department: str | None = None,
+    college: str | None = None,
+) -> list[tuple[str, int]]:
+    return await service.get_enrollment_report_counts(
+        db,
+        term_id=term_id,
+        group_by=group_by,
+        program_code=program_code,
+        status=status,
+        department=department,
+        college=college,
     )
 
 

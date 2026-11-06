@@ -42,7 +42,13 @@ from cbpupsis_shared.domains.enrollment.constants import (
     READ_WAIVER_REQUEST,
 )
 from cbpupsis_shared.domains.enrollment.router import build_admin_router
-from cbpupsis_shared.routes import AUDIT, COMMON_MOUNTS, IAM, USER_MANAGEMENT
+from cbpupsis_shared.routes import (
+    AUDIT,
+    COMMON_MOUNTS,
+    IAM,
+    REPORTS,
+    USER_MANAGEMENT,
+)
 
 ADMIN_AUTH = RouterMount(admin_auth_router, "/auth/admin", "admin-auth")
 ADMIN = RouterMount(admin_router, "/admin", "admin")
@@ -52,6 +58,7 @@ MOUNTS: tuple[RouterMount, ...] = (
     *COMMON_MOUNTS,
     ADMIN_AUTH,
     ADMIN,
+    REPORTS,
     RouterMount(
         overload_requests_router,
         "/admin/overload-requests",
