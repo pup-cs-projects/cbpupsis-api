@@ -114,9 +114,10 @@ class EnrollmentPeriodClosedError(ConflictError):
 class EnrollmentFinancialHoldError(ConflictError):
     code = "ENROLL_FINANCIAL_HOLD"
 
-    def __init__(self, *, office: str, amount: str) -> None:
+    def __init__(self, *, office: str, amount: str, currency: str = "PHP") -> None:
         super().__init__(
-            f"Resolve the financial hold with the {office} before enrolling.",
+            f"Resolve the {currency} {amount} financial hold with the {office} "
+            "before enrolling.",
             response_fields={
                 "details": {"office": office, "outstandingAmount": amount}
             },

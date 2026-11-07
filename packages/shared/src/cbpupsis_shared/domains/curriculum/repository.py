@@ -528,6 +528,40 @@ async def list_enrollment_courses(
     return list(result)
 
 
+async def list_active_curriculum_courses(
+    db: AsyncSession,
+    *,
+    curriculum_id: uuid.UUID | None,
+    program_id: uuid.UUID,
+) -> list[Course]:
+    """Return every active course in the student's curriculum and program.
+
+    SQL::
+
+        SELECT courses.* FROM courses
+        JOIN curriculum_courses ON curriculum_courses.course_id = courses.id
+        JOIN curricula ON curricula.id = curriculum_courses.curriculum_id
+        WHERE curricula.id = :curriculum_id
+          AND curricula.program_id = :program_id
+          AND courses.is_active IS TRUE
+        ORDER BY courses.course_code, courses.id;
+    """
+    if curriculum_id is None:
+        return []
+    result = await db.scalars(
+        select(Course)
+        .join(CurriculumCourse, CurriculumCourse.course_id == Course.id)
+        .join(Curriculum, Curriculum.id == CurriculumCourse.curriculum_id)
+        .where(
+            Curriculum.id == curriculum_id,
+            Curriculum.program_id == program_id,
+            Course.is_active.is_(True),
+        )
+        .order_by(Course.course_code, Course.id)
+    )
+    return list(result)
+
+
 async def lock_prerequisite_graph(db: AsyncSession) -> None:
     """Serialize all guarded catalogue graph writers until their transaction ends.
 

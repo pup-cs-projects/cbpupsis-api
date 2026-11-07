@@ -12,7 +12,34 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_database.models.billing import FeeStructure, StudentBillingAccount
+from cbpupsis_database.models.billing import (
+    FeeStructure,
+    StudentBillingAccount,
+    StudentHold,
+)
+
+
+async def list_unresolved_student_holds(
+    db: AsyncSession, student_id: uuid.UUID
+) -> list[StudentHold]:
+    """Return unresolved holds in a stable refusal order.
+
+    SQL::
+
+        SELECT * FROM student_holds
+        WHERE student_id = :student_id AND resolved_at IS NULL
+        ORDER BY created_at, id;
+    """
+    return list(
+        await db.scalars(
+            select(StudentHold)
+            .where(
+                StudentHold.student_id == student_id,
+                StudentHold.resolved_at.is_(None),
+            )
+            .order_by(StudentHold.created_at, StudentHold.id)
+        )
+    )
 
 
 async def get_fee_structure(db, program_id, term_id):

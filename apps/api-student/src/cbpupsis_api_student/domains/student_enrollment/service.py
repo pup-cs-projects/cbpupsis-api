@@ -194,7 +194,15 @@ async def get_eligibility(
                         else "ENROLL_HOLD_ACTIVE"
                     ),
                     message=(
-                        f"Resolve the hold with the {hold.office} before enrolling."
+                        (
+                            f"Resolve the PHP {hold.amount} financial hold with "
+                            f"the {hold.office} before enrolling."
+                        )
+                        if hold.type.upper() == "FINANCIAL"
+                        else (
+                            f"Resolve the {hold.type.lower()} hold with the "
+                            f"{hold.office} before enrolling."
+                        )
                     ),
                 )
             )
