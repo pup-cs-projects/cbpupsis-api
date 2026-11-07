@@ -1237,6 +1237,23 @@ async def enrollment_courses(
     ]
 
 
+async def active_curriculum_courses(
+    db: AsyncSession,
+    *,
+    curriculum_id: uuid.UUID | None,
+    program_id: uuid.UUID,
+) -> list[EnrollmentCourse]:
+    """Return active curriculum courses that may have sections in this term."""
+    return [
+        EnrollmentCourse.model_validate(row)
+        for row in await repository.list_active_curriculum_courses(
+            db,
+            curriculum_id=curriculum_id,
+            program_id=program_id,
+        )
+    ]
+
+
 async def list_curriculum_course_ids(
     db: AsyncSession, curriculum_id: uuid.UUID
 ) -> set[uuid.UUID]:

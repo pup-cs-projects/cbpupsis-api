@@ -18,7 +18,11 @@ from cbpupsis_database import models as _models  # noqa: F401
 from cbpupsis_database.base import Base
 from cbpupsis_database.models.academics import AcademicTerm
 from cbpupsis_database.models.audit import AuditEntry
-from cbpupsis_database.models.billing import FeeStructure, StudentBillingAccount
+from cbpupsis_database.models.billing import (
+    FeeStructure,
+    StudentBillingAccount,
+    StudentHold,
+)
 from cbpupsis_database.models.curriculum import (
     Course,
     Curriculum,
@@ -26,6 +30,7 @@ from cbpupsis_database.models.curriculum import (
     Program,
 )
 from cbpupsis_database.models.enrollment import (
+    OverloadRequest,
     StudentCourseEnrollment,
     TermEnrollment,
 )
@@ -42,6 +47,7 @@ from cbpupsis_shared.domains.enrollment.constants import (
     ENROLLED_PENDING,
     ENROLLMENT_SUBMITTED_ACTION,
     ENROLLMENT_SUBMITTED_EVENT,
+    READ_ENROLLMENT,
 )
 from cbpupsis_shared.domains.enrollment.exceptions import (
     EnrollmentAssessmentUnavailableError,
@@ -49,6 +55,7 @@ from cbpupsis_shared.domains.enrollment.exceptions import (
 )
 
 URL = "/api/v1/student/enrollment/submit"
+AVAILABLE_URL = "/api/v1/student/enrollment/available-courses"
 LOGIN_URL = "/api/v1/auth/student/login"
 PASSWORD = "StudentPassword123!"
 
@@ -282,6 +289,91 @@ def _body(submission, **extra) -> dict[str, object]:
     return body
 
 
+async def _cross_placement_submission(
+    db: AsyncSession,
+    grant,
+    *,
+    extra_units: Decimal,
+    student_number: str,
+) -> dict[str, object]:
+    code = f"L{uuid.uuid4().hex[:6].upper()}"
+    program, curriculum, _ = await _program_curriculum(db, code=code, course_count=0)
+    term = await _term(db)
+    student = await _student(
+        db,
+        program=program,
+        curriculum=curriculum,
+        number=student_number,
+    )
+    prescribed = Course(
+        course_code=f"{code}26",
+        title="Prescribed term load",
+        lecture_units=Decimal("26"),
+        lab_units=Decimal("0"),
+        is_nstp=False,
+        is_active=True,
+    )
+    extra = Course(
+        course_code=f"{code}EX",
+        title="Additional curriculum course",
+        lecture_units=extra_units,
+        lab_units=Decimal("0"),
+        is_nstp=False,
+        is_active=True,
+    )
+    db.add_all([prescribed, extra])
+    await db.flush()
+    db.add_all(
+        [
+            CurriculumCourse(
+                curriculum_id=curriculum.id,
+                course_id=prescribed.id,
+                year_level=2,
+                semester="First Semester",
+            ),
+            CurriculumCourse(
+                curriculum_id=curriculum.id,
+                course_id=extra.id,
+                year_level=1,
+                semester="Second Semester",
+            ),
+        ]
+    )
+    sections = [
+        await _section(
+            db,
+            term=term,
+            course=prescribed,
+            name=f"{code} A",
+            day=0,
+            start=time(9),
+            end=time(10),
+        ),
+        await _section(
+            db,
+            term=term,
+            course=extra,
+            name=f"{code} B",
+            day=1,
+            start=time(9),
+            end=time(10),
+        ),
+    ]
+    await _fee_structure(db, program=program, term=term)
+    await db.commit()
+    await grant(student.id, CREATE_ENROLLMENT)
+    await grant(student.id, READ_ENROLLMENT)
+    return {
+        "program": program,
+        "curriculum": curriculum,
+        "term": term,
+        "student": student,
+        "student_id": student.id,
+        "courses": [prescribed, extra],
+        "sections": sections,
+    }
+
+
 async def test_stage_seven_refuses_without_seats_then_accepts_approved_waiver(
     client, db, submission, grant, monkeypatch
 ):
@@ -391,6 +483,83 @@ async def test_ac_enrl_001_1_success_returns_pending_assessment(
     assert account.due_date == submission["term"].regular_enrollment_end.date()
 
 
+async def test_ac_enrl_001_2_prescribed_26_refuses_actual_29_unit_submit(
+    client: AsyncClient, db: AsyncSession, grant
+) -> None:
+    submission = await _cross_placement_submission(
+        db,
+        grant,
+        extra_units=Decimal("3"),
+        student_number="2026-00262-MN-0",
+    )
+    headers = await _headers(client, "2026-00262-MN-0")
+
+    available = await client.get(
+        AVAILABLE_URL,
+        headers=headers,
+        params={"term": "2026-2027-First Semester"},
+    )
+    assert available.status_code == 200, available.text
+    assert {row["sectionId"] for row in available.json()} == {
+        str(section.id) for section in submission["sections"]
+    }
+
+    response = await client.post(URL, headers=headers, json=_body(submission))
+
+    assert response.status_code == 409, response.text
+    data = response.json()
+    assert data["code"] == "ENROLL_UNIT_CEILING_EXCEEDED"
+    assert "prescribed load is 26 units" in data["message"]
+    assert "0 units remain" in data["message"]
+    assert data["details"] == {
+        "prescribedLoad": 26,
+        "approvedOverloadUnits": 0,
+        "standingReduction": 0,
+        "effectiveCeiling": 26,
+        "attemptedUnits": 29,
+        "unitsRemaining": 0,
+    }
+    assert not await db.scalar(
+        select(TermEnrollment.id).where(
+            TermEnrollment.student_id == submission["student_id"]
+        )
+    )
+
+
+async def test_ac_enrl_001_3_approved_9_allows_actual_35_unit_submit(
+    client: AsyncClient, db: AsyncSession, grant
+) -> None:
+    submission = await _cross_placement_submission(
+        db,
+        grant,
+        extra_units=Decimal("9"),
+        student_number="2026-00263-MN-0",
+    )
+    db.add(
+        OverloadRequest(
+            student_id=submission["student_id"],
+            academic_term_id=submission["term"].id,
+            requested_units=9,
+            justification="Approved nine-unit overload fixture",
+            state="APPROVED",
+        )
+    )
+    await db.commit()
+
+    response = await client.post(
+        URL,
+        headers=await _headers(client, "2026-00263-MN-0"),
+        json=_body(submission),
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["status"] == ENROLLED_PENDING
+    assert Decimal(response.json()["totalUnits"]) == Decimal("35")
+    assert (
+        await db.scalar(select(func.count()).select_from(StudentCourseEnrollment)) == 2
+    )
+
+
 async def test_ac_enrl_001_10_ordered_refusals_write_nothing(
     client: AsyncClient, db: AsyncSession, submission
 ) -> None:
@@ -401,6 +570,17 @@ async def test_ac_enrl_001_10_ordered_refusals_write_nothing(
     profile.has_financial_hold = True
     profile.has_academic_hold = True
     term.regular_enrollment_end = datetime.now(UTC) - timedelta(hours=1)
+    db.add(
+        StudentBillingAccount(
+            student_id=student.id,
+            academic_term_id=term.id,
+            gross_amount=Decimal("1500.50"),
+            fhe_subsidy_amount=Decimal("0"),
+            amount_paid=Decimal("0"),
+            payment_status="unpaid",
+            due_date=term.regular_enrollment_end.date(),
+        )
+    )
     db.add(
         StudentTermGPA(
             student_id=student.id,
@@ -423,7 +603,14 @@ async def test_ac_enrl_001_10_ordered_refusals_write_nothing(
     await db.commit()
     financial = await client.post(URL, headers=headers, json=body)
     assert financial.status_code == 409
-    assert financial.json()["code"] == "ENROLL_FINANCIAL_HOLD"
+    financial_data = financial.json()
+    assert financial_data["code"] == "ENROLL_FINANCIAL_HOLD"
+    assert "PHP 1500.50" in financial_data["message"]
+    assert "Accounting Office" in financial_data["message"]
+    assert financial_data["details"] == {
+        "office": "Accounting Office",
+        "outstandingAmount": "1500.50",
+    }
 
     profile.has_financial_hold = False
     await db.commit()
@@ -449,6 +636,48 @@ async def test_ac_enrl_001_10_ordered_refusals_write_nothing(
             .where(OutboxMessage.event_name == ENROLLMENT_SUBMITTED_EVENT)
         )
         == 0
+    )
+
+
+@pytest.mark.parametrize(
+    ("hold_type", "office"),
+    [
+        ("ADMINISTRATIVE", "Office of the University Registrar"),
+        ("DISCIPLINARY", "Office of Student Services"),
+    ],
+)
+async def test_ac_enrl_001_13_administrative_and_disciplinary_holds_name_office(
+    client: AsyncClient,
+    db: AsyncSession,
+    submission,
+    hold_type: str,
+    office: str,
+) -> None:
+    db.add(
+        StudentHold(
+            student_id=submission["student"].id,
+            hold_type=hold_type,
+            office=office,
+            description=f"Unresolved {hold_type.lower()} hold",
+            blocks_enrollment=True,
+        )
+    )
+    await db.commit()
+
+    response = await client.post(
+        URL,
+        headers=await _headers(client, "2026-00169-MN-0"),
+        json=_body(submission),
+    )
+
+    assert response.status_code == 409, response.text
+    data = response.json()
+    assert data["code"] == "ENROLL_HOLD_ACTIVE"
+    assert office in data["message"]
+    assert data["details"] == {"office": office, "holdType": hold_type}
+    assert await db.scalar(select(func.count()).select_from(TermEnrollment)) == 0
+    assert (
+        await db.scalar(select(func.count()).select_from(StudentCourseEnrollment)) == 0
     )
 
 

@@ -17,6 +17,7 @@ from sqlalchemy import (
     Numeric,
     SmallInteger,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -58,6 +59,38 @@ class FeeStructure(UUIDMixin, Base):
             "academic_term_id",
             name="uq_fee_structures_prog_term",
         ),
+    )
+
+
+class StudentHold(UUIDMixin, Base):
+    """An unresolved or resolved hold placed on a student account."""
+
+    __tablename__ = "student_holds"
+
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    hold_type: Mapped[str] = mapped_column(String(30))
+    office: Mapped[str] = mapped_column(String(150))
+    description: Mapped[str] = mapped_column(Text)
+    amount_outstanding: Mapped[Decimal | None] = mapped_column(
+        Numeric(precision=10, scale=2), default=None
+    )
+    currency: Mapped[str] = mapped_column(
+        String(3), default="PHP", server_default="PHP"
+    )
+    blocks_enrollment: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true"
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("idx_student_holds_student_unresolved", "student_id", "resolved_at"),
     )
 
 

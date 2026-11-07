@@ -53,6 +53,7 @@ __all__ = [
     "SubstitutionApprovalRead",
     "SubstitutionApproveRequest",
     "academic_catalog",
+    "active_curriculum_courses",
     "active_programs_by_code",
     "approve_course_substitution",
     "create_catalog_course",
@@ -95,6 +96,19 @@ async def enrollment_courses(
         program_id=program_id,
         year_level=year_level,
         semester=semester,
+    )
+
+
+async def active_curriculum_courses(
+    db: AsyncSession,
+    *,
+    curriculum_id: uuid.UUID | None,
+    program_id: uuid.UUID,
+) -> list[EnrollmentCourse]:
+    return await service.active_curriculum_courses(
+        db,
+        curriculum_id=curriculum_id,
+        program_id=program_id,
     )
 
 

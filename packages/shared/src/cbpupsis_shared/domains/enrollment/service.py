@@ -396,12 +396,10 @@ async def list_available_courses(
     if profile is None:
         raise ResourceNotFoundError
 
-    course_rows = await curriculum.enrollment_courses(
+    course_rows = await curriculum.active_curriculum_courses(
         db,
         curriculum_id=profile.curriculum_id,
         program_id=profile.program_id,
-        year_level=profile.year_level,
-        semester=term.semester,
     )
     courses_by_id = {course.id: course for course in course_rows}
     section_rows = await sections.available_sections(
@@ -504,12 +502,10 @@ async def submit_enrollment(
             if profile is None:
                 raise ResourceNotFoundError
 
-            course_rows = await curriculum.enrollment_courses(
+            course_rows = await curriculum.active_curriculum_courses(
                 db,
                 curriculum_id=profile.curriculum_id,
                 program_id=profile.program_id,
-                year_level=profile.year_level,
-                semester=term.semester,
             )
             courses_by_id = {course.id: course for course in course_rows}
             selected = await sections.schedule_sections(db, section_ids)
@@ -521,6 +517,12 @@ async def submit_enrollment(
                 for section in selected
             ):
                 raise ResourceNotFoundError
+            selected_course_ids = [section.course_id for section in selected]
+            if len(selected_course_ids) != len(set(selected_course_ids)):
+                raise ConflictError(
+                    "Cannot enroll in multiple sections of the same course.",
+                    code="ENROLL_DUPLICATE_COURSE",
+                )
 
             period_start, period_end = _enrollment_period(term)
             now = _as_utc(as_of or datetime.now(UTC))
@@ -547,6 +549,7 @@ async def submit_enrollment(
                 raise EnrollmentFinancialHoldError(
                     office=financial_hold.office,
                     amount=financial_hold.amount_outstanding,
+                    currency=financial_hold.currency,
                 )
             active_hold = next((hold for hold in holds if hold.is_blocking), None)
             if active_hold is not None:
@@ -1176,6 +1179,7 @@ async def file_add_drop_request(
         raise EnrollmentFinancialHoldError(
             office=financial_hold.office,
             amount=financial_hold.amount_outstanding,
+            currency=financial_hold.currency,
         )
     active_hold = next((hold for hold in holds if hold.is_blocking), None)
     if active_hold is not None:
