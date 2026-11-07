@@ -36,6 +36,24 @@ async def get_latest_student_term_gpa(
     return await db.scalar(stmt)
 
 
+async def list_student_term_gpas(db: AsyncSession, *, student_id: uuid.UUID):
+    """Read stored GPA evaluations for service-side term selection.
+
+    SQL::
+
+        SELECT * FROM student_term_gpa
+        WHERE student_id = :student_id
+        ORDER BY calculated_at DESC;
+    """
+    return list(
+        await db.scalars(
+            select(StudentTermGPA)
+            .where(StudentTermGPA.student_id == student_id)
+            .order_by(StudentTermGPA.calculated_at.desc())
+        )
+    )
+
+
 async def posted_enrollment_ids(db: AsyncSession, ids: Collection[uuid.UUID]):
     """Find which owner-scoped enrollments have published final marks.
 
