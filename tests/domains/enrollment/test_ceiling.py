@@ -273,11 +273,14 @@ async def test_ac_enrl_001_1_eligibility_returns_every_field(
     data = response.json()
     expected = {
         "isEligible",
+        "term",
+        "academicTermId",
         "termType",
         "curriculumId",
         "curriculumVersion",
         "prescribedLoad",
         "approvedOverloadUnits",
+        "pendingOverloadUnits",
         "standingReduction",
         "effectiveCeiling",
         "academicStanding",
@@ -285,11 +288,42 @@ async def test_ac_enrl_001_1_eligibility_returns_every_field(
         "summerSubjectCap",
         "holds",
         "academicPeriod",
+        "addDropPeriod",
         "reasons",
     }
     assert set(data) == expected
     assert data["isEligible"] is True
     assert Decimal(data["effectiveCeiling"]) == Decimal("26")
+    assert Decimal(data["pendingOverloadUnits"]) == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_ac_enrl_001_1_eligibility_names_the_term_selectors(
+    client: AsyncClient, db: AsyncSession, grant
+) -> None:
+    """The page reads the term to send to available-courses, submit and the COR."""
+    program, curriculum, _course = await _curriculum(db)
+    term = await _term(db)
+    number = "2026-01167-MN-0"
+    user = await _student(db, program=program, curriculum=curriculum, number=number)
+    await grant(user.id, READ_ENROLLMENT)
+    headers = await _headers(client, number)
+    data = (await client.get(URL, headers=headers)).json()
+
+    assert data["term"] == "2026-2027-First Semester"
+    assert data["academicTermId"] == str(term.id)
+    assert data["addDropPeriod"]["isOpen"] is True
+    courses = await client.get(
+        "/api/v1/student/enrollment/available-courses",
+        params={"term": data["term"]},
+        headers=headers,
+    )
+    assert courses.status_code != 422, courses.text
+
+    term.add_drop_deadline = datetime.now(UTC) - timedelta(minutes=1)
+    await db.commit()
+    closed = (await client.get(URL, headers=headers)).json()
+    assert closed["addDropPeriod"]["isOpen"] is False
 
 
 @pytest.mark.asyncio

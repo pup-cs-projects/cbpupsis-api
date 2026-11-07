@@ -448,6 +448,21 @@ async def test_ac_enrl_001_3_approval_raises_eligibility_ceiling_to_35(
     assert Decimal(eligibility.json()["effectiveCeiling"]) == Decimal("35")
 
 
+async def test_ac_enrl_001_3_pending_request_shows_on_eligibility(
+    client: AsyncClient, db: AsyncSession, overload_setup
+) -> None:
+    """The enrollment page shows "Waiting for the Dean" from pendingOverloadUnits."""
+    url = "/api/v1/student/enrollment/eligibility"
+    await _file(client)
+    headers = await _student_headers(client, "2026-00170-MN-0")
+
+    pending = await client.get(url, headers=headers)
+    assert pending.status_code == 200, pending.text
+    assert Decimal(pending.json()["pendingOverloadUnits"]) == Decimal("9")
+    assert Decimal(pending.json()["approvedOverloadUnits"]) == Decimal("0")
+    assert Decimal(pending.json()["effectiveCeiling"]) == Decimal("26")
+
+
 async def test_ac_enrl_001_5_rejection_requires_remarks_and_replay_conflicts(
     client: AsyncClient, db: AsyncSession, overload_setup
 ) -> None:

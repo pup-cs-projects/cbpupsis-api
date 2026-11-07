@@ -131,6 +131,32 @@ async def test_ac_enrl_002_10_out_of_step_unchanged(db, academic_db, position):
     assert await counts(db) == (1, 1, 0)
 
 
+async def test_ac_enrl_002_9_student_follows_own_waiver_steps(db, academic_db):
+    """GET /student/enrollment/waiver gives the step and remarks, own rows only."""
+    f = academic_db
+    await qualified(db, f)
+    filed = await waiver.file_waiver(db, student_id=f.student, data=filing(f))
+    listed = await waiver.list_student_waivers(db, student_id=f.student)
+    assert [(w.waiver_request_id, w.state) for w in listed] == [
+        (filed.waiver_request_id, "PENDING_CHAIR")
+    ]
+
+    await waiver.decide_waiver(
+        db,
+        reviewer=f.reviewers["chairperson"],
+        waiver_id=filed.waiver_request_id,
+        data=WaiverDecision(decision="REJECT", remarks="Missing evidence"),
+    )
+    rejected = await waiver.list_student_waivers(db, student_id=f.student)
+    assert rejected[0].state == "REJECTED"
+    body = rejected[0].model_dump(mode="json", by_alias=True)
+    assert body["reviewRemarks"] == "Missing evidence"
+    assert await waiver.list_student_waivers(db, student_id=uuid.uuid4()) == []
+
+    operation = app.openapi()["paths"]["/api/v1/student/enrollment/waiver"]
+    assert operation["get"]["operationId"] == "list_student_waiver_requests"
+
+
 async def test_filing_rejects_unsupported_claim_and_live_duplicate(db, academic_db):
     f = academic_db
     with pytest.raises(AppError) as error:

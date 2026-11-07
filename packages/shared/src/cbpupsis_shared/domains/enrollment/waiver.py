@@ -149,6 +149,11 @@ async def list_waivers(db, *, reviewer: WaiverReviewer, limit=50, offset=0):
     )
 
 
+async def list_student_waivers(db: AsyncSession, *, student_id) -> list[WaiverRead]:
+    """Own waivers only, so the student can follow each review step."""
+    return [_read(row) for row in await repository.student_waivers(db, student_id)]
+
+
 async def decide_waiver(
     db: AsyncSession,
     *,

@@ -2037,6 +2037,41 @@
       }
     },
     "/api/v1/student/enrollment/waiver": {
+      "get": {
+        "tags": [
+          "student-enrollment"
+        ],
+        "summary": "List Own Waivers",
+        "description": "List the signed-in student's own waivers, newest first.\n\n`state` is PENDING_CHAIR, PENDING_DEAN, PENDING_VPAA, APPROVED or REJECTED;\n`reviewRemarks` carries the reviewer's remarks.",
+        "operationId": "list_student_waiver_requests",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WaiverRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Student Waiver Requests"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A live student bearer session is required."
+          },
+          "403": {
+            "description": "ReadEnrollment permission is required."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
       "post": {
         "tags": [
           "student-enrollment"
@@ -2066,7 +2101,7 @@
             }
           },
           "409": {
-            "description": "Unmet waiver eligibility, pending waiver, or a request already decided. Eligibility is verified server-side."
+            "description": "ENROLL_PREREQUISITE_NOT_MET when the student meets none of the waiver conditions, or ENROLL_WAIVER_PENDING when a live waiver already exists for the section. Eligibility is verified server-side."
           },
           "422": {
             "description": "Validation Error",
@@ -2173,7 +2208,7 @@
             "description": "The term or a selected section is not available to the signed-in student's curriculum."
           },
           "409": {
-            "description": "The first failed enrollment check. Codes, in order: ENROLL_PERIOD_CLOSED, ENROLL_FINANCIAL_HOLD, ENROLL_HOLD_ACTIVE, ENROLL_STANDING_BLOCKED, the unit-ceiling codes, ENROLL_SCHEDULE_CONFLICT, the academic prerequisite/waiver, third-year gate and PE checks, and ENROLL_SECTION_FULL. No enrollment or seat is written."
+            "description": "The first failed enrollment check. Codes, in order: ENROLL_PERIOD_CLOSED, ENROLL_FINANCIAL_HOLD, ENROLL_HOLD_ACTIVE, ENROLL_STANDING_BLOCKED, ENROLL_UNIT_CEILING_EXCEEDED, ENROLL_OVERLOAD_CAP_EXCEEDED, ENROLL_SUMMER_SUBJECT_LIMIT, ENROLL_SCHEDULE_CONFLICT, ENROLL_PREREQUISITE_NOT_MET, ENROLL_THIRD_YEAR_GATE, ENROLL_PE_SEQUENCE, ENROLL_WAIVER_PENDING, ENROLL_ACADEMIC_DATA_UNAVAILABLE, ENROLL_DUPLICATE_COURSE, ENROLL_ASSESSMENT_UNAVAILABLE and ENROLL_SECTION_FULL. No enrollment or seat is written."
           },
           "422": {
             "description": "Validation Error",
@@ -2345,7 +2380,7 @@
             "description": "Resource not found."
           },
           "409": {
-            "description": "Filing refusal: closed period, below minimum load, section full, schedule conflict, unit ceiling exceeded, or prerequisite unmet."
+            "description": "Filing refusal; no request is created. ENROLL_ADD_DROP_PERIOD_CLOSED (details periodStart, periodEnd), ENROLL_BELOW_MINIMUM_LOAD (details minimumLoad, unitsAfter), REQUEST_ALREADY_PENDING, or any submit check on an addition: ENROLL_FINANCIAL_HOLD, ENROLL_HOLD_ACTIVE, ENROLL_STANDING_BLOCKED, ENROLL_UNIT_CEILING_EXCEEDED, ENROLL_OVERLOAD_CAP_EXCEEDED, ENROLL_SUMMER_SUBJECT_LIMIT, ENROLL_SCHEDULE_CONFLICT, ENROLL_PREREQUISITE_NOT_MET, ENROLL_THIRD_YEAR_GATE, ENROLL_PE_SEQUENCE, ENROLL_WAIVER_PENDING, ENROLL_DUPLICATE_COURSE, ENROLL_SECTION_FULL."
           },
           "422": {
             "description": "Validation Error",
@@ -10045,6 +10080,17 @@
             "type": "boolean",
             "title": "Iseligible"
           },
+          "term": {
+            "type": "string",
+            "title": "Term",
+            "description": "Current term selector to send as `term` to available-courses, submit, overload and add-drop, for example 2026-2027-First Semester."
+          },
+          "academicTermId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Academictermid",
+            "description": "Current academic-term UUID to send as `term` to the certificate and assessment endpoints."
+          },
           "termType": {
             "type": "string",
             "enum": [
@@ -10086,6 +10132,13 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Approvedoverloadunits"
           },
+          "pendingOverloadUnits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Pendingoverloadunits",
+            "description": "Units in overload requests still waiting for the Dean this term. Not counted in effectiveCeiling until approved.",
+            "default": "0"
+          },
           "standingReduction": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -10125,6 +10178,17 @@
           "academicPeriod": {
             "$ref": "#/components/schemas/EnrollmentPeriodRead"
           },
+          "addDropPeriod": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnrollmentPeriodRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Window in which add and drop requests are accepted, or null when the term has no add and drop dates configured."
+          },
           "reasons": {
             "items": {
               "$ref": "#/components/schemas/EnrollmentEligibilityReason"
@@ -10136,6 +10200,8 @@
         "type": "object",
         "required": [
           "isEligible",
+          "term",
+          "academicTermId",
           "termType",
           "prescribedLoad",
           "approvedOverloadUnits",

@@ -27,6 +27,7 @@ from cbpupsis_shared.domains.enrollment.constants import (
     ACTIVE_COURSE_ENROLLMENT_STATUSES,
     ACTIVE_TERM_ENROLLMENT_STATUSES,
     ADD_DROP_PENDING,
+    OVERLOAD_PENDING,
 )
 
 
@@ -261,6 +262,31 @@ async def get_approved_overload_units(
     return Decimal(str(val)) if val is not None else Decimal("0")
 
 
+async def get_pending_overload_units(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    academic_term_id: uuid.UUID,
+) -> Decimal:
+    """Return the units the student still waits on a Dean for in one term.
+
+    SQL::
+
+        SELECT COALESCE(SUM(overload_requests.requested_units), 0)
+        FROM overload_requests
+        WHERE overload_requests.student_id = :student_id
+          AND overload_requests.academic_term_id = :academic_term_id
+          AND overload_requests.state = 'PENDING_DEAN'
+    """
+    stmt = select(func.coalesce(func.sum(OverloadRequest.requested_units), 0)).where(
+        OverloadRequest.student_id == student_id,
+        OverloadRequest.academic_term_id == academic_term_id,
+        OverloadRequest.state == OVERLOAD_PENDING,
+    )
+    val = await db.scalar(stmt)
+    return Decimal(str(val)) if val is not None else Decimal("0")
+
+
 def add_overload_request(
     db: AsyncSession,
     *,
@@ -457,6 +483,24 @@ async def academic_waivers(db: AsyncSession, student_id, section_ids):
                 CourseWaiver.section_id.in_(section_ids),
             )
             .order_by(CourseWaiver.created_at, CourseWaiver.id)
+            .execution_options(populate_existing=True)
+        )
+    )
+
+
+async def student_waivers(db: AsyncSession, student_id):
+    """Read every waiver the signed-in student filed, newest first.
+
+    SQL::
+
+        SELECT * FROM course_waivers WHERE student_id = :student
+          ORDER BY created_at DESC, id DESC;
+    """
+    return list(
+        await db.scalars(
+            select(CourseWaiver)
+            .where(CourseWaiver.student_id == student_id)
+            .order_by(CourseWaiver.created_at.desc(), CourseWaiver.id.desc())
             .execution_options(populate_existing=True)
         )
     )
