@@ -35,7 +35,7 @@ uv run pytest tests/domains/<area> -q
 
 <!-- Tick a box only when it is true. An unchecked box is information for the reviewer. -->
 
-- [ ] PR targets `dev`, and the branch is `feature/`, `bugfix/`, or `hotfix/`
+- [ ] A story branch (`api-us-<module>-<nnn>`) targets its FR branch (`fr00N`); a `bugfix/`, `style/`, or `docs/` branch targets the branch it came from
 - [ ] Title follows Conventional Commits, for example `feat(auth): add account lockout`
 - [ ] pre-commit hooks pass locally
 - [ ] Tests added or updated, and they fail without this change
