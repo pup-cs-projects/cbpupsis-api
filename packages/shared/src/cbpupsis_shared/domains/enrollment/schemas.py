@@ -167,6 +167,25 @@ class EnrollmentEligibilityReason(BaseModel):
     message: str
 
 
+class CurrentEnrollmentRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    enrollment_id: uuid.UUID = Field(
+        serialization_alias="enrollmentId",
+        description="Same id as enrollmentId in the submit 201 response.",
+    )
+    status: str = Field(
+        description=(
+            "Stored term enrollment status: ENROLLED_PENDING after submit, "
+            "OFFICIALLY_ENROLLED once the certificate is issued."
+        ),
+    )
+    total_units: Decimal = Field(
+        serialization_alias="totalUnits",
+        description="Units of the sections currently held (dropped ones excluded).",
+    )
+
+
 class EnrollmentEligibilityRead(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -210,6 +229,14 @@ class EnrollmentEligibilityRead(BaseModel):
     summer_subject_cap: int | None = Field(serialization_alias="summerSubjectCap")
     holds: list[EligibilityHoldRead] = Field(default_factory=list)
     academic_period: EnrollmentPeriodRead = Field(serialization_alias="academicPeriod")
+    current_enrollment: CurrentEnrollmentRead | None = Field(
+        default=None,
+        serialization_alias="currentEnrollment",
+        description=(
+            "The student's enrollment for this term, or null when they have not "
+            "submitted yet. When set, show the enrolled state, not the picker."
+        ),
+    )
     add_drop_period: EnrollmentPeriodRead | None = Field(
         default=None,
         serialization_alias="addDropPeriod",

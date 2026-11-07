@@ -450,6 +450,28 @@ async def test_stage_seven_refuses_without_seats_then_accepts_approved_waiver(
     lock.assert_awaited_once()
 
 
+async def test_ac_enrl_001_1_eligibility_shows_current_enrollment(
+    client: AsyncClient, db: AsyncSession, submission, grant
+) -> None:
+    """After a reload the page reads currentEnrollment instead of the picker."""
+    await grant(submission["student"].id, READ_ENROLLMENT)
+    headers = await _headers(client, "2026-00169-MN-0")
+    eligibility_url = "/api/v1/student/enrollment/eligibility"
+    before = await client.get(eligibility_url, headers=headers)
+    assert before.status_code == 200, before.text
+    assert before.json()["currentEnrollment"] is None
+
+    submitted = await client.post(URL, headers=headers, json=_body(submission))
+    assert submitted.status_code == 201, submitted.text
+
+    after = await client.get(eligibility_url, headers=headers)
+    assert after.status_code == 200, after.text
+    current = after.json()["currentEnrollment"]
+    assert current["enrollmentId"] == submitted.json()["enrollmentId"]
+    assert current["status"] == ENROLLED_PENDING
+    assert Decimal(current["totalUnits"]) == Decimal(submitted.json()["totalUnits"])
+
+
 async def test_ac_enrl_001_1_success_returns_pending_assessment(
     client: AsyncClient, db: AsyncSession, submission
 ) -> None:

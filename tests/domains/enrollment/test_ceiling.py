@@ -289,6 +289,7 @@ async def test_ac_enrl_001_1_eligibility_returns_every_field(
         "holds",
         "academicPeriod",
         "addDropPeriod",
+        "currentEnrollment",
         "reasons",
     }
     assert set(data) == expected

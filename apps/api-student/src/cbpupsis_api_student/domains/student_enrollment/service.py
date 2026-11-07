@@ -157,6 +157,9 @@ async def get_eligibility(
     pending_overload = await enrollment.get_pending_overload_units(
         db, student_id=student_id, academic_term_id=term.id
     )
+    current_enrollment = await enrollment.get_current_enrollment(
+        db, student_id, term.id
+    )
     standing = await grading.get_student_scholastic_standing(db, student_id)
     transcript = await grading.read_transcript(
         db, student_id=student_id, complete=True, limit=100
@@ -269,6 +272,7 @@ async def get_eligibility(
         summer_subject_cap=SUMMER_SUBJECT_CAP if restricted_summer else None,
         holds=holds,
         academic_period=current_period,
+        current_enrollment=current_enrollment,
         add_drop_period=_add_drop_period(term, as_of=now),
         reasons=reasons,
     )

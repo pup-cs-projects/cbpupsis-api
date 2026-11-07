@@ -9612,6 +9612,34 @@
         "title": "CourseSectionRosterRead",
         "description": "A section with its roster.\n\nThe roster stays empty until the enrollment domain exists to fill it; the\nendpoint already enforces who may see it."
       },
+      "CurrentEnrollmentRead": {
+        "properties": {
+          "enrollmentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Enrollmentid",
+            "description": "Same id as enrollmentId in the submit 201 response."
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Stored term enrollment status: ENROLLED_PENDING after submit, OFFICIALLY_ENROLLED once the certificate is issued."
+          },
+          "totalUnits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Totalunits",
+            "description": "Units of the sections currently held (dropped ones excluded)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "enrollmentId",
+          "status",
+          "totalUnits"
+        ],
+        "title": "CurrentEnrollmentRead"
+      },
       "CurriculumCourseInput": {
         "properties": {
           "courseId": {
@@ -10177,6 +10205,17 @@
           },
           "academicPeriod": {
             "$ref": "#/components/schemas/EnrollmentPeriodRead"
+          },
+          "currentEnrollment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CurrentEnrollmentRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The student's enrollment for this term, or null when they have not submitted yet. When set, show the enrolled state, not the picker."
           },
           "addDropPeriod": {
             "anyOf": [

@@ -21,6 +21,7 @@ from cbpupsis_shared.domains.curriculum import client as curriculum
 from cbpupsis_shared.domains.enrollment import academic, repository
 from cbpupsis_shared.domains.enrollment.certificate import stage_reissue
 from cbpupsis_shared.domains.enrollment.constants import (
+    ACTIVE_COURSE_ENROLLMENT_STATUSES,
     ADD_DROP_APPROVED,
     ADD_DROP_DECISION_ATTEMPTS,
     ADD_DROP_PENDING,
@@ -78,6 +79,7 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     ConflictSection,
     ConflictStudent,
     ConflictTerm,
+    CurrentEnrollmentRead,
     EnrolledSection,
     EnrollmentSubmitRead,
     EnrollmentSubmitSectionRead,
@@ -300,6 +302,38 @@ async def get_term_enrollment(
     if row is None:
         return None
     return TermEnrollmentRead.model_validate(row)
+
+
+async def get_current_enrollment(
+    db: AsyncSession, student_id: uuid.UUID, academic_term_id: uuid.UUID
+) -> CurrentEnrollmentRead | None:
+    row = await repository.get_term_enrollment(db, student_id, academic_term_id)
+    if row is None:
+        return None
+    held = [
+        seat.section_id
+        for seat in await repository.list_term_enrollment_sections(db, row.id)
+        if seat.status in ACTIVE_COURSE_ENROLLMENT_STATUSES
+    ]
+    section_rows = await sections.schedule_sections(db, held)
+    courses = {
+        course.id: course
+        for course in await curriculum.schedule_courses(
+            db, [section.course_id for section in section_rows]
+        )
+    }
+    total = sum(
+        (
+            courses[section.course_id].lecture_units
+            + courses[section.course_id].lab_units
+            for section in section_rows
+            if section.course_id in courses
+        ),
+        Decimal("0"),
+    )
+    return CurrentEnrollmentRead(
+        enrollment_id=row.id, status=row.enrollment_status, total_units=total
+    )
 
 
 async def get_enrollment_summary(

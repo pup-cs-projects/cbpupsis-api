@@ -80,6 +80,7 @@ __all__ = [
     "file_overload_request",
     "file_waiver",
     "get_approved_overload_units",
+    "get_current_enrollment",
     "get_enrollment_report_counts",
     "get_enrollment_summary",
     "get_pending_overload_units",
@@ -230,6 +231,12 @@ async def get_term_enrollment(
     db: AsyncSession, student_id: uuid.UUID, academic_term_id: uuid.UUID
 ) -> TermEnrollmentRead | None:
     return await service.get_term_enrollment(db, student_id, academic_term_id)
+
+
+async def get_current_enrollment(
+    db: AsyncSession, student_id: uuid.UUID, academic_term_id: uuid.UUID
+):
+    return await service.get_current_enrollment(db, student_id, academic_term_id)
 
 
 async def get_enrollment_summary(
