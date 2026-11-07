@@ -315,7 +315,7 @@ async def test_ac_enrl_001_1_eligibility_names_the_term_selectors(
     assert data["addDropPeriod"]["isOpen"] is True
     courses = await client.get(
         "/api/v1/student/enrollment/available-courses",
-        params={"term": data["term"]},
+        params={"academicTermId": data["academicTermId"]},
         headers=headers,
     )
     assert courses.status_code != 422, courses.text

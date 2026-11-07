@@ -115,7 +115,7 @@ async def create_overload_request(
     return await service.file_overload_request(
         db,
         student_id=user.id,
-        term_selector=body.term,
+        academic_term_id=body.academic_term_id,
         requested_units=body.requested_units,
         justification=body.justification,
         client_ip=client_ip_or_none(request),
@@ -158,7 +158,7 @@ async def submit_enrollment(
     return await service.submit_enrollment(
         db,
         student_id=user.id,
-        term_selector=body.term,
+        academic_term_id=body.academic_term_id,
         section_ids=body.section_ids,
         client_ip=client_ip_or_none(request),
         role=user.role or "student",
@@ -171,20 +171,17 @@ async def submit_enrollment(
     operation_id="list_student_enrollment_available_courses",
 )
 async def get_available_courses(
-    term: str = Query(
+    academic_term_id: uuid.UUID = Query(
         ...,
-        min_length=3,
-        description=(
-            "Stored academic year and semester joined by a hyphen, for example "
-            "2026-2027-First Semester."
-        ),
+        alias="academicTermId",
+        description="Academic-term UUID, as returned by eligibility.",
     ),
     user: CurrentUser = Depends(require_student_session),
     _authorized: CurrentUser = Depends(require_permission(READ_ENROLLMENT)),
     db: AsyncSession = Depends(get_db),
 ) -> list[AvailableCourseRead]:
     return await service.get_available_courses(
-        db, student_id=user.id, term_selector=term
+        db, student_id=user.id, academic_term_id=academic_term_id
     )
 
 

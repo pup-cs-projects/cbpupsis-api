@@ -6,7 +6,6 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_core.exceptions import ValidationError
 from cbpupsis_shared.domains.academics import client as academics
 from cbpupsis_shared.domains.academics.schemas import AcademicTermRead
 from cbpupsis_shared.domains.auth.exceptions import ResourceNotFoundError
@@ -71,26 +70,20 @@ def _period(term: AcademicTermRead, *, as_of: datetime) -> EnrollmentPeriodRead:
     )
 
 
-def _parse_term_selector(value: str) -> tuple[str, str]:
-    academic_year, separator, semester = value.strip().rpartition("-")
-    if not separator or not academic_year.strip() or not semester.strip():
-        raise ValidationError(
-            "Term must use <academic-year>-<semester>, for example "
-            "2026-2027-First Semester."
-        )
-    return academic_year.strip(), semester.strip()
+async def _term(db: AsyncSession, academic_term_id: uuid.UUID) -> AcademicTermRead:
+    term = await academics.get_term_by_id(db, academic_term_id)
+    if term is None:
+        raise ResourceNotFoundError
+    return term
 
 
 async def get_available_courses(
     db: AsyncSession,
     *,
     student_id: uuid.UUID,
-    term_selector: str,
+    academic_term_id: uuid.UUID,
 ) -> list[AvailableCourseRead]:
-    academic_year, semester = _parse_term_selector(term_selector)
-    term = await academics.get_term(db, academic_year, semester)
-    if term is None:
-        raise ResourceNotFoundError
+    term = await _term(db, academic_term_id)
     return await enrollment.list_available_courses(db, student_id=student_id, term=term)
 
 
@@ -98,15 +91,12 @@ async def submit_enrollment(
     db: AsyncSession,
     *,
     student_id: uuid.UUID,
-    term_selector: str,
+    academic_term_id: uuid.UUID,
     section_ids: list[uuid.UUID],
     client_ip: str | None,
     role: str,
 ) -> EnrollmentSubmitRead:
-    academic_year, semester = _parse_term_selector(term_selector)
-    term = await academics.get_term(db, academic_year, semester)
-    if term is None:
-        raise ResourceNotFoundError
+    term = await _term(db, academic_term_id)
     return await enrollment.submit_enrollment(
         db,
         student_id=student_id,
@@ -121,16 +111,13 @@ async def file_overload_request(
     db: AsyncSession,
     *,
     student_id: uuid.UUID,
-    term_selector: str,
+    academic_term_id: uuid.UUID,
     requested_units: int,
     justification: str,
     client_ip: str | None,
     role: str,
 ) -> OverloadRequestFiledRead:
-    academic_year, semester = _parse_term_selector(term_selector)
-    term = await academics.get_term(db, academic_year, semester)
-    if term is None:
-        raise ResourceNotFoundError
+    term = await _term(db, academic_term_id)
     return await enrollment.file_overload_request(
         db,
         student_id=student_id,

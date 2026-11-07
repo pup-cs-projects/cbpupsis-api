@@ -19,7 +19,11 @@ from cbpupsis_shared.domains.enrollment.schemas import (
 class EnrollmentSubmitRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
-    term: str = Field(min_length=3)
+    academic_term_id: uuid.UUID = Field(
+        serialization_alias="academicTermId",
+        validation_alias="academicTermId",
+        description="Academic-term UUID, as returned by eligibility.",
+    )
     section_ids: list[uuid.UUID] = Field(
         min_length=1, serialization_alias="sectionIds", validation_alias="sectionIds"
     )
@@ -35,7 +39,11 @@ class EnrollmentSubmitRequest(BaseModel):
 class OverloadRequestCreate(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    term: str = Field(min_length=3)
+    academic_term_id: uuid.UUID = Field(
+        serialization_alias="academicTermId",
+        validation_alias="academicTermId",
+        description="Academic-term UUID, as returned by eligibility.",
+    )
     requested_units: int = Field(
         gt=0, serialization_alias="requestedUnits", validation_alias="requestedUnits"
     )

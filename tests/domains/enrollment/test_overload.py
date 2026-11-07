@@ -49,6 +49,7 @@ STUDENT_URL = "/api/v1/student/enrollment/overload"
 ADMIN_URL = "/api/v1/admin/overload-requests"
 LOGIN_URL = "/api/v1/auth/student/login"
 PASSWORD = "StudentPassword123!"
+CURRENT_TERM_ID = uuid.UUID("00000000-0000-4000-8000-000000000170")
 
 
 async def _term(
@@ -58,9 +59,11 @@ async def _term(
     semester: str,
     start: date,
     current: bool,
+    term_id: uuid.UUID | None = None,
 ) -> AcademicTerm:
     now = datetime.now(UTC)
     term = AcademicTerm(
+        **({"id": term_id} if term_id is not None else {}),
         academic_year=year,
         semester=semester,
         start_date=start,
@@ -252,6 +255,7 @@ async def overload_setup(db: AsyncSession):
         semester="First Semester",
         start=date(2026, 8, 1),
         current=True,
+        term_id=CURRENT_TERM_ID,
     )
     program, curriculum = await _program(
         db, code="BSCS", department="Computer Science", college="CCIS"
@@ -286,7 +290,7 @@ async def overload_setup(db: AsyncSession):
 
 def _file_body(units: int = 9) -> dict[str, object]:
     return {
-        "term": "2026-2027-First Semester",
+        "academicTermId": str(CURRENT_TERM_ID),
         "requestedUnits": units,
         "justification": "Final subjects required for graduation.",
     }

@@ -106,7 +106,7 @@ async def setup(db, client, grant, monkeypatch, password_hash):
 
 async def issue(client, setup):
     response = await client.post(
-        URL, json={"term": str(setup.term_id)}, headers=setup.headers
+        URL, json={"academicTermId": str(setup.term_id)}, headers=setup.headers
     )
     assert response.status_code == 201, response.text
     return response
@@ -115,7 +115,7 @@ async def issue(client, setup):
 async def read(client, setup, format="json"):
     return await client.get(
         URL,
-        params={"term": str(setup.term_id), "format": format},
+        params={"academicTermId": str(setup.term_id), "format": format},
         headers=setup.headers,
     )
 
@@ -161,7 +161,7 @@ async def test_ac_enrl_003_1_all_courses_immutable_json_and_pdf(client, setup, d
 async def test_ac_enrl_003_2_shared_stored_assessment_full_subsidy(client, setup, db):
     response = await client.get(
         "/api/v1/student/assessment",
-        params={"term": str(setup.term_id)},
+        params={"academicTermId": str(setup.term_id)},
         headers=setup.headers,
     )
     assert response.status_code == 200
@@ -224,9 +224,13 @@ async def test_ac_enrl_003_4_anonymous_verification_exact_fields(client, setup):
 async def test_ac_enrl_003_5_no_enrollment_refused_without_writes(client, setup, db):
     term = str(uuid.uuid4())
     for method, path, kwargs in (
-        (client.post, URL, {"json": {"term": term}}),
-        (client.get, URL, {"params": {"term": term}}),
-        (client.get, "/api/v1/student/assessment", {"params": {"term": term}}),
+        (client.post, URL, {"json": {"academicTermId": term}}),
+        (client.get, URL, {"params": {"academicTermId": term}}),
+        (
+            client.get,
+            "/api/v1/student/assessment",
+            {"params": {"academicTermId": term}},
+        ),
     ):
         response = await method(path, headers=setup.headers, **kwargs)
         assert (
@@ -253,7 +257,7 @@ async def test_ac_enrl_003_6_each_precondition_refused(
     await db.commit()
     for response in (
         await client.post(
-            URL, json={"term": str(setup.term_id)}, headers=setup.headers
+            URL, json={"academicTermId": str(setup.term_id)}, headers=setup.headers
         ),
         await read(client, setup),
     ):
@@ -267,7 +271,7 @@ async def test_ac_enrl_003_7_live_session_permissions_and_no_student_selector(
     client, setup, db
 ):
     assert (
-        await client.get(URL, params={"term": str(setup.term_id)})
+        await client.get(URL, params={"academicTermId": str(setup.term_id)})
     ).status_code == 401
     # Existing producer fixture has another live user but no student session.
     from cbpupsis_shared.domains.auth.dependencies import CurrentUser, get_current_user
@@ -287,14 +291,14 @@ async def test_ac_enrl_003_7_live_session_permissions_and_no_student_selector(
     await iam.add_user_to_group(db, setup.faculty_id, group.id)
     response = await client.get(
         URL,
-        params={"term": str(setup.term_id), "studentNumber": NUMBER},
+        params={"academicTermId": str(setup.term_id), "studentNumber": NUMBER},
         headers=setup.headers,
     )
     assert response.status_code == 409 and response.json()["code"] == "COR_NOT_ENROLLED"
     del app.dependency_overrides[get_current_user]
     response = await client.post(
         URL,
-        json={"term": str(setup.term_id), "studentNumber": "someone-else"},
+        json={"academicTermId": str(setup.term_id), "studentNumber": "someone-else"},
         headers=setup.headers,
     )
     assert response.status_code == 422
@@ -444,7 +448,7 @@ async def test_meeting_overflow_fails_closed(client, setup, monkeypatch):
 
     monkeypatch.setattr(certificate.sections, "schedule_sections", overflow)
     response = await client.post(
-        URL, json={"term": str(setup.term_id)}, headers=setup.headers
+        URL, json={"academicTermId": str(setup.term_id)}, headers=setup.headers
     )
     assert response.status_code == 503
 
@@ -568,7 +572,7 @@ async def test_issue_failure_rolls_back_all_business_effects(
     else:
         monkeypatch.setattr(academic_verdict, "certificate_eligible", REAL_VERDICT)
     response = await client.post(
-        URL, json={"term": str(setup.term_id)}, headers=setup.headers
+        URL, json={"academicTermId": str(setup.term_id)}, headers=setup.headers
     )
     assert response.status_code == 503
     if failure == "commit":

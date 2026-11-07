@@ -110,7 +110,7 @@ async def _submit(client, flow, codes=("CS401", "CS402", "CS403", "CS404", "CS40
         SUBMIT_URL,
         headers=flow.headers,
         json={
-            "term": f"{flow.term.academic_year}-{flow.term.semester}",
+            "academicTermId": str(flow.term.id),
             "sectionIds": [str(flow.sections[code].id) for code in codes],
             "confirmation": True,
         },
@@ -120,7 +120,7 @@ async def _submit(client, flow, codes=("CS401", "CS402", "CS403", "CS404", "CS40
 
 async def _issue(client, flow):
     return await client.post(
-        COR_URL, headers=flow.headers, json={"term": str(flow.term.id)}
+        COR_URL, headers=flow.headers, json={"academicTermId": str(flow.term.id)}
     )
 
 
@@ -128,7 +128,7 @@ async def _read_cor(client, flow):
     response = await client.get(
         COR_URL,
         headers=flow.headers,
-        params={"term": str(flow.term.id), "format": "json"},
+        params={"academicTermId": str(flow.term.id), "format": "json"},
     )
     assert response.status_code == 200, response.text
     return response.json()
@@ -136,7 +136,9 @@ async def _read_cor(client, flow):
 
 async def _assessment(client, flow):
     response = await client.get(
-        ASSESSMENT_URL, headers=flow.headers, params={"term": str(flow.term.id)}
+        ASSESSMENT_URL,
+        headers=flow.headers,
+        params={"academicTermId": str(flow.term.id)},
     )
     assert response.status_code == 200, response.text
     return response.json()
@@ -237,7 +239,7 @@ async def test_failed_reissue_rolls_back_the_approval(client, db, flow, monkeypa
     current = await client.get(
         COR_URL,
         headers=flow.headers,
-        params={"term": str(term_id), "format": "json"},
+        params={"academicTermId": str(term_id), "format": "json"},
     )
     assert current.json()["status"] == "CURRENT"
 
@@ -397,7 +399,7 @@ async def test_corequisite_is_met_by_taking_both_together(client, db, flow):
         SUBMIT_URL,
         headers=flow.headers,
         json={
-            "term": f"{flow.term.academic_year}-{flow.term.semester}",
+            "academicTermId": str(flow.term.id),
             "sectionIds": [str(flow.sections["CS401"].id)],
             "confirmation": True,
         },

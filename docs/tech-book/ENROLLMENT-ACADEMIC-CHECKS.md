@@ -14,9 +14,10 @@ All paths below start with `/api/v1` and use the existing error envelope.
 
 | Method/path | Authorization | Response |
 | --- | --- | --- |
-| GET `/student/enrollment/available-courses?term=...` | Live student session + ReadEnrollment | Existing section list with academic verdict fields |
+| GET `/student/enrollment/available-courses?academicTermId=<uuid>` | Live student session + ReadEnrollment | Existing section list with academic verdict fields |
 | POST `/student/enrollment/submit` | Live student session + CreateEnrollment | Existing submission response, or academic refusal before allocation |
 | POST `/student/enrollment/waiver` | Live student session + CreateWaiverRequest, session-owned filing only | 202 `{waiverRequestId,state:"PENDING_CHAIR"}` |
+| GET `/student/enrollment/waiver` | Live student session + ReadEnrollment, own waivers only | List of waiver DTOs with `state` and `reviewRemarks` |
 | GET `/admin/waiver-requests?limit=50&offset=0` | Live MFA-completed Admin session + ReadWaiverRequest | `{items,total,limit,offset}`, max limit 200 |
 | PATCH `/admin/waiver-requests/{waiverRequestId}` | Live MFA-completed Admin session + ApproveWaiverRequest | Updated waiver DTO |
 

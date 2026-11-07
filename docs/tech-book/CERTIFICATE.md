@@ -4,8 +4,9 @@
 
 PR preparation, 2026-11-05: this is the standalone #100 review branch, not the
 combined candidate. Dependency PR #209 supplies real #168/#169 endpoints but is
-still open at `15d377a250d0244f88a2669cc413ad515dd4ccaa`; its routes use string
-term selectors resolved by academics, whereas COR retains UUIDs. A separate
+still open at `15d377a250d0244f88a2669cc413ad515dd4ccaa`. Every student
+enrollment, certificate and assessment endpoint now takes the same
+`academicTermId` UUID (see "HTTP contract"). A separate
 local candidate has verified #99/submit/assessment integration with synthetic
 finance outputs. Those integrations and the combined migration are not in this
 branch. Port them after the dependency baseline is agreed; retain the #101,
@@ -28,17 +29,18 @@ All paths have prefix `/api/v1` and are mounted explicitly in the student app.
 | Method | Path | Access | Success |
 |---|---|---|---|
 | POST | `/student/schedule/cor` | Live student session + `IssueCertificate` | 201 `certificateId`, `issuedAt`, `status: CURRENT` |
-| GET | `/student/schedule/cor?term=<uuid>&format=pdf` | Live student session + `ReadSchedule` | 200 buffered PDF attachment, default format |
-| GET | `/student/schedule/cor?term=<uuid>&format=json` | Same | 200 canonical certificate DTO |
-| GET | `/student/assessment?term=<uuid>` | Live student session + `ReadAssessment` | 200 stored shared assessment |
+| GET | `/student/schedule/cor?academicTermId=<uuid>&format=pdf` | Live student session + `ReadSchedule` | 200 buffered PDF attachment, default format |
+| GET | `/student/schedule/cor?academicTermId=<uuid>&format=json` | Same | 200 canonical certificate DTO |
+| GET | `/student/assessment?academicTermId=<uuid>` | Live student session + `ReadAssessment` | 200 stored shared assessment |
 | GET | `/public/cor/verify/{token}` | Anonymous; fixed ten checks/minute/IP | 200 exactly five permitted fields |
 
-POST body is `{"term":"<academic-term-uuid>"}`. Extra body fields are rejected.
-No route can choose a student by number or ID. Auth/session/permission errors
-preserve existing behavior. The term is a typed UUID, resolved through the
-academics-owned term reader. #168/#169 have no implemented selector on this
-baseline: confirm/reuse their final representation during integration rather
-than introducing another string parser or silently changing the wire contract.
+POST body is `{"academicTermId":"<academic-term-uuid>"}`. Extra body fields are
+rejected. No route can choose a student by number or ID. Auth/session/permission
+errors preserve existing behavior. `academicTermId` is a typed UUID, resolved
+through the academics-owned term reader. It is the one term format across the
+enrollment flow: `GET /student/enrollment/eligibility` returns it for the current
+term, and available-courses, submit and overload take the same name. The
+eligibility `term` string is a display label only.
 
 No enrollment: 409 `COR_NOT_ENROLLED`. Unmet conditions: 409
 `COR_ENROLLMENT_NOT_FINAL`, with `details.unmet` containing `HOLD`,

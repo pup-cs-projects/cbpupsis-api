@@ -173,15 +173,15 @@ class EnrollmentEligibilityRead(BaseModel):
     is_eligible: bool = Field(serialization_alias="isEligible")
     term: str = Field(
         description=(
-            "Current term selector to send as `term` to available-courses, submit, "
-            "overload and add-drop, for example 2026-2027-First Semester."
+            "Display label of the current term, for example 2026-2027-First "
+            "Semester. Display only: endpoints take academicTermId."
         )
     )
     academic_term_id: uuid.UUID = Field(
         serialization_alias="academicTermId",
         description=(
-            "Current academic-term UUID to send as `term` to the certificate and "
-            "assessment endpoints."
+            "Current academic-term UUID. Send it as academicTermId to every "
+            "student enrollment, certificate and assessment endpoint."
         ),
     )
     term_type: Literal["REGULAR", "SUMMER"] = Field(serialization_alias="termType")

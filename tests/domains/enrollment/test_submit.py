@@ -281,7 +281,7 @@ async def submission(db: AsyncSession, grant):
 
 def _body(submission, **extra) -> dict[str, object]:
     body: dict[str, object] = {
-        "term": "2026-2027-First Semester",
+        "academicTermId": str(submission["term"].id),
         "sectionIds": [str(row.id) for row in submission["sections"]],
         "confirmation": True,
     }
@@ -497,7 +497,7 @@ async def test_ac_enrl_001_2_prescribed_26_refuses_actual_29_unit_submit(
     available = await client.get(
         AVAILABLE_URL,
         headers=headers,
-        params={"term": "2026-2027-First Semester"},
+        params={"academicTermId": str(submission["term"].id)},
     )
     assert available.status_code == 200, available.text
     assert {row["sectionId"] for row in available.json()} == {

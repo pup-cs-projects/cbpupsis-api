@@ -2242,16 +2242,16 @@
         ],
         "parameters": [
           {
-            "name": "term",
+            "name": "academicTermId",
             "in": "query",
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 3,
-              "description": "Stored academic year and semester joined by a hyphen, for example 2026-2027-First Semester.",
-              "title": "Term"
+              "format": "uuid",
+              "description": "Academic-term UUID, as returned by eligibility.",
+              "title": "Academictermid"
             },
-            "description": "Stored academic year and semester joined by a hyphen, for example 2026-2027-First Semester."
+            "description": "Academic-term UUID, as returned by eligibility."
           }
         ],
         "responses": {
@@ -3185,16 +3185,16 @@
         ],
         "parameters": [
           {
-            "name": "term",
+            "name": "academicTermId",
             "in": "query",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Stored academic-term UUID (shared producer integration pending).",
-              "title": "Term"
+              "description": "Academic-term UUID, as returned by eligibility.",
+              "title": "Academictermid"
             },
-            "description": "Stored academic-term UUID (shared producer integration pending)."
+            "description": "Academic-term UUID, as returned by eligibility."
           },
           {
             "name": "format",
@@ -3268,16 +3268,16 @@
         ],
         "parameters": [
           {
-            "name": "term",
+            "name": "academicTermId",
             "in": "query",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Stored academic-term UUID (shared producer integration pending).",
-              "title": "Term"
+              "description": "Academic-term UUID, as returned by eligibility.",
+              "title": "Academictermid"
             },
-            "description": "Stored academic-term UUID (shared producer integration pending)."
+            "description": "Academic-term UUID, as returned by eligibility."
           }
         ],
         "responses": {
@@ -10083,13 +10083,13 @@
           "term": {
             "type": "string",
             "title": "Term",
-            "description": "Current term selector to send as `term` to available-courses, submit, overload and add-drop, for example 2026-2027-First Semester."
+            "description": "Display label of the current term, for example 2026-2027-First Semester. Display only: endpoints take academicTermId."
           },
           "academicTermId": {
             "type": "string",
             "format": "uuid",
             "title": "Academictermid",
-            "description": "Current academic-term UUID to send as `term` to the certificate and assessment endpoints."
+            "description": "Current academic-term UUID. Send it as academicTermId to every student enrollment, certificate and assessment endpoint."
           },
           "termType": {
             "type": "string",
@@ -10334,10 +10334,11 @@
       },
       "EnrollmentSubmitRequest": {
         "properties": {
-          "term": {
+          "academicTermId": {
             "type": "string",
-            "minLength": 3,
-            "title": "Term"
+            "format": "uuid",
+            "title": "Academictermid",
+            "description": "Academic-term UUID, as returned by eligibility."
           },
           "sectionIds": {
             "items": {
@@ -10356,7 +10357,7 @@
         },
         "type": "object",
         "required": [
-          "term",
+          "academicTermId",
           "sectionIds",
           "confirmation"
         ],
@@ -11071,17 +11072,17 @@
       },
       "IssueCertificate": {
         "properties": {
-          "term": {
+          "academicTermId": {
             "type": "string",
             "format": "uuid",
-            "title": "Term",
-            "description": "Stored academic-term UUID; #168/#169 integration must share this selector."
+            "title": "Academictermid",
+            "description": "Academic-term UUID, as returned by eligibility."
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "term"
+          "academicTermId"
         ],
         "title": "IssueCertificate"
       },
@@ -11501,10 +11502,11 @@
       },
       "OverloadRequestCreate": {
         "properties": {
-          "term": {
+          "academicTermId": {
             "type": "string",
-            "minLength": 3,
-            "title": "Term"
+            "format": "uuid",
+            "title": "Academictermid",
+            "description": "Academic-term UUID, as returned by eligibility."
           },
           "requestedUnits": {
             "type": "integer",
@@ -11521,7 +11523,7 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "term",
+          "academicTermId",
           "requestedUnits",
           "justification"
         ],
