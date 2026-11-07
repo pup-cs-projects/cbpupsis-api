@@ -12,10 +12,8 @@ from cbpupsis_shared.domains.billing.schemas import AssessmentRead
 
 class IssueCertificate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    term: uuid.UUID = Field(
-        description=(
-            "Stored academic-term UUID; #168/#169 integration must share this selector."
-        )
+    academicTermId: uuid.UUID = Field(
+        description="Academic-term UUID, as returned by eligibility."
     )
 
 

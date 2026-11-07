@@ -6,7 +6,6 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_core.exceptions import ValidationError
 from cbpupsis_shared.domains.academics import client as academics
 from cbpupsis_shared.domains.academics.schemas import AcademicTermRead
 from cbpupsis_shared.domains.auth.exceptions import ResourceNotFoundError
@@ -42,6 +41,21 @@ def _term_type(term: AcademicTermRead) -> str:
     return "SUMMER" if "summer" in term.semester.lower() else "REGULAR"
 
 
+def _add_drop_period(
+    term: AcademicTermRead, *, as_of: datetime
+) -> EnrollmentPeriodRead | None:
+    # Same window the add and drop filing check enforces.
+    start = term.regular_enrollment_start or term.early_enrollment_start
+    end = term.add_drop_deadline
+    if start is None or end is None:
+        return None
+    start_utc = _utc(start)
+    end_utc = _utc(end)
+    return EnrollmentPeriodRead(
+        start=start_utc, end=end_utc, is_open=start_utc <= as_of <= end_utc
+    )
+
+
 def _period(term: AcademicTermRead, *, as_of: datetime) -> EnrollmentPeriodRead:
     start = term.early_enrollment_start or term.regular_enrollment_start
     end = term.late_enrollment_end or term.regular_enrollment_end
@@ -56,26 +70,20 @@ def _period(term: AcademicTermRead, *, as_of: datetime) -> EnrollmentPeriodRead:
     )
 
 
-def _parse_term_selector(value: str) -> tuple[str, str]:
-    academic_year, separator, semester = value.strip().rpartition("-")
-    if not separator or not academic_year.strip() or not semester.strip():
-        raise ValidationError(
-            "Term must use <academic-year>-<semester>, for example "
-            "2026-2027-First Semester."
-        )
-    return academic_year.strip(), semester.strip()
+async def _term(db: AsyncSession, academic_term_id: uuid.UUID) -> AcademicTermRead:
+    term = await academics.get_term_by_id(db, academic_term_id)
+    if term is None:
+        raise ResourceNotFoundError
+    return term
 
 
 async def get_available_courses(
     db: AsyncSession,
     *,
     student_id: uuid.UUID,
-    term_selector: str,
+    academic_term_id: uuid.UUID,
 ) -> list[AvailableCourseRead]:
-    academic_year, semester = _parse_term_selector(term_selector)
-    term = await academics.get_term(db, academic_year, semester)
-    if term is None:
-        raise ResourceNotFoundError
+    term = await _term(db, academic_term_id)
     return await enrollment.list_available_courses(db, student_id=student_id, term=term)
 
 
@@ -83,15 +91,12 @@ async def submit_enrollment(
     db: AsyncSession,
     *,
     student_id: uuid.UUID,
-    term_selector: str,
+    academic_term_id: uuid.UUID,
     section_ids: list[uuid.UUID],
     client_ip: str | None,
     role: str,
 ) -> EnrollmentSubmitRead:
-    academic_year, semester = _parse_term_selector(term_selector)
-    term = await academics.get_term(db, academic_year, semester)
-    if term is None:
-        raise ResourceNotFoundError
+    term = await _term(db, academic_term_id)
     return await enrollment.submit_enrollment(
         db,
         student_id=student_id,
@@ -106,16 +111,13 @@ async def file_overload_request(
     db: AsyncSession,
     *,
     student_id: uuid.UUID,
-    term_selector: str,
+    academic_term_id: uuid.UUID,
     requested_units: int,
     justification: str,
     client_ip: str | None,
     role: str,
 ) -> OverloadRequestFiledRead:
-    academic_year, semester = _parse_term_selector(term_selector)
-    term = await academics.get_term(db, academic_year, semester)
-    if term is None:
-        raise ResourceNotFoundError
+    term = await _term(db, academic_term_id)
     return await enrollment.file_overload_request(
         db,
         student_id=student_id,
@@ -152,6 +154,9 @@ async def get_eligibility(
     approved_overload = await enrollment.get_approved_overload_units(
         db, student_id=student_id, academic_term_id=term.id
     )
+    pending_overload = await enrollment.get_pending_overload_units(
+        db, student_id=student_id, academic_term_id=term.id
+    )
     standing = await grading.get_student_scholastic_standing(db, student_id)
     transcript = await grading.read_transcript(
         db, student_id=student_id, complete=True, limit=100
@@ -164,7 +169,8 @@ async def get_eligibility(
         has_academic_hold=profile.has_academic_hold,
     )
 
-    current_period = _period(term, as_of=_utc(as_of or datetime.now(UTC)))
+    now = _utc(as_of or datetime.now(UTC))
+    current_period = _period(term, as_of=now)
     term_type = _term_type(term)
     ceiling_student = CeilingStudent(
         prescribed_load=prescribed_load,
@@ -246,6 +252,8 @@ async def get_eligibility(
     )
     return EnrollmentEligibilityRead(
         is_eligible=not reasons,
+        term=f"{term.academic_year}-{term.semester}",
+        academic_term_id=term.id,
         term_type=term_type,
         curriculum_id=profile.curriculum_id,
         curriculum_version=(
@@ -253,6 +261,7 @@ async def get_eligibility(
         ),
         prescribed_load=prescribed_load,
         approved_overload_units=approved_overload,
+        pending_overload_units=pending_overload,
         standing_reduction=ceiling_student.standing_reduction,
         effective_ceiling=effective_ceiling,
         academic_standing=standing.value,
@@ -260,6 +269,7 @@ async def get_eligibility(
         summer_subject_cap=SUMMER_SUBJECT_CAP if restricted_summer else None,
         holds=holds,
         academic_period=current_period,
+        add_drop_period=_add_drop_period(term, as_of=now),
         reasons=reasons,
     )
 

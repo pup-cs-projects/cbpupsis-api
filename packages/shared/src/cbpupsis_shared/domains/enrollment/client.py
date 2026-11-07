@@ -39,6 +39,7 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     TermEnrollmentRead,
     WaiverFile,
     WaiverFiled,
+    WaiverRead,
 )
 from cbpupsis_shared.domains.enrollment.service import (
     assess_overload_eligibility,
@@ -81,6 +82,7 @@ __all__ = [
     "get_approved_overload_units",
     "get_enrollment_report_counts",
     "get_enrollment_summary",
+    "get_pending_overload_units",
     "get_student_add_drop_request",
     "get_term_enrollment",
     "issue_certificate",
@@ -88,6 +90,7 @@ __all__ = [
     "list_available_courses",
     "list_overload_requests",
     "list_student_add_drop_requests",
+    "list_student_waivers",
     "read_assessment",
     "read_certificate",
     "record_enrollments",
@@ -207,6 +210,14 @@ async def file_waiver(
     )
 
 
+async def list_student_waivers(
+    db: AsyncSession, *, student_id: uuid.UUID
+) -> list[WaiverRead]:
+    from cbpupsis_shared.domains.enrollment import waiver  # noqa: PLC0415
+
+    return await waiver.list_student_waivers(db, student_id=student_id)
+
+
 def require_academics(verdict):
     from cbpupsis_shared.domains.enrollment.academic import (  # noqa: PLC0415
         require_academics as require,
@@ -263,6 +274,14 @@ async def get_approved_overload_units(
     db: AsyncSession, *, student_id: uuid.UUID, academic_term_id: uuid.UUID
 ) -> Decimal:
     return await service.get_approved_overload_units(
+        db, student_id=student_id, academic_term_id=academic_term_id
+    )
+
+
+async def get_pending_overload_units(
+    db: AsyncSession, *, student_id: uuid.UUID, academic_term_id: uuid.UUID
+) -> Decimal:
+    return await service.get_pending_overload_units(
         db, student_id=student_id, academic_term_id=academic_term_id
     )
 

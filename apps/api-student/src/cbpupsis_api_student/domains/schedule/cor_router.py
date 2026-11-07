@@ -42,7 +42,8 @@ Student = Annotated[CurrentUser, Depends(require_student_session)]
 Term = Annotated[
     uuid.UUID,
     Query(
-        description="Stored academic-term UUID (shared producer integration pending)."
+        alias="academicTermId",
+        description="Academic-term UUID, as returned by eligibility.",
     ),
 ]
 ERRORS = {
@@ -75,7 +76,7 @@ async def issue(
 ):
     """Atomically issue; retries preserve certificate identity/token and one audit."""
     return await enrollment.issue_certificate(
-        db, student.id, body.term, client_ip=client_ip_or_none(request)
+        db, student.id, body.academicTermId, client_ip=client_ip_or_none(request)
     )
 
 

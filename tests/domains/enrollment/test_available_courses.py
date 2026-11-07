@@ -333,7 +333,7 @@ async def test_ac_enrl_001_9_endpoint_returns_every_section_field(
 
     response = await client.get(
         URL,
-        params={"term": "2026-2027-First Semester"},
+        params={"academicTermId": str(term.id)},
         headers=await _headers(client, number),
     )
 
@@ -408,7 +408,7 @@ async def test_academic_preview_batches_independent_pe_and_omits_off_curriculum(
     monkeypatch.setattr(sections, "available_sections", include_drift)
     load = AsyncMock(wraps=academic.load_facts)
     monkeypatch.setattr(academic, "load_facts", load)
-    params = {"term": "2026-2027-First Semester"}
+    params = {"academicTermId": str(term.id)}
     response = await client.get(URL, params=params, headers=headers)
     assert response.status_code == 200, response.text
     rows = response.json()
@@ -489,7 +489,7 @@ async def test_ac_enrl_001_9_scopes_program_term_and_student_conflicts(
 
     response = await client.get(
         URL,
-        params={"term": "2026-2027-First Semester"},
+        params={"academicTermId": str(term.id)},
         headers=await _headers(client, caller_number),
     )
 
@@ -511,7 +511,7 @@ async def test_ac_enrl_001_9_term_without_sections_returns_empty_list(
     program, curriculum, _courses = await _curriculum(
         db, code="ENRL168-D", course_codes=["ENR168E"]
     )
-    await _term(db)
+    term = await _term(db)
     number = "2026-00172-MN-0"
     student = await _student(db, program=program, curriculum=curriculum, number=number)
     await db.commit()
@@ -519,12 +519,37 @@ async def test_ac_enrl_001_9_term_without_sections_returns_empty_list(
 
     response = await client.get(
         URL,
-        params={"term": "2026-2027-First Semester"},
+        params={"academicTermId": str(term.id)},
         headers=await _headers(client, number),
     )
 
     assert response.status_code == 200, response.text
     assert response.json() == []
+
+
+async def test_ac_enrl_001_9_unknown_academic_term_id_is_not_found(
+    client: AsyncClient, db: AsyncSession, grant
+) -> None:
+    program, curriculum, _courses = await _curriculum(
+        db, code="ENRL168-F", course_codes=["ENR168G"]
+    )
+    await _term(db)
+    number = "2026-00174-MN-0"
+    student = await _student(db, program=program, curriculum=curriculum, number=number)
+    await db.commit()
+    await grant(student.id, READ_ENROLLMENT)
+    headers = await _headers(client, number)
+
+    unknown = await client.get(
+        URL, params={"academicTermId": str(uuid.uuid4())}, headers=headers
+    )
+    assert unknown.status_code == 404, unknown.text
+    assert unknown.json()["code"] == "RESOURCE_NOT_FOUND"
+
+    selector = await client.get(
+        URL, params={"term": "2026-2027-First Semester"}, headers=headers
+    )
+    assert selector.status_code == 422
 
 
 async def test_ac_enrl_001_9_requires_read_enrollment(
@@ -533,14 +558,14 @@ async def test_ac_enrl_001_9_requires_read_enrollment(
     program, curriculum, _courses = await _curriculum(
         db, code="ENRL168-E", course_codes=["ENR168F"]
     )
-    await _term(db)
+    term = await _term(db)
     number = "2026-00173-MN-0"
     await _student(db, program=program, curriculum=curriculum, number=number)
     await db.commit()
 
     response = await client.get(
         URL,
-        params={"term": "2026-2027-First Semester"},
+        params={"academicTermId": str(term.id)},
         headers=await _headers(client, number),
     )
 

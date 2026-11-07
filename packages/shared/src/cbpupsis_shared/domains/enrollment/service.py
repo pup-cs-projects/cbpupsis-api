@@ -344,6 +344,14 @@ async def get_approved_overload_units(
     )
 
 
+async def get_pending_overload_units(
+    db: AsyncSession, *, student_id: uuid.UUID, academic_term_id: uuid.UUID
+) -> Decimal:
+    return await repository.get_pending_overload_units(
+        db, student_id=student_id, academic_term_id=academic_term_id
+    )
+
+
 async def record_enrollments(db: AsyncSession, student_id: uuid.UUID):
     return [
         RecordEnrollment.model_validate(row, from_attributes=True)

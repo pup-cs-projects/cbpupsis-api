@@ -49,6 +49,7 @@ STUDENT_URL = "/api/v1/student/enrollment/overload"
 ADMIN_URL = "/api/v1/admin/overload-requests"
 LOGIN_URL = "/api/v1/auth/student/login"
 PASSWORD = "StudentPassword123!"
+CURRENT_TERM_ID = uuid.UUID("00000000-0000-4000-8000-000000000170")
 
 
 async def _term(
@@ -58,9 +59,11 @@ async def _term(
     semester: str,
     start: date,
     current: bool,
+    term_id: uuid.UUID | None = None,
 ) -> AcademicTerm:
     now = datetime.now(UTC)
     term = AcademicTerm(
+        **({"id": term_id} if term_id is not None else {}),
         academic_year=year,
         semester=semester,
         start_date=start,
@@ -252,6 +255,7 @@ async def overload_setup(db: AsyncSession):
         semester="First Semester",
         start=date(2026, 8, 1),
         current=True,
+        term_id=CURRENT_TERM_ID,
     )
     program, curriculum = await _program(
         db, code="BSCS", department="Computer Science", college="CCIS"
@@ -286,7 +290,7 @@ async def overload_setup(db: AsyncSession):
 
 def _file_body(units: int = 9) -> dict[str, object]:
     return {
-        "term": "2026-2027-First Semester",
+        "academicTermId": str(CURRENT_TERM_ID),
         "requestedUnits": units,
         "justification": "Final subjects required for graduation.",
     }
@@ -446,6 +450,21 @@ async def test_ac_enrl_001_3_approval_raises_eligibility_ceiling_to_35(
     assert Decimal(eligibility.json()["prescribedLoad"]) == Decimal("26")
     assert Decimal(eligibility.json()["approvedOverloadUnits"]) == Decimal("9")
     assert Decimal(eligibility.json()["effectiveCeiling"]) == Decimal("35")
+
+
+async def test_ac_enrl_001_3_pending_request_shows_on_eligibility(
+    client: AsyncClient, db: AsyncSession, overload_setup
+) -> None:
+    """The enrollment page shows "Waiting for the Dean" from pendingOverloadUnits."""
+    url = "/api/v1/student/enrollment/eligibility"
+    await _file(client)
+    headers = await _student_headers(client, "2026-00170-MN-0")
+
+    pending = await client.get(url, headers=headers)
+    assert pending.status_code == 200, pending.text
+    assert Decimal(pending.json()["pendingOverloadUnits"]) == Decimal("9")
+    assert Decimal(pending.json()["approvedOverloadUnits"]) == Decimal("0")
+    assert Decimal(pending.json()["effectiveCeiling"]) == Decimal("26")
 
 
 async def test_ac_enrl_001_5_rejection_requires_remarks_and_replay_conflicts(

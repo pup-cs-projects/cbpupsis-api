@@ -171,6 +171,19 @@ class EnrollmentEligibilityRead(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     is_eligible: bool = Field(serialization_alias="isEligible")
+    term: str = Field(
+        description=(
+            "Display label of the current term, for example 2026-2027-First "
+            "Semester. Display only: endpoints take academicTermId."
+        )
+    )
+    academic_term_id: uuid.UUID = Field(
+        serialization_alias="academicTermId",
+        description=(
+            "Current academic-term UUID. Send it as academicTermId to every "
+            "student enrollment, certificate and assessment endpoint."
+        ),
+    )
     term_type: Literal["REGULAR", "SUMMER"] = Field(serialization_alias="termType")
     curriculum_id: uuid.UUID | None = Field(
         default=None, serialization_alias="curriculumId"
@@ -182,6 +195,14 @@ class EnrollmentEligibilityRead(BaseModel):
     approved_overload_units: Decimal = Field(
         serialization_alias="approvedOverloadUnits"
     )
+    pending_overload_units: Decimal = Field(
+        default=Decimal("0"),
+        serialization_alias="pendingOverloadUnits",
+        description=(
+            "Units in overload requests still waiting for the Dean this term. "
+            "Not counted in effectiveCeiling until approved."
+        ),
+    )
     standing_reduction: Decimal = Field(serialization_alias="standingReduction")
     effective_ceiling: Decimal = Field(serialization_alias="effectiveCeiling")
     academic_standing: str = Field(serialization_alias="academicStanding")
@@ -189,6 +210,14 @@ class EnrollmentEligibilityRead(BaseModel):
     summer_subject_cap: int | None = Field(serialization_alias="summerSubjectCap")
     holds: list[EligibilityHoldRead] = Field(default_factory=list)
     academic_period: EnrollmentPeriodRead = Field(serialization_alias="academicPeriod")
+    add_drop_period: EnrollmentPeriodRead | None = Field(
+        default=None,
+        serialization_alias="addDropPeriod",
+        description=(
+            "Window in which add and drop requests are accepted, or null when the "
+            "term has no add and drop dates configured."
+        ),
+    )
     reasons: list[EnrollmentEligibilityReason] = Field(default_factory=list)
 
 
