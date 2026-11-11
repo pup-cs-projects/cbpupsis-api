@@ -30,7 +30,7 @@ not requirements for a shared QA deployment:
 | Student Scalar | `http://localhost:8001/scalar` | Interactive API client, development only |
 | Student frontend origin | `http://localhost:3000` | Browser UI; separate client repository |
 | Google redirect URI | `http://localhost:3000/calendar/google/callback` | Browser destination registered with Google |
-| Backend callback API | `http://localhost:8001/api/v1/students/me/schedule/google-calendar/callback` | Authenticated POST receiving code/state from the browser/client |
+| Backend callback API | `http://localhost:8001/api/v1/student/schedule/google-calendar/callback` | Authenticated POST receiving code/state from the browser/client |
 
 The frontend redirect and backend callback are **different endpoints**. Do not
 register the backend POST URL or `/scalar` as Google's redirect URI. In standard
@@ -82,7 +82,12 @@ Google account identity or calendar IDs in a test report.
 
 ## APIs
 
-Base: `/api/v1/students/me/schedule/google-calendar`. All requests require a live
+The #147 route migration uses only the singular student namespace. Former plural
+paths return 404, with no aliases or redirects. Permissions, OAuth behavior and
+the registered frontend redirect URI are unchanged. Coordinate rollout with
+[client #63](https://github.com/pup-cs-projects/cbpupsis-client/issues/63).
+
+Base: `/api/v1/student/schedule/google-calendar`. All requests require a live
 student bearer session. All responses, including validation/auth errors, are
 private/no-store. Except consent withdrawal, routes also require `ReadSchedule`.
 There are no student-number inputs or read-all routes.
@@ -376,7 +381,7 @@ implemented, QA manually forwards its returned code/state through Scalar.
 ### Connect, synchronize and disconnect
 
 All paths below are under `/api/v1`; Google base path is
-`/students/me/schedule/google-calendar`.
+`/student/schedule/google-calendar`.
 
 In Scalar, expand the Google Calendar operation, select **Test Request**, set
 the **HTTPBearer** authentication value, edit the JSON body, and select **Send**.
@@ -389,7 +394,7 @@ token and not a Google credential. Keep private values out of shared collections
    Set HTTPBearer to the returned `access_token` value only, without a second
    `Bearer` prefix. Keep that same SIS session for authorization and callback;
    do not log in again between those two requests.
-2. GET `/students/me/schedule` and verify the expected enrolled meetings. GET the
+2. GET `/student/schedule` and verify the expected enrolled meetings. GET the
    Google base path: `enabled` must be true. If already connected, test `/sync`
    rather than starting another authorization. To test reconnect, first follow
    the disconnect step and wait until revocation completes.

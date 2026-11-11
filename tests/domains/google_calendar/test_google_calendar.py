@@ -30,7 +30,7 @@ from main import app
 from tests.domains.schedule.test_schedule import password_hash as password_hash
 from tests.domains.schedule.test_schedule import setup as setup
 
-URL = "/api/v1/students/me/schedule/google-calendar"
+URL = "/api/v1/student/schedule/google-calendar"
 
 
 class FakeGoogle:
@@ -313,7 +313,7 @@ async def test_disabled_integration_does_not_block_schedule(
         await client.post(f"{URL}/authorization", json={}, headers=setup.headers)
     ).status_code == 503
     assert (
-        await client.get("/api/v1/students/me/schedule", headers=setup.headers)
+        await client.get("/api/v1/student/schedule", headers=setup.headers)
     ).status_code == 200
 
 

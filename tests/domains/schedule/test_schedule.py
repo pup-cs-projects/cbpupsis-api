@@ -26,12 +26,11 @@ from cbpupsis_shared.domains.auth.security import hash_password
 from main import app
 from tests.domains.schedule.helpers import NUMBER, PASSWORD, seed_schedule
 
-URL = "/api/v1/students/me/schedule"
+URL = "/api/v1/student/schedule"
 GUARDED_PATHS = [
     URL,
     f"{URL}/export?format=pdf",
     f"{URL}/export?format=ics",
-    f"/api/v1/students/{NUMBER}/schedule",
 ]
 
 
@@ -62,22 +61,8 @@ def events(response):
     return Calendar.from_ical(response.content).walk("VEVENT")
 
 
-@pytest.mark.parametrize("suffix", ["", "/export?format=pdf", "/export?format=ics"])
-@pytest.mark.parametrize("authenticated", [False, True])
-async def test_removed_schedule_aliases_return_404(
-    client, setup, suffix, authenticated
-):
-    response = await client.get(
-        f"/api/v1/student/schedule{suffix}",
-        headers=setup.headers if authenticated else {},
-    )
-    assert response.status_code == 404
-    assert "location" not in response.headers
-
-
-@pytest.mark.parametrize("path", [URL, f"/api/v1/students/{NUMBER}/schedule"])
-async def test_ac_103_1_fields_and_ac_103_4_computed_totals(client, setup, path):
-    response = await client.get(path, headers=setup.headers)
+async def test_ac_103_1_fields_and_ac_103_4_computed_totals(client, setup):
+    response = await client.get(URL, headers=setup.headers)
     assert response.status_code == 200, response.text
     body = response.json()
     assert set(body) == {
@@ -240,7 +225,7 @@ async def test_ac_103_6_recurrence_timezone_holidays_and_distinct_meetings(
         assert NUMBER not in str(event["uid"])
 
 
-async def test_ac_103_7_own_identifier_works_foreign_and_absent_are_identical(
+async def test_ac_stu_003_7_foreign_and_absent_identified_routes_return_404(
     client, setup, db, password_hash
 ):
     foreign = User(email="foreign@example.com", password_hash=password_hash)
@@ -260,20 +245,16 @@ async def test_ac_103_7_own_identifier_works_foreign_and_absent_are_identical(
         )
     )
     await db.commit()
-    assert (
-        await client.get(f"/api/v1/students/{NUMBER}/schedule", headers=setup.headers)
-    ).status_code == 200
     bodies = []
-    for number in ("2021-00999-MN-1", "not-a-real-student"):
+    for number in (NUMBER, "2021-00999-MN-1", "not-a-real-student"):
         response = await client.get(
             f"/api/v1/students/{number}/schedule", headers=setup.headers
         )
         assert response.status_code == 404
         body = response.json()
-        assert body["code"] == "RESOURCE_NOT_FOUND"
         body.pop("request_id", None)
         bodies.append(body)
-    assert bodies[0] == bodies[1]
+    assert bodies[0] == bodies[1] == bodies[2]
 
 
 async def test_ac_103_8_drop_readd_stable_uids_monotonic_sequence_and_tombstones(
@@ -482,6 +463,5 @@ async def test_ac_103_7_request_logs_do_not_contain_student_identifiers(
     assert records
     assert all(NUMBER not in str(record.__dict__) for record in records)
     assert {record.path for record in records} == {
-        "/students/{student_number}/schedule",
         "<unmatched>",
     }
