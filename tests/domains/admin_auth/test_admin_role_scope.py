@@ -39,7 +39,7 @@ from cbpupsis_api_faculty.routes import MOUNTS as FACULTY_MOUNTS
 from cbpupsis_api_student.routes import MOUNTS as STUDENT_MOUNTS
 from cbpupsis_core.config import settings
 from cbpupsis_database.models.iam import Group
-from cbpupsis_database.models.users import AdminPosition
+from cbpupsis_database.models.users import AdminPosition, AdminProfile
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.application import create_app
 from cbpupsis_shared.domains.auth import service as auth_service
@@ -252,6 +252,30 @@ class TestAdminGroupSeeding:
             REGISTRAR_GROUP,
             FINANCE_GROUP,
         } == ADMIN_GROUPS
+
+    async def test_seed_moves_existing_admins_into_their_position_group(
+        self, db: AsyncSession
+    ) -> None:
+        """An Admin made before the position groups existed joins its group on seed."""
+        user = await auth_service.create_console_account(
+            db,
+            email="existing_chair@example.com",
+            password="A-valid-password-123!",
+            full_name="Existing Chair",
+        )
+        db.add(
+            AdminProfile(
+                user_id=user.id,
+                position=AdminPosition.chairperson.value,
+                department="Computer Science",
+            )
+        )
+        await db.flush()
+
+        await seed_iam.seed()
+
+        groups = await iam_service.get_user_group_names(db, user.id)
+        assert POSITION_GROUPS[AdminPosition.chairperson] in groups
 
 
 class TestBootstrapAdminPlacement:

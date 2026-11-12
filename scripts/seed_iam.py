@@ -17,6 +17,7 @@ from cbpupsis_database.models.iam import (
     Permission,
     Policy,
     PolicyPermission,
+    UserGroup,
     UserPolicy,
 )
 from cbpupsis_database.models.users import AdminProfile
@@ -33,6 +34,7 @@ from cbpupsis_shared.domains.iam.constants import (
     STUDENT_GROUP,
     SUPERADMIN_GROUP,
 )
+from cbpupsis_shared.domains.users.constants import POSITION_GROUPS
 
 #: VerbNoun permissions the application enforces. (action, description)
 PERMISSIONS: list[tuple[str, str]] = [
@@ -261,6 +263,18 @@ async def _ensure_user_policy(session, user_id, policy_id: int) -> None:
         session.add(UserPolicy(user_id=user_id, policy_id=policy_id))
 
 
+async def _ensure_user_group(session, user_id, group_id: int) -> None:
+    """Add ``user_id`` to ``group_id`` if it is not a member yet."""
+    exists = await session.scalar(
+        select(UserGroup).where(
+            UserGroup.user_id == user_id,
+            UserGroup.group_id == group_id,
+        )
+    )
+    if exists is None:
+        session.add(UserGroup(user_id=user_id, group_id=group_id))
+
+
 async def _seed_session(session) -> None:
     """Populate permissions, policies, groups, and admin policies on ``session``."""
     # 1) Permissions
@@ -279,8 +293,10 @@ async def _seed_session(session) -> None:
             await _ensure_policy_permission(session, policy.id, permissions[action].id)
 
     # 3) Groups, with their policies attached
+    groups: dict[str, Group] = {}
     for group_name, policy_names in GROUPS.items():
         group = await _get_or_create_group(session, group_name)
+        groups[group_name] = group
         for policy_name in policy_names:
             await _ensure_group_policy(session, group.id, policies[policy_name].id)
 
@@ -293,6 +309,13 @@ async def _seed_session(session) -> None:
         for policy_name in ADMIN_POSITION_POLICIES.get(profile.position, ()):
             await _ensure_user_policy(
                 session, profile.user_id, policies[policy_name].id
+            )
+        # Accounts created before the position groups existed join theirs here
+        # (BR-AUTH-005); new accounts join at creation through POSITION_GROUPS.
+        position_group = POSITION_GROUPS.get(profile.position)
+        if position_group is not None:
+            await _ensure_user_group(
+                session, profile.user_id, groups[position_group].id
             )
 
     await session.commit()
