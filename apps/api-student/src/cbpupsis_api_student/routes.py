@@ -39,13 +39,13 @@ STUDENT_PROFILE = RouterMount(
 )
 STUDENT_DASHBOARD = RouterMount(dashboard_router, "/student", "student-dashboard")
 ITEMS = RouterMount(items_router, "/items", "items")
-GRADES = RouterMount(grades_router, "", "student-grades")
+GRADES = RouterMount(grades_router, "/student", "student-grades")
 ENROLLMENT = RouterMount(enrollment_router, "/student/enrollment", "student-enrollment")
 
-SCHEDULE = RouterMount(schedule_router, "", "student-schedule")
+SCHEDULE = RouterMount(schedule_router, "/student/schedule", "student-schedule")
 
 GOOGLE_CALENDAR = RouterMount(
-    google_calendar_router, "/students/me/schedule/google-calendar", "google-calendar"
+    google_calendar_router, "/student/schedule/google-calendar", "google-calendar"
 )
 
 MOUNTS: tuple[RouterMount, ...] = (
