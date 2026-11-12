@@ -9,17 +9,28 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.grading import service
-from cbpupsis_shared.domains.grading.schemas import ScholasticStandingRead
+from cbpupsis_shared.domains.grading.schemas import (
+    ScholasticStandingRead,
+    SectionRosterGrade,
+)
 from cbpupsis_shared.domains.grading.service import academic_record as academic_record
 from cbpupsis_shared.domains.grading.service import read_grades, read_transcript
 
 __all__ = [
     "ScholasticStandingRead",
+    "SectionRosterGrade",
     "get_previous_regular_term_gwa",
     "get_student_scholastic_standing",
     "read_grades",
     "read_transcript",
+    "section_roster_grades",
 ]
+
+
+async def section_roster_grades(
+    db: AsyncSession, enrollment_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, SectionRosterGrade]:
+    return await service.section_roster_grades(db, enrollment_ids)
 
 
 async def get_previous_regular_term_gwa(

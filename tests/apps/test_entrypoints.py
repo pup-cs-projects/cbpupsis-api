@@ -49,7 +49,7 @@ EXPECTED_PREFIXES: dict[str, set[str]] = {
         "student",
         "public",
     },
-    "faculty": {"auth", "users", "notifications", "sections"},
+    "faculty": {"auth", "users", "notifications", "faculty"},
     "admin": {"auth", "users", "notifications", "admin", "superadmin", "iam", "audit"},
 }
 

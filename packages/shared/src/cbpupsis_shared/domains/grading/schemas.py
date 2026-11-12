@@ -62,6 +62,11 @@ class AcademicAttempt(BaseModel):
     mark: str
 
 
+class SectionRosterGrade(BaseModel):
+    enrollment_id: uuid.UUID
+    grade_status: Literal["PENDING", "DRAFT", "SUBMITTED", "INC"]
+
+
 class AcademicRecord(BaseModel):
     attempts: list[AcademicAttempt]
     cumulative_gwa: Decimal | None

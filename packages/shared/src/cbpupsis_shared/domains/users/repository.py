@@ -103,6 +103,40 @@ async def list_overload_student_identities(
     return list(result.all())
 
 
+async def list_faculty_roster_identities(db: AsyncSession, student_ids: set[uuid.UUID]):
+    """Read only identity and teaching-contact fields for roster students.
+
+    SQL::
+
+        SELECT u.id, sp.student_number, u.full_name, up.first_name,
+               up.last_name, u.email, sp.program_id, sp.year_level
+        FROM users u JOIN student_profiles sp ON sp.user_id = u.id
+        LEFT JOIN user_profiles up ON up.user_id = u.id
+        WHERE u.id IN (:student_ids) AND u.deleted_at IS NULL;
+    """
+    if not student_ids:
+        return []
+    result = await db.execute(
+        select(
+            User.id.label("student_id"),
+            StudentProfile.student_number,
+            User.full_name,
+            UserProfile.first_name,
+            UserProfile.last_name,
+            User.email,
+            StudentProfile.program_id,
+            StudentProfile.year_level,
+        )
+        .join(StudentProfile, StudentProfile.user_id == User.id)
+        .outerjoin(UserProfile, UserProfile.user_id == User.id)
+        .where(
+            User.id.in_(student_ids),
+            User.deleted_at.is_(None),
+        )
+    )
+    return list(result.all())
+
+
 async def schedule_identity(db: AsyncSession, user_id: uuid.UUID):
     """Read only the caller's institutional identity.
 

@@ -36,6 +36,8 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     EnrollmentSummaryRead,
     OverloadRequestFiledRead,
     OverloadRequestRead,
+    SectionRosterAddDrop,
+    SectionRosterEnrollment,
     TermEnrollmentRead,
     WaiverFile,
     WaiverFiled,
@@ -49,6 +51,8 @@ from cbpupsis_shared.domains.enrollment.service import (
     count_section_enrollments,
     enrolled_sections,
     record_enrollments,
+    section_roster_add_drop,
+    section_roster_enrollments,
 )
 
 __all__ = [
@@ -64,6 +68,8 @@ __all__ = [
     "IssueCertificate",
     "OverloadRequestFiledRead",
     "OverloadRequestRead",
+    "SectionRosterAddDrop",
+    "SectionRosterEnrollment",
     "TermEnrollmentRead",
     "VerificationRead",
     "assess_overload_eligibility",
@@ -96,6 +102,8 @@ __all__ = [
     "read_certificate",
     "record_enrollments",
     "require_academics",
+    "section_roster_add_drop",
+    "section_roster_enrollments",
     "stage_reissue",
     "submit_enrollment",
     "verify_certificate",

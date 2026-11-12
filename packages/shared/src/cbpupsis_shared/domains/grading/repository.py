@@ -104,6 +104,22 @@ async def published_marks(db: AsyncSession, ids: Collection[uuid.UUID]):
     )
 
 
+async def roster_grades(db: AsyncSession, ids: Collection[uuid.UUID]):
+    """Read grade workflow state for owner-scoped course enrollments.
+
+    SQL::
+
+        SELECT * FROM student_grades WHERE enrollment_item_id IN (:ids);
+    """
+    if not ids:
+        return []
+    return list(
+        await db.scalars(
+            select(StudentGrade).where(StudentGrade.enrollment_item_id.in_(ids))
+        )
+    )
+
+
 async def evaluated_standing(
     db: AsyncSession, student_id: uuid.UUID, term_id: uuid.UUID
 ):

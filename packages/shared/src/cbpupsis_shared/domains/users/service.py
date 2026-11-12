@@ -59,6 +59,7 @@ from cbpupsis_shared.domains.users.schemas import (
     AvatarRead,
     EmergencyContactRead,
     FacultyProfileRead,
+    FacultyRosterIdentity,
     OverloadStudentIdentity,
     RecordIdentity,
     ScheduleIdentity,
@@ -89,6 +90,25 @@ async def overload_student_identities(
         )
         for row in await repository.list_overload_student_identities(db, student_ids)
     }
+
+
+async def faculty_roster_identities(
+    db: AsyncSession, student_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, FacultyRosterIdentity]:
+    result = {}
+    for row in await repository.list_faculty_roster_identities(db, student_ids):
+        name = row.full_name or " ".join(
+            part for part in (row.first_name, row.last_name) if part
+        )
+        result[row.student_id] = FacultyRosterIdentity(
+            student_id=row.student_id,
+            student_number=row.student_number,
+            name=name or row.student_number,
+            email=row.email,
+            program_id=row.program_id,
+            year_level=row.year_level,
+        )
+    return result
 
 
 async def schedule_identity(
