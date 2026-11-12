@@ -38,7 +38,15 @@ APPS: dict[str, FastAPI] = {
 #: The router prefixes under /api/v1 each app serves.
 EXPECTED_PREFIXES: dict[str, set[str]] = {
     # Role sign-ins live under /auth/<role>, so they share the "auth" prefix.
-    "student": {"auth", "users", "notifications", "items", "student", "students"},
+    "student": {
+        "auth",
+        "users",
+        "notifications",
+        "items",
+        "student",
+        "students",
+        "public",
+    },
     "faculty": {"auth", "users", "notifications", "sections"},
     "admin": {"auth", "users", "notifications", "admin", "superadmin", "iam", "audit"},
 }
@@ -72,6 +80,11 @@ def test_student_records_have_one_public_route_per_operation(app: FastAPI) -> No
         if path.startswith(("/api/v1/student/", "/api/v1/students/"))
     }
     assert paths == {
+        ("post", "/api/v1/student/enrollment/waiver"),
+        ("get", "/api/v1/student/enrollment/waiver"),
+        ("post", "/api/v1/student/schedule/cor"),
+        ("get", "/api/v1/student/schedule/cor"),
+        ("get", "/api/v1/student/assessment"),
         ("get", "/api/v1/students/me/grades"),
         ("get", "/api/v1/students/me/transcript"),
         ("get", "/api/v1/students/me/transcript/export"),
@@ -85,8 +98,16 @@ def test_student_records_have_one_public_route_per_operation(app: FastAPI) -> No
         ("patch", "/api/v1/student/profile/emergency-contacts/{contact_id}"),
         ("delete", "/api/v1/student/profile/emergency-contacts/{contact_id}"),
         ("get", "/api/v1/student/dashboard"),
+        ("get", "/api/v1/student/enrollment/eligibility"),
         ("get", "/api/v1/student/me/dashboard"),
         ("get", "/api/v1/student/{student_id}/dashboard"),
+        ("get", "/api/v1/student/enrollment/add-drop"),
+        ("get", "/api/v1/student/enrollment/add-drop/{request_id}"),
+        ("post", "/api/v1/student/enrollment/add-drop"),
+        ("get", "/api/v1/student/enrollment/eligibility"),
+        ("get", "/api/v1/student/enrollment/available-courses"),
+        ("post", "/api/v1/student/enrollment/submit"),
+        ("post", "/api/v1/student/enrollment/overload"),
         ("get", "/api/v1/students/me/schedule"),
         ("get", "/api/v1/students/me/schedule/export"),
         ("get", "/api/v1/students/{student_number}/schedule"),

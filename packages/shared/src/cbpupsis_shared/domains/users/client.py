@@ -24,6 +24,7 @@ from cbpupsis_shared.domains.users.schemas import (
     AvatarRead,
     EmergencyContactRead,
     FacultyProfileRead,
+    OverloadStudentIdentity,
     ScheduleIdentity,
     StudentProfileRead,
     UserProfileRead,
@@ -43,6 +44,8 @@ __all__ = [
     "StudentProfileRead",
     "UserProfileRead",
     "admin_scope",
+    "bind_students_for_curriculum_version",
+    "count_students_by_curriculum",
     "find_account_problems",
     "get_active_user",
     "get_admin_profile",
@@ -59,8 +62,10 @@ __all__ = [
     "get_user_profile",
     "invalidate_role_sessions",
     "list_emergency_contacts",
+    "list_student_profiles",
     "lock_active_user",
     "lock_role_subject",
+    "overload_student_identities",
     "record_identity",
     "save_admin_profile",
     "schedule_identity",
@@ -73,6 +78,12 @@ __all__ = [
     "stage_update_user_profile",
     "user_exists",
 ]
+
+
+async def overload_student_identities(
+    db: AsyncSession, student_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, OverloadStudentIdentity]:
+    return await service.overload_student_identities(db, student_ids)
 
 
 async def schedule_identity(
@@ -282,3 +293,34 @@ async def get_student_by_number(
 ) -> StudentProfileRead | None:
     """Return a student profile by student number, or None."""
     return await service.get_student_by_number(db, student_number)
+
+
+async def student_ids_in_programs(db: AsyncSession, program_ids):
+    return await service.student_ids_in_programs(db, program_ids)
+
+
+async def count_students_by_curriculum(
+    db: AsyncSession, curriculum_id: uuid.UUID
+) -> int:
+    return await service.count_students_by_curriculum(db, curriculum_id)
+
+
+async def list_student_profiles(
+    db: AsyncSession, user_ids: Sequence[uuid.UUID]
+) -> list[StudentProfileRead]:
+    return await service.list_student_profiles(db, user_ids)
+
+
+async def bind_students_for_curriculum_version(
+    db: AsyncSession,
+    *,
+    program_id: uuid.UUID,
+    curriculum_id: uuid.UUID,
+    effective_admission_year: int,
+) -> list[uuid.UUID]:
+    return await service.bind_students_for_curriculum_version(
+        db,
+        program_id=program_id,
+        curriculum_id=curriculum_id,
+        effective_admission_year=effective_admission_year,
+    )
