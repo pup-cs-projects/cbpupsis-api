@@ -9,12 +9,14 @@ from decimal import Decimal
 from io import BytesIO
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from icalendar import Calendar
 from pypdf import PdfReader
 from sqlalchemy import delete, func, select, update
 
 from cbpupsis_api_student.domains.schedule import exports, service
 from cbpupsis_api_student.domains.schedule.constants import READ_SCHEDULE
+from cbpupsis_core.logging import JsonFormatter
 from cbpupsis_database.models.academics import AcademicTerm
 from cbpupsis_database.models.enrollment import StudentCourseEnrollment, TermEnrollment
 from cbpupsis_database.models.iam import PolicyPermission
@@ -54,6 +56,16 @@ async def setup(db, client, grant, password_hash):
     assert response.status_code == 200, response.text
     data.headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
     return data
+
+
+@pytest.fixture
+async def handler_client(client):
+    """Share dependency overrides but observe global-handler 500 responses."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as ac:
+        yield ac
 
 
 def events(response):
@@ -347,21 +359,47 @@ async def test_invalid_export_format_is_422(client, setup):
 
 
 @pytest.mark.parametrize("format", ["pdf", "ics"])
-async def test_partial_generation_failure_returns_only_503_and_rolls_back(
-    client, setup, db, monkeypatch, format
+async def test_unexpected_export_failure_reaches_global_handler_and_rolls_back(
+    handler_client, setup, db, monkeypatch, caplog, format
 ):
+    private_values = (
+        "private-student-data-must-not-be-logged",
+        NUMBER,
+        str(setup.student_id),
+        "Ana Peña",
+    )
+
     def fail(*args):
-        raise RuntimeError("private-student-data-must-not-be-logged")
+        raise RuntimeError(" ".join(private_values))
 
     monkeypatch.setattr(
         exports, "render_pdf" if format == "pdf" else "render_calendar", fail
     )
-    response = await client.get(f"{URL}/export?format={format}", headers=setup.headers)
-    assert response.status_code == 503
-    assert response.json()["code"] == "SERVICE_UNAVAILABLE"
-    assert response.headers["retry-after"] == "30"
+    response = await handler_client.get(
+        f"{URL}/export?format={format}", headers=setup.headers
+    )
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Internal server error"
+    assert response.json()["request_id"]
+    assert "retry-after" not in response.headers
+    assert response.headers["cache-control"] == "private, no-store"
     assert "content-disposition" not in response.headers
-    assert "private-student" not in response.text
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "cbpupsis_core.exceptions"
+        and record.getMessage() == "request.unexpected_error"
+    ]
+    assert len(records) == 1
+    assert records[0].error_type == "RuntimeError"
+    assert records[0].levelno == logging.ERROR
+    assert records[0].exc_info is None and records[0].stack_info is None
+    logs = "\n".join(JsonFormatter().format(record) for record in caplog.records)
+    for value in private_values:
+        assert value not in logs
+        assert value not in caplog.text
+        assert value not in response.text
+    assert not db.in_transaction()
     assert await db.scalar(select(func.count()).select_from(ScheduleExportState)) == 0
 
 
