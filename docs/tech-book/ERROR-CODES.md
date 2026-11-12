@@ -358,7 +358,7 @@ them must move to the rows above.
 | --- | --- | --- |
 | 400 | `GOOGLE_CALENDAR_INVALID_STATE` | Start authorization again; state expired, was replayed, or belongs to another student/session. |
 | 409 | `GOOGLE_CALENDAR_CONFLICT` | Inspect connection status; connect first, wait for active sync/revocation, or respect the ten-term limit. |
-| 503 | `GOOGLE_CALENDAR_UNAVAILABLE` | Integration is disabled/misconfigured or Google authorization failed; retry after 30 seconds, or contact the operator. No provider payload or credential is returned. |
+| 503 | `GOOGLE_CALENDAR_UNAVAILABLE` | Integration is disabled/misconfigured, Google authorization/identity verification failed, or callback exceeded 25 seconds. Retry-After: 30; a failed callback requires fresh authorization, not replay of the consumed state/code. No provider payload or credential is returned. |
 
 Google endpoints redact validation inputs. Background `last_error` is a sanitized
 status, not a new HTTP error envelope: see [the integration guide](GOOGLE-CALENDAR.md).
