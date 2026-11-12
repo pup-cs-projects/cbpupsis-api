@@ -92,15 +92,22 @@ ROWS: dict[str, dict[str, object]] = {
         "college": "CCIS",
         "department": "Ignored",
     },
+    "admin_advisor": {
+        "first_name": "Gabe",
+        "surname": "Santos",
+        "email": "gabe.santos@example.com",
+        "role": "admin_advisor",
+    },
 }
 
 EXPECTED_GROUP = {
     "student": "Students",
     "faculty": "Faculty",
-    "admin_registrar": "Admins",
-    "admin_finance": "Admins",
-    "admin_chairperson": "Admins",
-    "admin_dean": "Admins",
+    "admin_registrar": "Registrar",
+    "admin_finance": "Finance",
+    "admin_chairperson": "Chair",
+    "admin_dean": "Dean",
+    "admin_advisor": "Advisor",
 }
 
 
@@ -226,6 +233,7 @@ class TestEachRoleRow:
             ("admin_finance", "finance", None, None),
             ("admin_chairperson", "chairperson", "Computer Science", None),
             ("admin_dean", "dean", None, "CCIS"),
+            ("admin_advisor", "advisor", None, None),
         ],
     )
     async def test_admin_position_and_scope(

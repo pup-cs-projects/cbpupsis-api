@@ -228,7 +228,7 @@
           "users"
         ],
         "summary": "Read Me",
-        "description": "Return the authenticated user's own profile.",
+        "description": "Return the authenticated user's own profile, group, and permissions.",
         "operationId": "read_me_api_v1_users_me_get",
         "responses": {
           "200": {
@@ -7378,7 +7378,8 @@
           "admin_registrar",
           "admin_finance",
           "admin_chairperson",
-          "admin_dean"
+          "admin_dean",
+          "admin_advisor"
         ],
         "title": "AccountRole",
         "description": "The ``role`` a Superadmin gives a new account, one per CSV row."
@@ -7868,6 +7869,7 @@
       "AdminPosition": {
         "type": "string",
         "enum": [
+          "advisor",
           "chairperson",
           "dean",
           "finance",
@@ -14072,6 +14074,31 @@
               }
             ],
             "title": "Phone Number"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Permissions"
+          },
+          "page_permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Page Permissions"
           }
         },
         "type": "object",

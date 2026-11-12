@@ -183,6 +183,10 @@ class UserRead(UserBase):
     locale: str | None = None
     phone_number: str | None = None
 
+    group: str | None = None
+    permissions: list[str] = Field(default_factory=list)
+    page_permissions: list[str] = Field(default_factory=list)
+
 
 class DeleteAccountRequest(BaseModel):
     """Payload for deleting your own account.

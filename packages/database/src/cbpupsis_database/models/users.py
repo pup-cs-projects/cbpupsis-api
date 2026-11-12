@@ -117,6 +117,7 @@ COLLEGE_MAX_LENGTH = 100
 class AdminPosition(enum.StrEnum):
     """The data-reach position carried by the single Admin role."""
 
+    advisor = "advisor"
     chairperson = "chairperson"
     dean = "dean"
     finance = "finance"

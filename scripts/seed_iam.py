@@ -17,6 +17,7 @@ from cbpupsis_database.models.iam import (
     Permission,
     Policy,
     PolicyPermission,
+    UserGroup,
     UserPolicy,
 )
 from cbpupsis_database.models.users import AdminProfile
@@ -24,10 +25,16 @@ from cbpupsis_database.session import AsyncSessionLocal
 from cbpupsis_shared.domains.iam.constants import (
     ADMIN_GROUP,
     ADMIN_POSITION_POLICIES,
+    ADVISOR_GROUP,
+    CHAIR_GROUP,
+    DEAN_GROUP,
     FACULTY_GROUP,
+    FINANCE_GROUP,
+    REGISTRAR_GROUP,
     STUDENT_GROUP,
     SUPERADMIN_GROUP,
 )
+from cbpupsis_shared.domains.users.constants import POSITION_GROUPS
 
 #: VerbNoun permissions the application enforces. (action, description)
 PERMISSIONS: list[tuple[str, str]] = [
@@ -57,6 +64,15 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ReadGrade", "Read your own finalized grades"),
     ("ReadTranscript", "Read and export your own transcript"),
     ("ReadSchedule", "Read and export your own student course schedule"),
+    # Domain capabilities split across the admin groups (BR-AUTH-005).
+    ("ManageBilling", "Manage student billing, fees, and payments"),
+    ("ModerateGrade", "Submit or correct student grades"),
+    ("ModerateCourseSection", "Manage and approve department course sections"),
+    (
+        "ModerateCurriculum",
+        "Approve curriculum and program changes at the college level",
+    ),
+    ("ReadAdvisingRecord", "View advising records for assigned students"),
     ("CreateWaiverRequest", "File your own prerequisite waiver request"),
     ("ReadWaiverRequest", "Read position-scoped prerequisite waiver requests"),
     ("ApproveWaiverRequest", "Record the assigned prerequisite waiver decision"),
@@ -98,6 +114,11 @@ POLICIES: dict[str, list[str]] = {
     "GradeReader": ["ReadGrade"],
     "TranscriptReader": ["ReadTranscript"],
     "ScheduleReader": ["ReadSchedule"],
+    "BillingAdmin": ["ManageBilling"],
+    "GradeModerator": ["ModerateGrade"],
+    "CourseSectionModerator": ["ModerateCourseSection"],
+    "CurriculumModerator": ["ModerateCurriculum"],
+    "AdvisingRecordReader": ["ReadAdvisingRecord"],
     "WaiverRequestAuthor": ["CreateWaiverRequest"],
     "WaiverRequestAdmin": ["ReadWaiverRequest", "ApproveWaiverRequest"],
     "CertificateAuthor": ["IssueCertificate"],
@@ -138,6 +159,12 @@ GROUPS: dict[str, list[str]] = {
         "UserModerator",
         "NotificationModerator",
     ],
+    # Split admin position groups with their distinct policies (BR-AUTH-005):
+    ADVISOR_GROUP: ["AdvisingRecordReader"],
+    CHAIR_GROUP: ["CourseSectionModerator"],
+    DEAN_GROUP: ["CurriculumModerator"],
+    REGISTRAR_GROUP: ["GradeModerator"],
+    FINANCE_GROUP: ["BillingAdmin"],
     # Admin is one authenticated role whose position controls data scope. Its
     # product permissions (Home, Calendar, Courses, Enrollment) will be attached
     # by those domains. User administration, IAM, and audit reading belong to
@@ -236,6 +263,18 @@ async def _ensure_user_policy(session, user_id, policy_id: int) -> None:
         session.add(UserPolicy(user_id=user_id, policy_id=policy_id))
 
 
+async def _ensure_user_group(session, user_id, group_id: int) -> None:
+    """Add ``user_id`` to ``group_id`` if it is not a member yet."""
+    exists = await session.scalar(
+        select(UserGroup).where(
+            UserGroup.user_id == user_id,
+            UserGroup.group_id == group_id,
+        )
+    )
+    if exists is None:
+        session.add(UserGroup(user_id=user_id, group_id=group_id))
+
+
 async def _seed_session(session) -> None:
     """Populate permissions, policies, groups, and admin policies on ``session``."""
     # 1) Permissions
@@ -254,8 +293,10 @@ async def _seed_session(session) -> None:
             await _ensure_policy_permission(session, policy.id, permissions[action].id)
 
     # 3) Groups, with their policies attached
+    groups: dict[str, Group] = {}
     for group_name, policy_names in GROUPS.items():
         group = await _get_or_create_group(session, group_name)
+        groups[group_name] = group
         for policy_name in policy_names:
             await _ensure_group_policy(session, group.id, policies[policy_name].id)
 
@@ -268,6 +309,13 @@ async def _seed_session(session) -> None:
         for policy_name in ADMIN_POSITION_POLICIES.get(profile.position, ()):
             await _ensure_user_policy(
                 session, profile.user_id, policies[policy_name].id
+            )
+        # Accounts created before the position groups existed join theirs here
+        # (BR-AUTH-005); new accounts join at creation through POSITION_GROUPS.
+        position_group = POSITION_GROUPS.get(profile.position)
+        if position_group is not None:
+            await _ensure_user_group(
+                session, profile.user_id, groups[position_group].id
             )
 
     await session.commit()
