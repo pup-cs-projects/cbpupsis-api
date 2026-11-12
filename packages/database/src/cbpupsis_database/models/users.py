@@ -322,6 +322,9 @@ class StudentProfile(Base):
     enrollment_status: Mapped[str] = mapped_column(
         String(30), default="pending", server_default="pending"
     )
+    admission_status: Mapped[str] = mapped_column(
+        String(30), default="REGULAR", server_default="REGULAR"
+    )
     fhe_qualified: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true"
     )
@@ -331,6 +334,9 @@ class StudentProfile(Base):
     fhe_forfeiture_reason: Mapped[str | None] = mapped_column(String(255), default=None)
     is_graduating_senior: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
+    )
+    graduating_final_term_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("academic_terms.id", ondelete="SET NULL"), default=None
     )
     has_financial_hold: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"

@@ -73,6 +73,7 @@ from cbpupsis_shared.domains.iam.constants import (
     SUPERADMIN_GROUP,
 )
 from cbpupsis_shared.domains.users import service as users_service
+from cbpupsis_shared.domains.users.constants import ADMIN_ROLE_POSITIONS
 from cbpupsis_shared.domains.users.exceptions import UserAlreadyExistsError
 from cbpupsis_shared.domains.users.schemas import AccountCreate
 from cbpupsis_shared.outbox import publish_transactional
@@ -204,6 +205,14 @@ async def _create(
             [
                 (user_id, users_service.role_group(account.role))
                 for user_id, account in zip(user_ids, accounts, strict=True)
+            ],
+        )
+        await iam_service.stage_admin_position_policies(
+            db,
+            [
+                (user_id, ADMIN_ROLE_POSITIONS[account.role].value)
+                for user_id, account in zip(user_ids, accounts, strict=True)
+                if account.role in ADMIN_ROLE_POSITIONS
             ],
         )
         for user_id, raw in zip(user_ids, raw_passwords, strict=True):

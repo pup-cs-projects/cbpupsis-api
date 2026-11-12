@@ -34,17 +34,30 @@ async def get_student_holds(
     has_academic_hold: bool = False,
 ) -> list[HoldRead]:
     """Assemble all blocking and non-blocking holds for the student."""
-    holds: list[HoldRead] = []
+    stored = await repository.list_unresolved_student_holds(db, student_id)
+    holds = [
+        HoldRead(
+            type=row.hold_type,
+            office=row.office,
+            description=row.description,
+            amount_outstanding=f"{(row.amount_outstanding or Decimal('0')):.2f}",
+            currency=row.currency,
+            is_blocking=row.blocks_enrollment,
+            blocks=["ENROLLMENT"] if row.blocks_enrollment else [],
+            blocks_enrollment=row.blocks_enrollment,
+        )
+        for row in stored
+    ]
+    stored_types = {hold.type.strip().upper() for hold in holds}
 
-    if has_financial_hold:
+    if has_financial_hold and "FINANCIAL" not in stored_types:
         outstanding = await repository.get_total_outstanding_balance(db, student_id)
-        amount_str = f"{outstanding:.2f}" if outstanding > 0 else "1250.00"
         holds.append(
             HoldRead(
                 type="FINANCIAL",
                 office="Accounting Office",
                 description="Outstanding balance from previous term",
-                amount_outstanding=amount_str,
+                amount_outstanding=f"{outstanding:.2f}",
                 currency="PHP",
                 is_blocking=True,
                 blocks=["ENROLLMENT", "COR"],
@@ -52,7 +65,9 @@ async def get_student_holds(
             )
         )
 
-    if has_academic_hold:
+    if has_academic_hold and not stored_types.intersection(
+        {"ACADEMIC", "ADMINISTRATIVE", "DISCIPLINARY"}
+    ):
         holds.append(
             HoldRead(
                 type="ACADEMIC",

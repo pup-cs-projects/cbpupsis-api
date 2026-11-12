@@ -61,6 +61,13 @@ class RecordIdentity(BaseModel):
     full_name: str
 
 
+class OverloadStudentIdentity(BaseModel):
+    user_id: uuid.UUID
+    student_number: str
+    full_name: str
+    program_id: uuid.UUID
+
+
 class ScheduleIdentity(BaseModel):
     """Student identity for a private, caller-owned schedule."""
 
@@ -253,10 +260,12 @@ class StudentProfileRead(BaseModel):
     year_level: int
     section: str | None = None
     enrollment_status: str
+    admission_status: str = "REGULAR"
     fhe_qualified: bool = True
     fhe_forfeited: bool = False
     fhe_forfeiture_reason: str | None = None
     is_graduating_senior: bool = False
+    graduating_final_term_id: uuid.UUID | None = None
     has_financial_hold: bool = False
     has_academic_hold: bool = False
 

@@ -547,6 +547,22 @@ async def get_policy(db: AsyncSession, policy_id: int) -> Policy | None:
     return await db.scalar(select(Policy).where(Policy.id == policy_id))
 
 
+async def policy_ids_by_names(db: AsyncSession, names: set[str]) -> dict[str, int]:
+    """Map known policy names to ids.
+
+    SQL::
+
+        SELECT policies.name, policies.id FROM policies
+        WHERE policies.name IN (:names);
+    """
+    if not names:
+        return {}
+    result = await db.execute(
+        select(Policy.name, Policy.id).where(Policy.name.in_(names))
+    )
+    return dict(result.all())
+
+
 async def list_groups(
     db: AsyncSession, limit: int, offset: int
 ) -> tuple[list[Group], int]:

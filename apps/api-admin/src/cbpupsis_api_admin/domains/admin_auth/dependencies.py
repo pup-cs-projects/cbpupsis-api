@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_api_admin.domains.admin_auth.constants import ADMIN_SESSION_COOKIE
 from cbpupsis_api_admin.domains.admin_auth.exceptions import AdminProfileRequiredError
-from cbpupsis_core.exceptions import AppError
+from cbpupsis_core.exceptions import AppError, ForbiddenError
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.auth import client as auth_client
 from cbpupsis_shared.domains.auth.constants import ROLE_ADMIN, ROLE_SUPERADMIN
@@ -27,6 +27,8 @@ from cbpupsis_shared.domains.auth.exceptions import (
     NotAuthenticatedError,
     ResourceNotFoundError,
 )
+from cbpupsis_shared.domains.enrollment.constants import REVIEW_STEPS
+from cbpupsis_shared.domains.enrollment.schemas import WaiverReviewer
 from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.iam.constants import (
     ADMIN_GROUPS,
@@ -156,17 +158,20 @@ def require_admin_permission(
 ) -> Callable[..., Awaitable[AdminSession]]:
     """Require an MFA-completed Admin session holding all required permissions.
 
-    Raises InsufficientRoleError (403 AUTH_INSUFFICIENT_ROLE) if the admin lacks
-    any required permission.
+    Raises InsufficientRoleError (403 AUTH_INSUFFICIENT_ROLE) when the caller is
+    not an admin or lacks any of the required permissions.
     """
 
     async def checker(
+        request: Request,
         admin: AdminSession = Depends(require_admin_session),
         db: AsyncSession = Depends(get_db),
     ) -> AdminSession:
         granted = await iam_service.get_effective_permissions(db, admin.id)
         if not set(required).issubset(granted):
-            raise InsufficientRoleError
+            error = InsufficientRoleError()
+            _log_refusal(request, error)
+            raise error
         return admin
 
     return checker
@@ -182,12 +187,15 @@ def require_admin_group(
     """
 
     async def checker(
+        request: Request,
         admin: AdminSession = Depends(require_admin_session),
         db: AsyncSession = Depends(get_db),
     ) -> AdminSession:
         groups = await iam_service.get_user_group_names(db, admin.id)
         if not set(allowed_groups).intersection(groups):
-            raise InsufficientRoleError
+            error = InsufficientRoleError()
+            _log_refusal(request, error)
+            raise error
         return admin
 
     return checker
@@ -292,3 +300,26 @@ async def require_admin_or_superadmin_session(
                 role=ROLE_SUPERADMIN,
             )
     return await require_admin_session(request, credentials, db)
+
+
+def require_waiver_reviewer(permission):
+    async def checker(
+        admin: AdminSession = Depends(require_admin_session),
+        db: AsyncSession = Depends(get_db),
+    ) -> WaiverReviewer:
+        if (
+            admin.position not in REVIEW_STEPS
+            or permission
+            not in await iam_service.get_effective_permissions(db, admin.id)
+        ):
+            raise ForbiddenError(
+                "Waiver review is not permitted.", code="PERMISSION_DENIED"
+            )
+        return WaiverReviewer(
+            id=admin.id,
+            position=admin.position,
+            department=admin.department_id,
+            college=admin.college_id,
+        )
+
+    return checker
