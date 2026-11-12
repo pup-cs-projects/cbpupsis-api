@@ -4545,6 +4545,112 @@
         }
       }
     },
+    "/api/v1/admin/fee-structures/{term_id}": {
+      "get": {
+        "tags": [
+          "admin-fee-structures"
+        ],
+        "summary": "Get Fee Structure",
+        "description": "Read fee structure configuration for the specified academic term.",
+        "operationId": "get_admin_fee_structure",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "term_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Term Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeeStructureRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin-fee-structures"
+        ],
+        "summary": "Save Fee Structure",
+        "description": "Save and validate fee structure configuration for the specified term.",
+        "operationId": "save_admin_fee_structure",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "term_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Term Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeeStructureSaveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeeStructureRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/iam/permissions": {
       "post": {
         "tags": [
@@ -10710,6 +10816,182 @@
         "title": "FacultyTokenPair",
         "description": "A faculty session's tokens. The refresh token is also set as a cookie."
       },
+      "FeeStructureRead": {
+        "properties": {
+          "academicTermId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Academictermid"
+          },
+          "tuitionPerUnit": {
+            "type": "string",
+            "title": "Tuitionperunit"
+          },
+          "programTuitionRates": {
+            "items": {
+              "$ref": "#/components/schemas/ProgramTuitionRateRead"
+            },
+            "type": "array",
+            "title": "Programtuitionrates"
+          },
+          "registrationFee": {
+            "type": "string",
+            "title": "Registrationfee"
+          },
+          "labFee": {
+            "type": "string",
+            "title": "Labfee"
+          },
+          "miscFee": {
+            "type": "string",
+            "title": "Miscfee"
+          },
+          "lateFeeRate": {
+            "type": "string",
+            "title": "Latefeerate"
+          },
+          "dueDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duedate"
+          },
+          "subsidyCoveredFees": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Subsidycoveredfees"
+          },
+          "installments": {
+            "items": {
+              "$ref": "#/components/schemas/InstallmentItemRead"
+            },
+            "type": "array",
+            "title": "Installments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "academicTermId",
+          "tuitionPerUnit",
+          "registrationFee",
+          "labFee",
+          "miscFee",
+          "lateFeeRate"
+        ],
+        "title": "FeeStructureRead"
+      },
+      "FeeStructureSaveRequest": {
+        "properties": {
+          "tuitionPerUnit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Tuitionperunit",
+            "default": "0.00"
+          },
+          "programTuitionRates": {
+            "items": {
+              "$ref": "#/components/schemas/ProgramTuitionRate"
+            },
+            "type": "array",
+            "title": "Programtuitionrates"
+          },
+          "registrationFee": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Registrationfee",
+            "default": "0.00"
+          },
+          "labFee": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Labfee",
+            "default": "0.00"
+          },
+          "miscFee": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Miscfee",
+            "default": "0.00"
+          },
+          "lateFeeRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Latefeerate",
+            "default": "0.00"
+          },
+          "dueDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duedate"
+          },
+          "subsidyCoveredFees": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Subsidycoveredfees"
+          },
+          "installments": {
+            "items": {
+              "$ref": "#/components/schemas/InstallmentItem"
+            },
+            "type": "array",
+            "title": "Installments"
+          }
+        },
+        "type": "object",
+        "title": "FeeStructureSaveRequest"
+      },
       "ForgotPasswordRequest": {
         "properties": {
           "email": {
@@ -11108,6 +11390,63 @@
         ],
         "title": "HoldRead",
         "description": "A student administrative or financial hold."
+      },
+      "InstallmentItem": {
+        "properties": {
+          "installmentNumber": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Installmentnumber"
+          },
+          "percentage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Percentage"
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date",
+            "title": "Duedate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "installmentNumber",
+          "percentage",
+          "dueDate"
+        ],
+        "title": "InstallmentItem"
+      },
+      "InstallmentItemRead": {
+        "properties": {
+          "installmentNumber": {
+            "type": "integer",
+            "title": "Installmentnumber"
+          },
+          "percentage": {
+            "type": "string",
+            "title": "Percentage"
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date",
+            "title": "Duedate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "installmentNumber",
+          "percentage",
+          "dueDate"
+        ],
+        "title": "InstallmentItemRead"
       },
       "IssueCertificate": {
         "properties": {
@@ -12280,6 +12619,52 @@
         ],
         "title": "ProfileFieldEntry",
         "description": "One profile field with its value and self-service editability flag."
+      },
+      "ProgramTuitionRate": {
+        "properties": {
+          "programId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Programid"
+          },
+          "tuitionPerUnit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Tuitionperunit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "programId",
+          "tuitionPerUnit"
+        ],
+        "title": "ProgramTuitionRate"
+      },
+      "ProgramTuitionRateRead": {
+        "properties": {
+          "programId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Programid"
+          },
+          "tuitionPerUnit": {
+            "type": "string",
+            "title": "Tuitionperunit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "programId",
+          "tuitionPerUnit"
+        ],
+        "title": "ProgramTuitionRateRead"
       },
       "RecordIdentity": {
         "properties": {

@@ -45,7 +45,26 @@ def calculate_assessment(inputs: AssessmentInputs) -> AssessmentRead:
     total = sum((Decimal(line.amount) for line in lines), Decimal(0))
     if total > Decimal("99999999.99"):
         raise AssessmentInvalid
-    subsidy = total if inputs.fhe_qualified and not inputs.fhe_forfeited else Decimal(0)
+    if inputs.fhe_qualified and not inputs.fhe_forfeited:
+        if inputs.subsidy_covered_fees:
+            covered_set = {c.strip().upper() for c in inputs.subsidy_covered_fees}
+            aliased = set(covered_set)
+            if "LABORATORY" in aliased or "LAB_FEE" in aliased:
+                aliased.add("LAB")
+            if "TUITION_FEE" in aliased:
+                aliased.add("TUITION")
+            if "REGISTRATION_FEE" in aliased:
+                aliased.add("REGISTRATION")
+            if "MISC_FEE" in aliased or "MISCELLANEOUS" in aliased:
+                aliased.add("MISC")
+            subsidy = sum(
+                (Decimal(line.amount) for line in lines if line.code in aliased),
+                Decimal(0),
+            )
+        else:
+            subsidy = total
+    else:
+        subsidy = Decimal(0)
     return AssessmentRead(
         lines=lines,
         amountAssessed=f"{total:.2f}",
@@ -89,6 +108,7 @@ async def stage_assessment(
         fhe_qualified=profile.fhe_qualified,
         fhe_forfeited=profile.fhe_forfeited,
         fhe_forfeiture_reason=profile.fhe_forfeiture_reason,
+        subsidy_covered_fees=fee.subsidy_covered_fees,
     )
     stored = StoredAssessment(inputs=inputs, assessment=calculate_assessment(inputs))
     await repository.store_assessment(db, stored, due_date)

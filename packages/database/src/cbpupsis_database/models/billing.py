@@ -31,8 +31,8 @@ class FeeStructure(UUIDMixin, Base):
 
     __tablename__ = "fee_structures"
 
-    program_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("programs.id", ondelete="CASCADE")
+    program_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("programs.id", ondelete="CASCADE"), nullable=True, default=None
     )
     academic_term_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("academic_terms.id", ondelete="CASCADE")
@@ -51,6 +51,13 @@ class FeeStructure(UUIDMixin, Base):
     )
     late_fee_rate: Mapped[Decimal] = mapped_column(
         Numeric(precision=10, scale=2), default=Decimal("0.0"), server_default="0"
+    )
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True, default=None)
+    subsidy_covered_fees: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True, default=list
+    )
+    installments: Mapped[list[dict] | None] = mapped_column(
+        JSON, nullable=True, default=list
     )
 
     __table_args__ = (
