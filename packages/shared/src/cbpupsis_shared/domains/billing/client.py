@@ -19,7 +19,29 @@ from cbpupsis_shared.domains.billing.assessment import (
     read_stored_assessment,
     stage_assessment,
 )
-from cbpupsis_shared.domains.billing.schemas import HoldRead, StudentBillingAccountRead
+from cbpupsis_shared.domains.billing.exceptions import (
+    IdempotencyKeyRequiredError,
+    PaymentReceiptUnavailableError,
+    WebhookSignatureInvalidError,
+)
+from cbpupsis_shared.domains.billing.provider import (
+    GatewayCreateResult,
+    GatewayRejected,
+    GatewayState,
+    GatewayStatusResult,
+    GatewayTimedOut,
+    PaymentGateway,
+    XenditGateway,
+)
+from cbpupsis_shared.domains.billing.schemas import (
+    HoldRead,
+    PaymentCreate,
+    PaymentCreated,
+    PaymentRead,
+    ReconciliationResult,
+    StudentBillingAccountRead,
+    XenditWebhook,
+)
 
 __all__ = [
     "AssessmentCourse",
@@ -27,15 +49,37 @@ __all__ = [
     "AssessmentInvalid",
     "AssessmentLine",
     "AssessmentRead",
+    "GatewayCreateResult",
+    "GatewayRejected",
+    "GatewayState",
+    "GatewayStatusResult",
+    "GatewayTimedOut",
     "HoldRead",
+    "IdempotencyKeyRequiredError",
+    "PaymentCreate",
+    "PaymentCreated",
+    "PaymentGateway",
+    "PaymentRead",
+    "PaymentReceiptUnavailableError",
+    "ReconciliationResult",
     "StoredAssessment",
     "StudentBillingAccountRead",
+    "WebhookSignatureInvalidError",
+    "XenditGateway",
+    "XenditWebhook",
     "calculate_assessment",
+    "create_payment",
+    "get_receipt_payment",
     "get_student_billing",
     "get_student_holds",
     "get_total_outstanding_balance",
+    "process_xendit_webhook",
+    "read_payment",
     "read_stored_assessment",
+    "reconcile_payments",
     "stage_assessment",
+    "valid_webhook_token",
+    "webhook_timestamp_is_fresh",
 ]
 
 
@@ -64,3 +108,12 @@ async def get_student_holds(
         has_financial_hold=has_financial_hold,
         has_academic_hold=has_academic_hold,
     )
+
+
+create_payment = service.create_payment
+get_receipt_payment = service.get_receipt_payment
+process_xendit_webhook = service.process_xendit_webhook
+read_payment = service.read_payment
+reconcile_payments = service.reconcile_payments
+valid_webhook_token = service.valid_webhook_token
+webhook_timestamp_is_fresh = service.webhook_timestamp_is_fresh

@@ -21,7 +21,9 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import JSON as JSONType
 
 from cbpupsis_database.base import Base, UUIDMixin
 
@@ -189,10 +191,35 @@ class Payment(UUIDMixin, Base):
     billing_account_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("student_billing_accounts.id", ondelete="CASCADE")
     )
-    gateway_reference: Mapped[str] = mapped_column(String(150), unique=True)
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(255))
+    idempotency_status: Mapped[str] = mapped_column(
+        String(20), default="PROCESSING", server_default="PROCESSING"
+    )
+    merchant_reference: Mapped[str] = mapped_column(String(64), unique=True)
+    gateway_session_id: Mapped[str | None] = mapped_column(
+        String(150), unique=True, default=None
+    )
+    gateway_reference: Mapped[str | None] = mapped_column(
+        String(150), unique=True, default=None
+    )
+    gateway_checkout_url: Mapped[str | None] = mapped_column(Text, default=None)
     amount: Mapped[Decimal] = mapped_column(Numeric(precision=10, scale=2))
-    payment_method: Mapped[str] = mapped_column(String(50))
-    payment_status: Mapped[str] = mapped_column(String(30))
+    payment_method: Mapped[str] = mapped_column(
+        String(50), default="xendit", server_default="xendit"
+    )
+    payment_status: Mapped[str] = mapped_column(
+        String(30), default="PENDING", server_default="PENDING"
+    )
+    response_status: Mapped[int | None] = mapped_column(SmallInteger, default=None)
+    response_body: Mapped[dict | None] = mapped_column(
+        postgresql.JSONB().with_variant(JSONType(), "sqlite"), default=None
+    )
+    initiated_ip: Mapped[str | None] = mapped_column(
+        postgresql.INET().with_variant(String(45), "sqlite"), default=None
+    )
     receipt_number: Mapped[str | None] = mapped_column(
         String(50), unique=True, default=None
     )
@@ -201,9 +228,52 @@ class Payment(UUIDMixin, Base):
         DateTime(timezone=True), default=None
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.clock_timestamp()
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     __table_args__ = (
         Index("idx_fk_payments_billing_account_id", "billing_account_id"),
+        Index("idx_payments_pending_created", "payment_status", "created_at"),
+        UniqueConstraint(
+            "student_id", "idempotency_key", name="uq_payments_student_idempotency"
+        ),
+    )
+
+
+class PaymentWebhookEvent(UUIDMixin, Base):
+    """A Xendit delivery receipt used to make webhook handling idempotent."""
+
+    __tablename__ = "payment_webhook_events"
+
+    webhook_id: Mapped[str] = mapped_column(String(150), unique=True)
+    payment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("payments.id", ondelete="CASCADE"), index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(80))
+    event_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class PaymentReconciliationRun(UUIDMixin, Base):
+    """One idempotent reconciliation invocation, identified by its run key."""
+
+    __tablename__ = "payment_reconciliation_runs"
+
+    run_key: Mapped[str] = mapped_column(String(255), unique=True)
+    status: Mapped[str] = mapped_column(
+        String(20), default="RUNNING", server_default="RUNNING"
+    )
+    processed_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    settled_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    failed_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
     )

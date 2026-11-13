@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -84,3 +84,50 @@ class StoredAssessment(BaseModel):
     version: int = 1
     inputs: AssessmentInputs
     assessment: AssessmentRead
+
+
+class PaymentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0, max_digits=10, decimal_places=2, allow_inf_nan=False)
+
+
+class PaymentCreated(BaseModel):
+    paymentId: uuid.UUID
+    state: str
+    checkoutUrl: str
+
+
+class PaymentRead(BaseModel):
+    paymentId: uuid.UUID
+    state: str
+    amount: str
+    currency: str = "PHP"
+    gatewayReference: str | None = None
+    receiptNumber: str | None = None
+    paidAt: datetime | None = None
+    createdAt: datetime
+
+
+class XenditWebhookData(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    reference_id: str
+    payment_session_id: str | None = None
+    payment_id: str | None = None
+    status: str | None = None
+
+
+class XenditWebhook(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    event: str
+    created: datetime
+    data: XenditWebhookData
+
+
+class ReconciliationResult(BaseModel):
+    runKey: str
+    processed: int
+    settled: int
+    failed: int

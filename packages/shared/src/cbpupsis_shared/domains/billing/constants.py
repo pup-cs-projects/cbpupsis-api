@@ -1,0 +1,11 @@
+"""Permissions and stable payment state values owned by billing."""
+
+CREATE_PAYMENT = "CreatePayment"
+READ_PAYMENT = "ReadPayment"
+
+PAYMENT_PENDING = "PENDING"
+PAYMENT_PAID = "PAID"
+PAYMENT_FAILED = "FAILED"
+
+IDEMPOTENCY_PROCESSING = "PROCESSING"
+IDEMPOTENCY_COMPLETED = "COMPLETED"
