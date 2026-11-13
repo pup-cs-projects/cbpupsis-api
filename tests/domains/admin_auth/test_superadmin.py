@@ -444,7 +444,7 @@ async def test_password_reset_revokes_superadmin_and_pending_challenge(
     assert await db.get(MfaChallenge, uuid.UUID(registered_user["id"])) is not None
     sent_emails.clear()
     await client.post(
-        "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
+        "/api/v1/auth/forgot-password", json={"identifier": registered_user["email"]}
     )
     await drain_outbox()
     reset = next(mail for mail in sent_emails if "reset" in mail["subject"].lower())

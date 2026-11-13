@@ -550,6 +550,13 @@ async def get_by_email_for_update(db: AsyncSession, email: str):
     return await repository.get_user_by_email_for_update(db, email)
 
 
+async def get_by_institutional_id_for_update(db: AsyncSession, institutional_id: str):
+    """Read a live user holding a student number or employee id under lock."""
+    return await repository.get_user_by_institutional_id_for_update(
+        db, institutional_id
+    )
+
+
 async def get_active_user_for_update(db: AsyncSession, user_id: uuid.UUID):
     """Read a usable account under the shared password/session lock."""
     user = await repository.get_user_for_update(db, user_id)
