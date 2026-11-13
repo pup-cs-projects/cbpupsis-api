@@ -19,6 +19,7 @@ from cbpupsis_shared.domains.iam.dependencies import require_permission
 async def private_response(request: Request) -> None:
     """Include authorization and validation errors in the no-store policy."""
     request.state.private_response = True
+    request.state.safe_error_metadata = True
 
 
 router = APIRouter(
@@ -182,8 +183,9 @@ synchronization.
 
 **Download and failures:** 200 returns the file bytes, not JSON, with attachment
 filename `course-schedule.pdf` or `course-schedule.ics`. The entire file is
-buffered before responding. Generation has a ten-second deadline; failures
+buffered before responding. Generation has a ten-second deadline; timeouts
 return 503 `SERVICE_UNAVAILABLE` with `Retry-After: 30`, never a partial attachment.
+Unexpected errors reach the global handler as an opaque 500.
 Responses are private and use `Cache-Control: private, no-store`.
 """,
     response_class=Response,

@@ -77,10 +77,12 @@ PDF returns `application/pdf`; ICS returns `text/calendar`. Both have attachment
 disposition and are generated in memory. No storage service or background job is
 required. CPU work is offloaded to a thread. The ten-second export deadline
 returns 503 `SERVICE_UNAVAILABLE` with `Retry-After: 30`, never a partial file.
+Unexpected export errors reach the global handler as an opaque 500; logs record
+only the error type, not exception text or student data.
 Resource bounds are 100 courses, 1,000 meetings, a 731-day date span, 1,000 holiday
 records, and 10,000 historical meeting identities per student/term export stream.
 
-The user approved **one VEVENT per meeting**, clarifying #96's literal one-per-course
+Exports use **one VEVENT per meeting**, clarifying #96's literal one-per-course
 wording: lecture and laboratory slots with different times/durations must not be
 collapsed into an incorrect recurrence. Events use Asia/Manila, weekly RRULEs
 bounded by the academic term, and EXDATEs for inclusive `academic_events` holiday
