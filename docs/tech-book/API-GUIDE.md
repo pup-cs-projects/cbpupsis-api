@@ -139,6 +139,39 @@ volumes never rerun initialization or repair themselves automatically. CI uses a
 random masked runtime password. Regenerate the client contract with
 `python -m scripts.export_openapi`; the result is `docs/openapi.json`.
 
+## Faculty and admin paths
+
+`docs/openapi.json` is the one faculty contract; nobody builds from the old prose contracts.
+
+### The faculty path rule
+
+The full prefix table is in #207.
+
+| Kind of work | Path prefix |
+| :-- | :-- |
+| Work on one section | `/api/v1/faculty/sections/{section_id}/...` |
+| Work of the signed-in faculty member across sections (profile, incompletes, grade corrections) | `/api/v1/faculty/...` |
+| Approvals by Chair, Dean, and Registrar | `/api/v1/admin/...` |
+
+Notes on the table:
+- Section work ships today at `/api/v1/sections`.
+- #207 moves it to `/api/v1/faculty/sections`.
+- Admin approvals use one endpoint per feature.
+- The role decides data scope and allowed actions.
+- Admin approvals are used from one shared admin page.
+
+### Error codes
+
+Error codes come only from `docs/tech-book/ERROR-CODES.md`.
+
+| Situation | Status | Code |
+| :-- | :-- | :-- |
+| A section not assigned to the caller | 404 | `RESOURCE_NOT_FOUND` |
+| Session problem | 401 | `AUTH_SESSION_EXPIRED` |
+| Session problem | 401 | `AUTH_MFA_REQUIRED` |
+
+Generic error codes (such as bare unauthorized or forbidden names, un-namespaced MFA codes, or course-not-assigned variants) do not exist. Do not use them.
+
 A production-ready FastAPI starter, organized by business domain, with
 boundaries clean enough that any domain can be extracted into its own service
 later. CBPUPSIS runs it as a uv workspace: three apps (student, faculty, admin),
