@@ -1,5 +1,19 @@
 # FastAPI Modular-Monolith Template
 
+## Role route prefixes
+
+Put every route under the prefix of the role that uses it. Then the path alone tells you who calls it:
+
+| Prefix | Who calls it | App |
+| :-- | :-- | :-- |
+| `/api/v1/student/...` | Student | api-student |
+| `/api/v1/faculty/...` | Faculty (including section work) | api-faculty |
+| `/api/v1/admin/...` | Chair, Dean, Registrar, Finance (one shared admin app, data filtered by role) | api-admin |
+| `/api/v1/superadmin/...` | Superadmin | api-admin |
+| `/api/v1/auth/...` | Every role (sign-in, password, keep-alive) | all apps |
+| `/api/v1/public/...` | Nobody signed in (certificate and records verification, payment webhook) | the app that owns the data |
+| `/api/v1/users/me`, `/api/v1/notifications`, `/api/v1/academic-calendar` | Any signed-in user (own data or read only) | all apps |
+
 ## Student grades and transcript (US-STU-004)
 
 The student app serves private grade reads and a paginated cumulative transcript
@@ -46,9 +60,9 @@ in the outbox job is encrypted like a reset link.
 
 | Endpoint | Notes |
 |---|---|
-| `POST /users` | One account, JSON body with the CSV fields below. `201 UserRead`. `409 USER_ALREADY_EXISTS` (`field`: `email` or `institutional_id`), `422` for a field the role requires or an invalid value, `422 ACCOUNT_PROGRAM_UNKNOWN`. |
-| `POST /users/import` | Admin app only (the image that parses multipart). Multipart field `file`. All rows or none: `201 {"created": n, "user_ids": [...]}`, or `422 USER_IMPORT_INVALID` with `errors: [{row, column, rule}]` listing every problem, or `413 USER_IMPORT_TOO_LARGE`. |
-| `POST /users/{id}/reissue-temporary-password` | New temporary password and expiry, a new email, every session revoked, lockout cleared. `204`; `404` for a missing or inactive account. |
+| `POST /admin/users` | One account, JSON body with the CSV fields below. `201 UserRead`. `409 USER_ALREADY_EXISTS` (`field`: `email` or `institutional_id`), `422` for a field the role requires or an invalid value, `422 ACCOUNT_PROGRAM_UNKNOWN`. |
+| `POST /admin/users/import` | Admin app only (the image that parses multipart). Multipart field `file`. All rows or none: `201 {"created": n, "user_ids": [...]}`, or `422 USER_IMPORT_INVALID` with `errors: [{row, column, rule}]` listing every problem, or `413 USER_IMPORT_TOO_LARGE`. |
+| `POST /admin/users/{id}/reissue-temporary-password` | New temporary password and expiry, a new email, every session revoked, lockout cleared. `204`; `404` for a missing or inactive account. |
 
 **The temporary password is forced and expiring.** The user signs in with it
 through their role's normal sign-in (student, faculty, Admin, or
@@ -478,11 +492,11 @@ column. The authorization half is untouched either way.
 | `POST /users/me/complete-onboarding` | 422 listing whatever is still missing. |
 | `POST /users/me/deactivate` | Reversible; revokes all refresh tokens. |
 | `DELETE /users/me` | Needs the password; soft-deletes and scrubs PII. |
-| `POST /users`, `POST /users/import` | Superadmin only; see Account creation above. |
-| `POST /users/{id}/reissue-temporary-password` | Superadmin only; new temporary password, every session revoked. |
-| `GET /users` | Admin app only. Paginated, `ReadAllUser`. Tri-state `is_active` / `is_verified` filters. |
-| `POST /users/{id}/deactivate` | `ManageUser`. Revokes their sessions. 422 on yourself. |
-| `POST /users/{id}/reactivate` | `ManageUser`. 422 on a deleted (scrubbed) account. |
+| `POST /admin/users`, `POST /admin/users/import` | Superadmin only; see Account creation above. |
+| `POST /admin/users/{id}/reissue-temporary-password` | Superadmin only; new temporary password, every session revoked. |
+| `GET /admin/users` | Admin app only. Paginated, `ReadAllUser`. Tri-state `is_active` / `is_verified` filters. |
+| `POST /admin/users/{id}/deactivate` | `ManageUser`. Revokes their sessions. 422 on yourself. |
+| `POST /admin/users/{id}/reactivate` | `ManageUser`. 422 on a deleted (scrubbed) account. |
 | `GET /audit` | `ReadAllAuditEntry`. The administrative trail, newest first. |
 | `GET /ready` | Readiness probe: queries the database, 503 when it cannot. |
 
@@ -844,8 +858,8 @@ turn the endpoint into an enumeration oracle.
 already see everything, rather than the only thing standing between one user's
 data and another's.
 
-The same shape appears in `users`: `GET /users/{id}` allows a self-read or
-`ReadAllUser`, and `GET /users` requires `ReadAllUser` outright because a listing
+The same shape appears in `users`: `GET /admin/users/{id}` allows a self-read or
+`ReadAllUser`, and `GET /admin/users` requires `ReadAllUser` outright because a listing
 is inherently a cross-ownership read with no self-service branch to fall back on.
 
 The lesson generalizes: an ownership check on write paths only is half a model.

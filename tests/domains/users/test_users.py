@@ -129,9 +129,11 @@ class TestUserEndpoints:
         other = await auth_service.create_console_account(
             db, email="other@example.com", password="a-long-enough-password"
         )
-        response = await client.get(f"/api/v1/users/{other.id}", headers=auth_headers)
+        response = await client.get(
+            f"/api/v1/admin/users/{other.id}", headers=auth_headers
+        )
         missing = await client.get(
-            f"/api/v1/users/{uuid.uuid4()}", headers=auth_headers
+            f"/api/v1/admin/users/{uuid.uuid4()}", headers=auth_headers
         )
         assert response.status_code == missing.status_code == 404
         assert response.json().keys() == missing.json().keys()
@@ -146,7 +148,7 @@ class TestUserEndpoints:
             db, email="other3@example.com", password="a-long-enough-password"
         )
         response = await client.get(
-            f"/api/v1/users/{other.id}", headers=superadmin_headers
+            f"/api/v1/admin/users/{other.id}", headers=superadmin_headers
         )
         assert response.status_code == 404
 
@@ -163,7 +165,7 @@ class TestUserEndpoints:
             db, email="other2@example.com", password="a-long-enough-password"
         )
         response = await client.get(
-            f"/api/v1/users/{other.id}", headers=superadmin_headers
+            f"/api/v1/admin/users/{other.id}", headers=superadmin_headers
         )
         assert response.status_code == 200
 
@@ -175,18 +177,18 @@ class TestUserEndpoints:
     ) -> None:
         """Self-access is the ownership half of the two-level check."""
         response = await client.get(
-            f"/api/v1/users/{registered_user['id']}", headers=auth_headers
+            f"/api/v1/admin/users/{registered_user['id']}", headers=auth_headers
         )
         assert response.status_code == 200
 
 
 class TestUserAdministration:
-    """`GET /users` and the deactivate/reactivate pair.
+    """`GET /admin/users` and the deactivate/reactivate pair.
 
-    Every other `/users` route except `GET /{user_id}` is self-service, so these
-    are the first that let one account act on another. The refusals matter more
-    than the happy paths: an ungated user listing hands over every address in
-    the database and returns a perfectly healthy 200.
+    The `/admin/users` routes manage other accounts, while `/users/me` is
+    self-service, so these are the first that let one account act on another.
+    The refusals matter more than the happy paths: an ungated user listing hands
+    over every address in the database and returns a perfectly healthy 200.
     """
 
     @pytest.fixture
@@ -213,19 +215,19 @@ class TestUserAdministration:
     async def test_list_is_refused_without_read_all_user(
         self, client: AsyncClient, auth_headers: dict[str, str]
     ) -> None:
-        response = await client.get("/api/v1/users", headers=auth_headers)
+        response = await client.get("/api/v1/admin/users", headers=auth_headers)
         assert response.status_code == 403, response.text
 
     async def test_list_is_refused_without_authentication(
         self, client: AsyncClient
     ) -> None:
-        response = await client.get("/api/v1/users")
+        response = await client.get("/api/v1/admin/users")
         assert response.status_code == 401, response.text
 
     async def test_list_returns_the_page_envelope(
         self, client: AsyncClient, reader_headers: dict[str, str]
     ) -> None:
-        response = await client.get("/api/v1/users", headers=reader_headers)
+        response = await client.get("/api/v1/admin/users", headers=reader_headers)
         assert response.status_code == 200, response.text
         body = response.json()
         assert {"items", "total", "limit", "offset"} <= set(body)
@@ -236,7 +238,7 @@ class TestUserAdministration:
     ) -> None:
         """The read schema is the boundary; this is the assertion that keeps it
         one after someone adds a field to UserRead."""
-        response = await client.get("/api/v1/users", headers=reader_headers)
+        response = await client.get("/api/v1/admin/users", headers=reader_headers)
         assert response.status_code == 200, response.text
         for row in response.json()["items"]:
             assert "password_hash" not in row
@@ -252,10 +254,10 @@ class TestUserAdministration:
         await users_service.deactivate(db, suspended.id)
 
         active = await client.get(
-            "/api/v1/users?is_active=true", headers=reader_headers
+            "/api/v1/admin/users?is_active=true", headers=reader_headers
         )
         inactive = await client.get(
-            "/api/v1/users?is_active=false", headers=reader_headers
+            "/api/v1/admin/users?is_active=false", headers=reader_headers
         )
         assert active.status_code == 200, active.text
         assert inactive.status_code == 200, inactive.text
@@ -276,10 +278,10 @@ class TestUserAdministration:
         unverified = await make_user("unverified@example.com")
 
         verified = await client.get(
-            "/api/v1/users?is_verified=true", headers=reader_headers
+            "/api/v1/admin/users?is_verified=true", headers=reader_headers
         )
         pending = await client.get(
-            "/api/v1/users?is_verified=false", headers=reader_headers
+            "/api/v1/admin/users?is_verified=false", headers=reader_headers
         )
         assert verified.status_code == 200, verified.text
         assert pending.status_code == 200, pending.text
@@ -301,7 +303,7 @@ class TestUserAdministration:
         suspended = await make_user("suspended@example.com")
         await users_service.deactivate(db, suspended.id)
 
-        response = await client.get("/api/v1/users", headers=reader_headers)
+        response = await client.get("/api/v1/admin/users", headers=reader_headers)
         ids = [row["id"] for row in response.json()["items"]]
         assert str(suspended.id) in ids
 
@@ -315,7 +317,7 @@ class TestUserAdministration:
         target = await make_user("target@example.com")
 
         response = await client.post(
-            f"/api/v1/users/{target.id}/deactivate", headers=reader_headers
+            f"/api/v1/admin/users/{target.id}/deactivate", headers=reader_headers
         )
         assert response.status_code == 403, response.text
 
@@ -325,7 +327,7 @@ class TestUserAdministration:
         target = await make_user("target@example.com")
 
         response = await client.post(
-            f"/api/v1/users/{target.id}/reactivate", headers=reader_headers
+            f"/api/v1/admin/users/{target.id}/reactivate", headers=reader_headers
         )
         assert response.status_code == 403, response.text
 
@@ -339,13 +341,13 @@ class TestUserAdministration:
         target = await make_user("target@example.com")
 
         deactivated = await client.post(
-            f"/api/v1/users/{target.id}/deactivate", headers=admin_headers
+            f"/api/v1/admin/users/{target.id}/deactivate", headers=admin_headers
         )
         assert deactivated.status_code == 200, deactivated.text
         assert deactivated.json()["is_active"] is False
 
         reactivated = await client.post(
-            f"/api/v1/users/{target.id}/reactivate", headers=admin_headers
+            f"/api/v1/admin/users/{target.id}/reactivate", headers=admin_headers
         )
         assert reactivated.status_code == 200, reactivated.text
         assert reactivated.json()["is_active"] is True
@@ -359,7 +361,7 @@ class TestUserAdministration:
         """No undo through the API: reactivating needs the permission the
         caller would just have cut themselves off from."""
         response = await client.post(
-            f"/api/v1/users/{registered_user['id']}/deactivate",
+            f"/api/v1/admin/users/{registered_user['id']}/deactivate",
             headers=admin_headers,
         )
         assert response.status_code == 422, response.text
@@ -376,7 +378,7 @@ class TestUserAdministration:
         target = await make_user("target@example.com")
 
         response = await client.delete(
-            f"/api/v1/users/{target.id}", headers=admin_headers
+            f"/api/v1/admin/users/{target.id}", headers=admin_headers
         )
         assert response.status_code == 405, response.text
 
@@ -404,8 +406,54 @@ class TestUserAdministration:
         ).status_code == 200
 
         await client.post(
-            f"/api/v1/users/{target.id}/deactivate", headers=admin_headers
+            f"/api/v1/admin/users/{target.id}/deactivate", headers=admin_headers
         )
 
         after = await client.get("/api/v1/users/me", headers=target_headers)
         assert after.status_code == 401, after.text
+
+    async def test_old_user_management_paths_return_404(
+        self,
+        client: AsyncClient,
+        superadmin_headers: dict[str, str],
+        registered_user: dict[str, str],
+    ) -> None:
+        """User management routes moved under /admin/users; old routes 404."""
+        old_base = "/api/v1" + "/users"
+        user_id = registered_user["id"]
+        assert (
+            await client.get(old_base, headers=superadmin_headers)
+        ).status_code == 404
+        assert (
+            await client.post(
+                old_base,
+                headers=superadmin_headers,
+                json={"email": "new@example.com"},
+            )
+        ).status_code == 404
+        assert (
+            await client.get(f"{old_base}/{user_id}", headers=superadmin_headers)
+        ).status_code == 404
+        assert (
+            await client.post(
+                f"{old_base}/{user_id}/deactivate", headers=superadmin_headers
+            )
+        ).status_code == 404
+        assert (
+            await client.post(
+                f"{old_base}/{user_id}/reactivate", headers=superadmin_headers
+            )
+        ).status_code == 404
+        assert (
+            await client.post(
+                f"{old_base}/{user_id}/reissue-temporary-password",
+                headers=superadmin_headers,
+            )
+        ).status_code == 404
+        assert (
+            await client.post(
+                f"{old_base}/import",
+                headers=superadmin_headers,
+                files={"file": ("accounts.csv", b"header\n", "text/csv")},
+            )
+        ).status_code == 404
