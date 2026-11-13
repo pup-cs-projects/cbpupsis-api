@@ -538,3 +538,34 @@ async def test_request_and_completion_write_one_audit_each_without_secrets(
         assert password not in serialized
     assert token not in caplog.text
     assert password not in caplog.text
+
+
+@pytest.mark.parametrize("verify_only", [True, False])
+async def test_unknown_reset_token_returns_auth_reset_token_invalid(
+    client, verify_only
+):
+    payload = (
+        {"token": "unknown-reset-token", "verify_only": True}
+        if verify_only
+        else {"token": "unknown-reset-token", "new_password": "StrongPassword1!"}
+    )
+    response = await client.post("/api/v1/auth/reset-password", json=payload)
+    assert response.status_code == 401
+    assert response.json()["code"] == "AUTH_RESET_TOKEN_INVALID"
+
+
+async def test_wrong_current_password_returns_400_with_code(
+    client, db, registered_user, auth_headers
+):
+    response = await client.post(
+        "/api/v1/auth/change-password",
+        headers=auth_headers,
+        json={
+            "current_password": "wrong-current-password",
+            "new_password": "NewStrongPassword1!",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["code"] == "AUTH_CURRENT_PASSWORD_INCORRECT"
+    user = await db.get(User, uuid.UUID(registered_user["id"]), populate_existing=True)
+    assert verify_password(registered_user["password"], user.password_hash)
