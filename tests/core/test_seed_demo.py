@@ -110,3 +110,17 @@ async def test_rerun_restores_a_changed_password(
         },
     )
     assert admin.status_code == 200, admin.text
+
+
+async def test_refuses_a_deployed_environment_without_the_mfa_key(
+    db: AsyncSession, monkeypatch
+) -> None:
+    """Regression: seeding staging with local secrets sealed TOTP seeds under
+    the JWT_SECRET fallback, and the staging API could not open them."""
+    monkeypatch.setattr("scripts.seed_demo.AsyncSessionLocal", lambda: _Session(db))
+    monkeypatch.setattr(seed_demo.settings, "environment", "staging")
+    monkeypatch.setattr(seed_demo.settings, "mfa_encryption_key", None)
+    code = await seed_demo.seed_demo(
+        seed_demo.DEFAULT_PASSWORD, seed_demo.DEFAULT_TOTP_SECRET
+    )
+    assert code == 1

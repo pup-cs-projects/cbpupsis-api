@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from cbpupsis_core.exceptions import (
     AppError,
+    ConflictError,
     EmailNotVerifiedError,
     ForbiddenError,
     NotFoundError,
@@ -120,6 +121,23 @@ class MfaEnrollmentRequiredError(AuthError, ForbiddenError):
 
     def __init__(self) -> None:
         super().__init__("Set up multi-factor authentication to continue")
+
+
+class MfaFactorUnreadableError(AuthError, ConflictError):
+    """The stored factor no longer decrypts under the current MFA key.
+
+    It was written under another key (a rotated ``MFA_ENCRYPTION_KEY``, or a
+    script run with local secrets against a shared database). No code the user
+    enters can pass, so this is a 409 asking for a factor reset, not a 500.
+    """
+
+    code = "AUTH_MFA_FACTOR_UNREADABLE"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Your authenticator can no longer be verified; "
+            "ask an administrator to reset your multi-factor authentication"
+        )
 
 
 class MfaRequiredError(AuthError, UnauthorizedError):

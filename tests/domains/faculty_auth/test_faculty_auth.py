@@ -14,9 +14,11 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from httpx import AsyncClient
+from pydantic import SecretStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cbpupsis_core.config import settings
 from cbpupsis_database.models.audit import AuthAuditLog
 from cbpupsis_database.models.auth import (
     AuthenticationFailure,
@@ -224,6 +226,23 @@ class TestMfa:
         )
         assert response.status_code == 403
         assert response.json()["code"] == "AUTH_MFA_ENROLLMENT_REQUIRED"
+
+    async def test_factor_sealed_under_another_key_is_409_not_500(
+        self, client: AsyncClient, faculty, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regression: a TOTP seed written under a different MFA key raised
+        InvalidTag out of the verify step, so staging returned a bare 500."""
+        _session, secret, counter = await _enrolled_session(client)
+        monkeypatch.setattr(
+            settings, "mfa_encryption_key", SecretStr("a-different-mfa-key-" * 2)
+        )
+        challenge = (await _login(client)).json()["challenge_token"]
+        response = await client.post(
+            f"{AUTH}/mfa/verify",
+            json={"challenge_token": challenge, "code": totp_at(secret, counter + 1)},
+        )
+        assert response.status_code == 409, response.text
+        assert response.json()["code"] == "AUTH_MFA_FACTOR_UNREADABLE"
 
     async def test_ac_102_3_4_verify_and_replay(
         self, client: AsyncClient, faculty

@@ -228,6 +228,15 @@ async def seed_demo(password: str, totp_secret: str) -> int:
     if settings.environment == "production":
         print("Refusing to seed shared demo accounts in production.", file=sys.stderr)
         return 1
+    if settings.environment != "development" and settings.mfa_encryption_key is None:
+        # Without the deployed key, mfa_key() falls back to JWT_SECRET and seals
+        # TOTP seeds the running API cannot open (AUTH_MFA_FACTOR_UNREADABLE).
+        print(
+            f"MFA_ENCRYPTION_KEY is not set; load the {settings.environment} app "
+            "secret into the environment before seeding.",
+            file=sys.stderr,
+        )
+        return 1
     if len(password) < PASSWORD_MIN_LENGTH:
         print(
             f"Password must be at least {PASSWORD_MIN_LENGTH} characters.",

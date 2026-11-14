@@ -6,9 +6,11 @@ app; this module only stores and reads the enrolled key.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime
 
+from cryptography.exceptions import InvalidTag
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.models.auth import AuthFailureStep, MfaType
@@ -18,6 +20,7 @@ from cbpupsis_shared.domains.auth.exceptions import (
     InvalidMfaError,
     MfaCodeReusedError,
     MfaEnrollmentRequiredError,
+    MfaFactorUnreadableError,
 )
 from cbpupsis_shared.domains.auth.schemas import TotpEnrollment, WebAuthnFactor
 from cbpupsis_shared.domains.auth.security import (
@@ -31,6 +34,20 @@ from cbpupsis_shared.domains.auth.security import (
     totp_provisioning_uri,
 )
 from cbpupsis_shared.domains.auth.service.lockout import record_sign_in_failure
+
+logger = logging.getLogger(__name__)
+
+
+def _decrypt_factor(envelope: str, user_id: uuid.UUID) -> str:
+    """Decrypt stored factor material, or raise if it was sealed under another key."""
+    try:
+        return decrypt_secret(envelope)
+    except InvalidTag:
+        logger.error(
+            "MFA factor for user %s does not decrypt under the current MFA key",
+            user_id,
+        )
+        raise MfaFactorUnreadableError from None
 
 
 async def bind_mfa_challenge(db: AsyncSession, user_id: uuid.UUID, jti: str) -> None:
@@ -125,7 +142,9 @@ async def verify_totp(
         or credential.is_enrolled is enrolling
     ):
         raise MfaEnrollmentRequiredError
-    counter = matching_totp_counter(decrypt_secret(credential.totp_secret), code)
+    counter = matching_totp_counter(
+        _decrypt_factor(credential.totp_secret, user_id), code
+    )
     if counter is None:
         await record_sign_in_failure(
             db, user_id, AuthFailureStep.mfa, notify=notify_lock
@@ -160,8 +179,8 @@ async def get_webauthn_factor(
     ):
         return None
     return WebAuthnFactor(
-        credential_id=decrypt_secret(credential.credential_id),
-        public_key=decrypt_secret(credential.public_key),
+        credential_id=_decrypt_factor(credential.credential_id, user_id),
+        public_key=_decrypt_factor(credential.public_key, user_id),
         sign_count=credential.sign_count,
     )
 
