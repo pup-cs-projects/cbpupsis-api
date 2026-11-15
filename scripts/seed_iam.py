@@ -80,6 +80,10 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("CreateAddDropRequest", "File your own add and drop request"),
     ("ReadAddDropRequest", "Read add and drop requests within your scope"),
     ("ApproveAddDrop", "Approve or reject an in-scope add and drop request"),
+    (
+        "ManageFeeStructure",
+        "Create and update term fee structures and payment plans",
+    ),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -113,6 +117,7 @@ POLICIES: dict[str, list[str]] = {
     "AddDropRequestAuthor": ["CreateAddDropRequest", "ReadAddDropRequest"],
     "AddDropRequestReader": ["ReadAddDropRequest"],
     "AddDropRequestAdmin": ["ReadAddDropRequest", "ApproveAddDrop"],
+    "FeeStructureAdmin": ["ManageFeeStructure"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now

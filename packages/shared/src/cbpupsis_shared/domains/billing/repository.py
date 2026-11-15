@@ -42,19 +42,67 @@ async def list_unresolved_student_holds(
     )
 
 
-async def get_fee_structure(db, program_id, term_id):
+async def get_fee_structure(
+    db: AsyncSession, program_id: uuid.UUID | None, term_id: uuid.UUID
+) -> FeeStructure | None:
     """Read the configured fee schedule, never inventing fallback fees.
 
     SQL::
 
         SELECT * FROM fee_structures WHERE program_id=:p AND academic_term_id=:t;
     """
-    return await db.scalar(
+    res = await db.scalar(
         select(FeeStructure).where(
             FeeStructure.program_id == program_id,
             FeeStructure.academic_term_id == term_id,
         )
     )
+    if res is not None:
+        return res
+    if program_id is not None:
+        return await db.scalar(
+            select(FeeStructure).where(
+                FeeStructure.program_id.is_(None),
+                FeeStructure.academic_term_id == term_id,
+            )
+        )
+    return None
+
+
+async def get_fee_structures_for_term(
+    db: AsyncSession, term_id: uuid.UUID
+) -> list[FeeStructure]:
+    """Return all fee structures configured for an academic term.
+
+    SQL::
+
+        SELECT * FROM fee_structures
+        WHERE academic_term_id = :term_id
+        ORDER BY program_id NULLS FIRST;
+    """
+    return list(
+        await db.scalars(
+            select(FeeStructure)
+            .where(FeeStructure.academic_term_id == term_id)
+            .order_by(FeeStructure.program_id.nulls_first())
+        )
+    )
+
+
+async def count_term_assessments(db: AsyncSession, term_id: uuid.UUID) -> int:
+    """Return count of student assessments generated for this term.
+
+    SQL::
+
+        SELECT count(id) FROM student_billing_accounts
+        WHERE academic_term_id = :term_id AND assessment_snapshot IS NOT NULL;
+    """
+    stmt = select(func.count(StudentBillingAccount.id)).where(
+        StudentBillingAccount.academic_term_id == term_id,
+        StudentBillingAccount.assessment_snapshot.is_not(None),
+    )
+    res = await db.scalar(stmt)
+    return int(res or 0)
 
 
 async def store_assessment(db, stored, due_date: date):
