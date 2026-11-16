@@ -40,9 +40,9 @@ from cbpupsis_core.config import settings
 from cbpupsis_shared.domains.auth.constants import (
     BCRYPT_MAX_PASSWORD_BYTES,
     PASSWORD_MAX_LENGTH,
+    PASSWORD_MIN_LENGTH,
     RECOVERY_CODE_BYTES,
     RECOVERY_CODE_COUNT,
-    RESET_PASSWORD_MIN_LENGTH,
     TEMPORARY_PASSWORD_ALPHABETS,
     TEMPORARY_PASSWORD_LENGTH,
     TOTP_ISSUER,
@@ -63,15 +63,15 @@ def check_password_complexity(raw_password: str) -> list[str]:
     """Return a list of unmet complexity rule names for raw_password.
 
     Requires:
-    - Minimum length (RESET_PASSWORD_MIN_LENGTH)
+    - Minimum length (PASSWORD_MIN_LENGTH)
     - At least one uppercase letter
     - At least one lowercase letter
     - At least one digit
     - At least one symbol
     """
     unmet: list[str] = []
-    if len(raw_password) < RESET_PASSWORD_MIN_LENGTH:
-        unmet.append(f"at least {RESET_PASSWORD_MIN_LENGTH} characters")
+    if len(raw_password) < PASSWORD_MIN_LENGTH:
+        unmet.append(f"at least {PASSWORD_MIN_LENGTH} characters")
     if not any(c.isupper() for c in raw_password):
         unmet.append("uppercase")
     if not any(c.islower() for c in raw_password):

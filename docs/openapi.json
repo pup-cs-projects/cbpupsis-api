@@ -75,13 +75,35 @@
         }
       }
     },
+    "/api/v1/auth/password-policy": {
+      "get": {
+        "tags": [
+          "account"
+        ],
+        "summary": "Get Password Policy",
+        "description": "Return the password length and character-class rules enforced at reset and change.",
+        "operationId": "get_password_policy_api_v1_auth_password_policy_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordPolicyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/forgot-password": {
       "post": {
         "tags": [
           "account"
         ],
         "summary": "Forgot Password",
-        "description": "Request a password-reset email.\n\nAlways 202 Accepted. Returning 404 for an unknown address would make this endpoint a\nmembership oracle for any email list.\n\nA shared per-address allowance prevents inbox flooding; an outer IP limit\nalso guards abusive request volume. Earlier usable links remain valid.",
+        "description": "Request a password-reset email by email address or institutional ID.\n\nAlways 202 Accepted. Returning 404 for an unknown identifier would make this\nendpoint a membership oracle.\n\nA shared per-account allowance prevents inbox flooding; an outer IP limit\nalso guards abusive request volume. Earlier usable links remain valid.",
         "operationId": "forgot_password_api_v1_auth_forgot_password_post",
         "requestBody": {
           "content": {
@@ -9450,7 +9472,6 @@
           "new_password": {
             "type": "string",
             "maxLength": 128,
-            "minLength": 12,
             "title": "New Password"
           }
         },
@@ -10714,16 +10735,16 @@
       },
       "ForgotPasswordRequest": {
         "properties": {
-          "email": {
+          "identifier": {
             "type": "string",
-            "format": "email",
-            "title": "Email"
+            "title": "Identifier",
+            "description": "Email address, student number, or employee ID."
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "email"
+          "identifier"
         ],
         "title": "ForgotPasswordRequest",
         "description": "Payload for requesting a password-reset email."
@@ -12099,6 +12120,25 @@
         ],
         "title": "Page[WaiverRead]"
       },
+      "PasswordPolicyResponse": {
+        "properties": {
+          "minimumLength": {
+            "type": "integer",
+            "title": "Minimumlength",
+            "default": 8
+          },
+          "requiredRules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Requiredrules"
+          }
+        },
+        "type": "object",
+        "title": "PasswordPolicyResponse",
+        "description": "Password complexity requirements enforced by reset and password change."
+      },
       "PermissionCreate": {
         "properties": {
           "action": {
@@ -12369,11 +12409,6 @@
       },
       "ResetTokenVerificationResponse": {
         "properties": {
-          "valid": {
-            "type": "boolean",
-            "title": "Valid",
-            "default": true
-          },
           "minimumLength": {
             "type": "integer",
             "title": "Minimumlength",
@@ -12385,6 +12420,11 @@
             },
             "type": "array",
             "title": "Requiredrules"
+          },
+          "valid": {
+            "type": "boolean",
+            "title": "Valid",
+            "default": true
           }
         },
         "type": "object",

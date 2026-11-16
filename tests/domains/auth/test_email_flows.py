@@ -172,7 +172,8 @@ class TestEmailVerification:
         """The purpose column is what keeps one table from crossing two flows."""
         sent_emails.clear()
         await client.post(
-            "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
+            "/api/v1/auth/forgot-password",
+            json={"identifier": registered_user["email"]},
         )
         await drain_outbox()
         reset_token = token_from_email(sent_emails[-1])
@@ -488,7 +489,8 @@ class TestForgotPassword:
     ) -> None:
         sent_emails.clear()
         response = await client.post(
-            "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
+            "/api/v1/auth/forgot-password",
+            json={"identifier": registered_user["email"]},
         )
         assert response.status_code == 202
         assert (
@@ -508,10 +510,11 @@ class TestForgotPassword:
         """Same status and same body, or the endpoint tests an email list
         against the user base for free."""
         known = await client.post(
-            "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
+            "/api/v1/auth/forgot-password",
+            json={"identifier": registered_user["email"]},
         )
         unknown = await client.post(
-            "/api/v1/auth/forgot-password", json={"email": "ghost@example.com"}
+            "/api/v1/auth/forgot-password", json={"identifier": "ghost@example.com"}
         )
         assert known.status_code == unknown.status_code == 202
         assert known.content == unknown.content
@@ -531,7 +534,8 @@ class TestForgotPassword:
         sent_emails.clear()
 
         response = await client.post(
-            "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
+            "/api/v1/auth/forgot-password",
+            json={"identifier": registered_user["email"]},
         )
         assert response.status_code == 202
         assert (
@@ -553,7 +557,7 @@ class TestResetPassword:
         drain_outbox,
     ) -> str:
         sent_emails.clear()
-        await client.post("/api/v1/auth/forgot-password", json={"email": email})
+        await client.post("/api/v1/auth/forgot-password", json={"identifier": email})
         await drain_outbox()
         return token_from_email(sent_emails[0])
 
@@ -819,7 +823,7 @@ class TestChangePassword:
             "/api/v1/auth/change-password",
             json={
                 "current_password": "whatever-goes-here",
-                "new_password": "a-freshly-chosen-password",
+                "new_password": COMPLEX_NEW_PASSWORD,
             },
         )
         assert response.status_code == 401
@@ -836,7 +840,7 @@ class TestChangePassword:
             headers=auth_headers,
             json={
                 "current_password": "not-the-real-password",
-                "new_password": "a-freshly-chosen-password",
+                "new_password": COMPLEX_NEW_PASSWORD,
             },
         )
         assert response.status_code == 401
@@ -853,7 +857,7 @@ class TestChangePassword:
             headers=auth_headers,
             json={
                 "current_password": registered_user["password"],
-                "new_password": "a-freshly-chosen-password",
+                "new_password": COMPLEX_NEW_PASSWORD,
             },
         )
         assert response.status_code == 200
@@ -894,7 +898,7 @@ class TestChangePassword:
             headers=auth_headers,
             json={
                 "current_password": registered_user["password"],
-                "new_password": "a-freshly-chosen-password",
+                "new_password": COMPLEX_NEW_PASSWORD,
             },
         )
 
@@ -947,7 +951,7 @@ class TestChangePassword:
             headers={"Authorization": f"Bearer {a_access}"},
             json={
                 "current_password": registered_user["password"],
-                "new_password": "a-freshly-chosen-password",
+                "new_password": COMPLEX_NEW_PASSWORD,
             },
         )
         assert changed.status_code == 200
@@ -984,14 +988,14 @@ class TestChangePassword:
             headers=auth_headers,
             json={
                 "current_password": registered_user["password"],
-                "new_password": "a-freshly-chosen-password",
+                "new_password": COMPLEX_NEW_PASSWORD,
             },
         )
         response = await client.post(
             "/api/v1/auth/login",
             json={
                 "email": registered_user["email"],
-                "password": "a-freshly-chosen-password",
+                "password": COMPLEX_NEW_PASSWORD,
             },
         )
         assert response.status_code == 200
@@ -1017,7 +1021,7 @@ class TestChangePassword:
             headers=auth_headers,
             json={
                 "current_password": registered_user["password"],
-                "new_password": "a-freshly-chosen-password",
+                "new_password": COMPLEX_NEW_PASSWORD,
             },
         )
         assert sent_emails == [], "the notice must not block the response"
