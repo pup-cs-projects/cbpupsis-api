@@ -9,6 +9,7 @@ from decimal import Decimal
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Computed,
     Date,
     DateTime,
@@ -122,6 +123,15 @@ class StudentBillingAccount(UUIDMixin, Base):
     __tablename__ = "student_billing_accounts"
 
     assessment_snapshot: Mapped[dict | None] = mapped_column(JSON, default=None)
+    overdue_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    late_penalty_amount: Mapped[Decimal] = mapped_column(
+        Numeric(precision=10, scale=2), default=Decimal("0.00"), server_default="0"
+    )
+    late_penalty_applied_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
 
     student_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE")
@@ -138,14 +148,19 @@ class StudentBillingAccount(UUIDMixin, Base):
     )
     net_amount_due: Mapped[Decimal | None] = mapped_column(
         Numeric(precision=10, scale=2),
-        Computed("gross_amount - fhe_subsidy_amount", persisted=True),
+        Computed(
+            "gross_amount + late_penalty_amount - fhe_subsidy_amount", persisted=True
+        ),
     )
     amount_paid: Mapped[Decimal] = mapped_column(
         Numeric(precision=10, scale=2), default=Decimal("0.0"), server_default="0"
     )
     balance: Mapped[Decimal | None] = mapped_column(
         Numeric(precision=10, scale=2),
-        Computed("gross_amount - fhe_subsidy_amount - amount_paid", persisted=True),
+        Computed(
+            "gross_amount + late_penalty_amount - fhe_subsidy_amount - amount_paid",
+            persisted=True,
+        ),
     )
     payment_status: Mapped[str] = mapped_column(
         String(30), default="unpaid", server_default="unpaid"
@@ -153,6 +168,11 @@ class StudentBillingAccount(UUIDMixin, Base):
     due_date: Mapped[date] = mapped_column(Date)
 
     __table_args__ = (
+        CheckConstraint(
+            "(late_penalty_applied_at IS NULL AND late_penalty_amount = 0) OR "
+            "(late_penalty_applied_at IS NOT NULL AND late_penalty_amount > 0)",
+            name="ck_billing_late_penalty_state",
+        ),
         UniqueConstraint(
             "student_id",
             "academic_term_id",

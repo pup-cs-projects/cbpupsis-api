@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,12 +13,14 @@ from cbpupsis_shared.domains.academics import client as academics_client
 from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.auth.exceptions import ResourceNotFoundError
 from cbpupsis_shared.domains.billing import repository
+from cbpupsis_shared.domains.billing.assessment import refresh_current_subsidy
 from cbpupsis_shared.domains.billing.exceptions import (
     FeeStructureInUseError,
     FeeValidationError,
     InstallmentDateOrderError,
     InstallmentSumInvalidError,
 )
+from cbpupsis_shared.domains.billing.overdue import stage_overdue
 from cbpupsis_shared.domains.billing.schemas import (
     FeeStructureRead,
     FeeStructureSaveRequest,
@@ -27,6 +29,7 @@ from cbpupsis_shared.domains.billing.schemas import (
     ProgramTuitionRateRead,
     StudentBillingAccountRead,
 )
+from cbpupsis_shared.domains.users import client as users_client
 
 
 async def get_student_billing(
@@ -50,9 +53,27 @@ async def get_student_holds(
     student_id: uuid.UUID,
     has_financial_hold: bool = False,
     has_academic_hold: bool = False,
+    as_of: datetime | None = None,
+    reconcile_financials: bool = True,
 ) -> list[HoldRead]:
-    """Assemble all blocking and non-blocking holds for the student."""
+    """Use ledger debt, not a stale profile flag, for financial holds.
+
+    Current-term subsidy reconciliation is staged on the caller's transaction.
+    Explicit nonfinancial holds remain unchanged; the legacy financial flag is
+    accepted for client compatibility but cannot invent or clear monetary debt.
+    """
+    if reconcile_financials:
+        term = await academics_client.get_current_term(db)
+        profile = await users_client.get_student_profile(db, student_id)
+        if term is not None and profile is not None:
+            assessment = await refresh_current_subsidy(db, profile, term.id)
+            if assessment is not None:
+                account = await repository.get_student_billing_account(
+                    db, student_id, term.id, for_update=True
+                )
+                await stage_overdue(db, account, as_of=as_of)
     stored = await repository.list_unresolved_student_holds(db, student_id)
+    outstanding = await repository.get_total_outstanding_balance(db, student_id)
     holds = [
         HoldRead(
             type=row.hold_type,
@@ -65,16 +86,24 @@ async def get_student_holds(
             blocks_enrollment=row.blocks_enrollment,
         )
         for row in stored
+        if row.hold_type.strip().upper() != "FINANCIAL"
     ]
     stored_types = {hold.type.strip().upper() for hold in holds}
 
-    if has_financial_hold and "FINANCIAL" not in stored_types:
-        outstanding = await repository.get_total_outstanding_balance(db, student_id)
+    if outstanding > 0:
+        financial_metadata = next(
+            (row for row in stored if row.hold_type.strip().upper() == "FINANCIAL"),
+            None,
+        )
         holds.append(
             HoldRead(
                 type="FINANCIAL",
-                office="Accounting Office",
-                description="Outstanding balance from previous term",
+                office=financial_metadata.office
+                if financial_metadata
+                else "Accounting Office",
+                description=financial_metadata.description
+                if financial_metadata
+                else "Outstanding student account balance",
                 amount_outstanding=f"{outstanding:.2f}",
                 currency="PHP",
                 is_blocking=True,

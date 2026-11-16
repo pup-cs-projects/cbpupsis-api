@@ -14,9 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.models.billing import (
     FeeStructure,
+    Payment,
     StudentBillingAccount,
     StudentHold,
 )
+from cbpupsis_shared.domains.billing.constants import MAX_ACCOUNT_AMOUNT
+from cbpupsis_shared.domains.billing.exceptions import BillingAccountUnavailableError
 
 
 async def list_unresolved_student_holds(
@@ -120,6 +123,12 @@ async def store_assessment(db, stored, due_date: date):
     row = await get_student_billing_account(
         db, stored.inputs.student_id, stored.inputs.term_id
     )
+    gross = Decimal(stored.assessment.amountAssessed)
+    subsidy = Decimal(stored.assessment.subsidyApplied)
+    penalty = row.late_penalty_amount if row is not None else Decimal(0)
+    # Reconciliation must not overflow generated totals when a fine already exists.
+    if gross - subsidy + penalty > MAX_ACCOUNT_AMOUNT:
+        raise BillingAccountUnavailableError
     if row is None:
         row = StudentBillingAccount(
             student_id=stored.inputs.student_id,
@@ -127,14 +136,19 @@ async def store_assessment(db, stored, due_date: date):
             due_date=due_date,
         )
         db.add(row)
-    row.gross_amount = Decimal(stored.assessment.amountAssessed)
-    row.fhe_subsidy_amount = Decimal(stored.assessment.subsidyApplied)
+    row.gross_amount = gross
+    row.fhe_subsidy_amount = subsidy
     row.assessment_snapshot = stored.model_dump(mode="json")
     await db.flush()
+    return row
 
 
 async def get_student_billing_account(
-    db: AsyncSession, student_id: uuid.UUID, term_id: uuid.UUID
+    db: AsyncSession,
+    student_id: uuid.UUID,
+    term_id: uuid.UUID,
+    *,
+    for_update: bool = False,
 ) -> StudentBillingAccount | None:
     """Return student billing account for term.
 
@@ -149,11 +163,15 @@ async def get_student_billing_account(
                student_billing_accounts.amount_paid,
                student_billing_accounts.balance,
                student_billing_accounts.payment_status,
-               student_billing_accounts.due_date
+               student_billing_accounts.due_date,
+               student_billing_accounts.assessment_snapshot,
+               student_billing_accounts.overdue_notified_at,
+               student_billing_accounts.late_penalty_amount,
+               student_billing_accounts.late_penalty_applied_at
         FROM student_billing_accounts
         WHERE student_billing_accounts.student_id = :student_id
           AND student_billing_accounts.academic_term_id = :term_id
-        LIMIT 1
+        LIMIT 1; -- FOR UPDATE when the caller stages transitions.
     """
     stmt = (
         select(StudentBillingAccount)
@@ -163,24 +181,55 @@ async def get_student_billing_account(
         )
         .limit(1)
     )
+    if for_update:
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
     return await db.scalar(stmt)
 
 
 async def get_total_outstanding_balance(
     db: AsyncSession, student_id: uuid.UUID
 ) -> Decimal:
-    """Return total outstanding balance across unpaid billing accounts.
+    """Return positive balances; credits and stale status labels cannot hide debt.
 
     SQL::
 
         SELECT COALESCE(SUM(student_billing_accounts.balance), 0)
         FROM student_billing_accounts
         WHERE student_billing_accounts.student_id = :student_id
-          AND student_billing_accounts.payment_status != 'paid'
+          AND student_billing_accounts.balance > 0
     """
     stmt = select(func.coalesce(func.sum(StudentBillingAccount.balance), 0)).where(
         StudentBillingAccount.student_id == student_id,
-        StudentBillingAccount.payment_status != "paid",
+        StudentBillingAccount.balance > 0,
     )
     res = await db.scalar(stmt)
     return Decimal(str(res)) if res is not None else Decimal("0.00")
+
+
+async def list_student_payments(
+    db: AsyncSession, student_id: uuid.UUID
+) -> list[Payment]:
+    """List only the caller's payments, newest first with deterministic ties.
+
+    SQL::
+
+        SELECT p.* FROM payments p
+        JOIN student_billing_accounts a ON a.id = p.billing_account_id
+        WHERE a.student_id = :student_id
+        ORDER BY COALESCE(p.paid_at, p.created_at) DESC, p.created_at DESC, p.id DESC;
+    """
+    return list(
+        await db.scalars(
+            select(Payment)
+            .join(
+                StudentBillingAccount,
+                StudentBillingAccount.id == Payment.billing_account_id,
+            )
+            .where(StudentBillingAccount.student_id == student_id)
+            .order_by(
+                func.coalesce(Payment.paid_at, Payment.created_at).desc(),
+                Payment.created_at.desc(),
+                Payment.id.desc(),
+            )
+        )
+    )
