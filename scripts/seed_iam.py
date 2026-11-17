@@ -62,6 +62,7 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ApproveWaiverRequest", "Record the assigned prerequisite waiver decision"),
     ("IssueCertificate", "Issue your own Certificate of Registration"),
     ("ReadAssessment", "Read your own stored term assessment"),
+    ("ReadPayment", "Read your own payment history"),
     ("ReadEnrollmentReport", "Read enrollment counts and statistics report"),
     ("ReadEnrollment", "Read your own enrollment eligibility and unit ceiling"),
     ("ReadCatalog", "Read courses, curricula, and sections within your Admin scope"),
@@ -80,6 +81,10 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("CreateAddDropRequest", "File your own add and drop request"),
     ("ReadAddDropRequest", "Read add and drop requests within your scope"),
     ("ApproveAddDrop", "Approve or reject an in-scope add and drop request"),
+    (
+        "ManageFeeStructure",
+        "Create and update term fee structures and payment plans",
+    ),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -102,6 +107,7 @@ POLICIES: dict[str, list[str]] = {
     "WaiverRequestAdmin": ["ReadWaiverRequest", "ApproveWaiverRequest"],
     "CertificateAuthor": ["IssueCertificate"],
     "AssessmentReader": ["ReadAssessment"],
+    "PaymentReader": ["ReadPayment"],
     "EnrollmentReportReader": ["ReadEnrollmentReport"],
     "EnrollmentReader": ["ReadEnrollment"],
     "CatalogReader": ["ReadCatalog"],
@@ -113,6 +119,7 @@ POLICIES: dict[str, list[str]] = {
     "AddDropRequestAuthor": ["CreateAddDropRequest", "ReadAddDropRequest"],
     "AddDropRequestReader": ["ReadAddDropRequest"],
     "AddDropRequestAdmin": ["ReadAddDropRequest", "ApproveAddDrop"],
+    "FeeStructureAdmin": ["ManageFeeStructure"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
@@ -152,6 +159,7 @@ GROUPS: dict[str, list[str]] = {
         "WaiverRequestAuthor",
         "CertificateAuthor",
         "AssessmentReader",
+        "PaymentReader",
         "EnrollmentReader",
         "EnrollmentAuthor",
         "OverloadRequestAuthor",

@@ -80,6 +80,8 @@ def test_student_records_have_one_public_route_per_operation(app: FastAPI) -> No
         if path.startswith(("/api/v1/student/", "/api/v1/students/"))
     }
     assert paths == {
+        ("get", "/api/v1/student/account"),
+        ("get", "/api/v1/student/payments"),
         ("post", "/api/v1/student/enrollment/waiver"),
         ("get", "/api/v1/student/enrollment/waiver"),
         ("post", "/api/v1/student/schedule/cor"),

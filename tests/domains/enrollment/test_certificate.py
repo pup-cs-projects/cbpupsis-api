@@ -177,6 +177,45 @@ async def test_ac_enrl_003_2_shared_stored_assessment_full_subsidy(client, setup
     assert account.assessment_snapshot["inputs"]["tuition_per_unit"] == "100.25"
 
 
+async def test_ac_fin_001_9_account_refresh_preserves_issued_cor(client, setup, db):
+    await issue(client, setup)
+    before_json = (await read(client, setup)).json()
+    before_pdf = PdfReader(BytesIO((await read(client, setup, "pdf")).content))
+    before_text = [page.extract_text() for page in before_pdf.pages]
+    issued = await db.scalar(select(CorIssuance))
+    before_envelope = issued.snapshot_envelope
+    profile = await db.get(StudentProfile, setup.student_id)
+    profile.fhe_forfeited = True
+    profile.fhe_forfeiture_reason = "Approved synthetic decision"
+    account = await db.scalar(select(StudentBillingAccount))
+    base_snapshot = account.assessment_snapshot
+    account.due_date = date(2020, 1, 1)
+    await db.commit()
+    response = await client.get("/api/v1/student/account", headers=setup.headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["subsidyApplied"] == "0.00"
+    assert response.json()["amountAssessed"] == "786.50"
+    assert response.json()["lines"][-1] == {
+        "description": "Late payment fine",
+        "amount": "100.00",
+        "coveredByFhe": False,
+    }
+    # Eligibility may change the base subsidy; the fine must not enter its inputs.
+    assert (
+        account.assessment_snapshot["inputs"]["courses"]
+        == base_snapshot["inputs"]["courses"]
+    )
+    assert account.assessment_snapshot["assessment"]["amountAssessed"] == "686.50"
+    assert (await read(client, setup)).json() == before_json
+    after_pdf = PdfReader(BytesIO((await read(client, setup, "pdf")).content))
+    # ReportLab regenerates metadata/document IDs, not immutable COR content.
+    assert [page.extract_text() for page in after_pdf.pages] == before_text
+    issued = await db.scalar(
+        select(CorIssuance).execution_options(populate_existing=True)
+    )
+    assert issued.snapshot_envelope == before_envelope
+
+
 async def test_ac_enrl_003_3_random_encrypted_recoverable_tokens(
     client, setup, db, monkeypatch
 ):
