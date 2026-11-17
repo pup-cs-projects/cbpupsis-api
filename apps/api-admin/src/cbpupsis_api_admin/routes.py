@@ -86,7 +86,7 @@ MOUNTS: tuple[RouterMount, ...] = (
     RouterMount(superadmin_ops_router, "/superadmin", "superadmin"),
     # Beside the shared users router, at the same prefix: only this app parses
     # multipart uploads.
-    RouterMount(user_import_router, "/users", "users"),
+    RouterMount(user_import_router, "/admin/users", "users"),
     RouterMount(
         build_admin_router(
             require_waiver_reviewer(READ_WAIVER_REQUEST),
