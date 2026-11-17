@@ -27,6 +27,9 @@ from cbpupsis_api_admin.domains.admin_auth.router import (
 from cbpupsis_api_admin.domains.admin_catalog.router import (
     router as admin_catalog_router,
 )
+from cbpupsis_api_admin.domains.fee_structures.router import (
+    router as fee_structures_router,
+)
 from cbpupsis_api_admin.domains.overload_requests.router import (
     router as overload_requests_router,
 )
@@ -68,6 +71,11 @@ MOUNTS: tuple[RouterMount, ...] = (
         add_drop_requests_router,
         "/admin/add-drop",
         "admin-add-drop",
+    ),
+    RouterMount(
+        fee_structures_router,
+        "/admin/fee-structures",
+        "admin-fee-structures",
     ),
     IAM,
     AUDIT,
