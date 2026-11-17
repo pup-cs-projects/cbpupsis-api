@@ -85,6 +85,130 @@ async def test_ac_103_1_password_issues_only_a_challenge(
     assert password_only.status_code == 401
 
 
+@pytest.mark.parametrize("enrolled", [False, True])
+async def test_development_skip_admin_login_refresh_and_disable(
+    client, db, admin_user, monkeypatch, enrolled
+):
+    from cbpupsis_core.config import settings
+    from cbpupsis_database.models.audit import AuditEntry, AuthAuditLog
+    from cbpupsis_database.models.auth import MfaType
+    from cbpupsis_shared.domains.auth.security import decode_token
+
+    uid = uuid.UUID(admin_user["id"])
+    original_secret = None
+    if enrolled:
+        challenge = await _challenge(client, admin_user)
+        await _totp_pair(client, challenge["challenge_token"])
+        original_secret = (
+            await get_mfa_credential(db, user_id=uid, mfa_type=MfaType.totp)
+        ).totp_secret
+    monkeypatch.setattr(settings, "development_mfa_skip", True)
+    pair = await _challenge(client, admin_user)
+    assert "challenge_token" not in pair
+    assert pair["position"] == "registrar"
+    assert any(cookie.name == "refresh_token" for cookie in client.cookies.jar)
+    headers = {"Authorization": f"Bearer {pair['access_token']}"}
+    assert (await client.get("/api/v1/admin/me", headers=headers)).status_code == 200
+    for kind in ("access", "refresh"):
+        claims = decode_token(pair[f"{kind}_token"], kind)
+        assert claims["mfa"] is False
+        assert claims["development_mfa_skipped"] is True
+    audit = await db.scalar(
+        select(AuditEntry).where(AuditEntry.action == "auth.development_mfa_skipped")
+    )
+    assert audit.actor_id == uid
+    assert audit.new_state == {"role": "admin", "mfa": False}
+    attempts = (await db.scalars(select(AuthAuditLog))).all()
+    assert attempts[-1].success and attempts[-1].mfa_used is False
+    credential = await get_mfa_credential(db, user_id=uid, mfa_type=MfaType.totp)
+    assert (credential.totp_secret if credential else None) == original_secret
+    refreshed = await client.post(
+        f"{AUTH}/admin/refresh", json={"refresh_token": pair["refresh_token"]}
+    )
+    assert refreshed.status_code == 200, refreshed.text
+    rotated = refreshed.json()
+    assert decode_token(rotated["access_token"], "access")["mfa"] is False
+    assert decode_token(rotated["refresh_token"], "refresh")["development_mfa_skipped"]
+    monkeypatch.setattr(settings, "development_mfa_skip", False)
+    for path in ("/api/v1/admin/me", "/api/v1/users/me"):
+        denied = await client.get(path, headers=headers)
+        assert denied.status_code == 401, denied.text
+    denied = await client.post(
+        f"{AUTH}/admin/refresh", json={"refresh_token": rotated["refresh_token"]}
+    )
+    assert denied.status_code == 401
+    restored = await _challenge(client, admin_user)
+    assert restored["mfa_required"] is True
+    assert restored["enrollment_required"] is not enrolled
+
+
+async def test_development_skip_admin_still_requires_password_and_role(
+    client, admin_user, monkeypatch, db
+):
+    from cbpupsis_core.config import settings
+    from cbpupsis_database.models.audit import AuditEntry
+
+    monkeypatch.setattr(settings, "development_mfa_skip", True)
+    wrong = await client.post(
+        f"{AUTH}/admin/login",
+        json={"email": admin_user["email"], "password": "wrong"},
+    )
+    assert wrong.status_code == 401
+    await iam_service.remove_user_from_group(
+        db, uuid.UUID(admin_user["id"]), int(admin_user["admin_group_id"])
+    )
+    refused = await client.post(
+        f"{AUTH}/admin/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert refused.status_code == 401
+    assert not await db.scalar(
+        select(AuditEntry).where(AuditEntry.action == "auth.development_mfa_skipped")
+    )
+
+
+async def test_development_skip_admin_refuses_concurrent_credential_reset(
+    client, db, admin_user, monkeypatch
+):
+    from cbpupsis_core.config import settings
+    from cbpupsis_database.models.users import User
+    from cbpupsis_shared.domains.users import client as users_client
+
+    original = users_client.get_email_sign_in
+
+    async def read_then_reset(session, email):
+        subject = await original(session, email)
+        user = await session.get(User, subject.user_id)
+        user.session_version += 1
+        await session.commit()
+        return subject
+
+    monkeypatch.setattr(settings, "development_mfa_skip", True)
+    monkeypatch.setattr(users_client, "get_email_sign_in", read_then_reset)
+    response = await client.post(
+        f"{AUTH}/admin/login",
+        json={"email": admin_user["email"], "password": admin_user["password"]},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == "AUTH_SESSION_EXPIRED"
+
+
+async def test_development_skip_admin_still_enforces_lockout(
+    client, admin_user, monkeypatch
+):
+    from cbpupsis_core.config import settings
+
+    monkeypatch.setattr(settings, "development_mfa_skip", True)
+    payload = {"email": admin_user["email"], "password": "wrong"}
+    for _ in range(4):
+        assert (
+            await client.post(f"{AUTH}/admin/login", json=payload)
+        ).status_code == 401
+    assert (await client.post(f"{AUTH}/admin/login", json=payload)).status_code == 423
+    payload["password"] = admin_user["password"]
+    assert (await client.post(f"{AUTH}/admin/login", json=payload)).status_code == 423
+
+
 async def test_ac_103_2_6_totp_enrollment_and_replay(
     client: AsyncClient, admin_user: dict[str, str]
 ) -> None:
@@ -362,14 +486,17 @@ async def test_unknown_client_address_still_signs_in_with_a_null_address(
     assert ledger == [None]
 
 
+@pytest.mark.parametrize("skip", [False, True])
 async def test_an_expired_temporary_password_is_refused_at_admin_sign_in(
-    client: AsyncClient, db: AsyncSession, admin_user: dict[str, str]
+    client: AsyncClient, db: AsyncSession, admin_user: dict[str, str], monkeypatch, skip
 ) -> None:
     from datetime import timedelta
 
+    from cbpupsis_core.config import settings
     from cbpupsis_shared.domains.auth.security import hash_password
     from cbpupsis_shared.domains.users import service as users_service
 
+    monkeypatch.setattr(settings, "development_mfa_skip", skip)
     await users_service.stage_temporary_password(
         db,
         uuid.UUID(admin_user["id"]),

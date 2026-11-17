@@ -3132,7 +3132,7 @@
           "faculty-auth"
         ],
         "summary": "Faculty Login",
-        "description": "Verify employee id and password; returns only an MFA challenge.",
+        "description": "Require MFA, except with the explicit development-only skip setting.",
         "operationId": "faculty_login",
         "requestBody": {
           "content": {
@@ -3150,7 +3150,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FacultyLoginChallenge"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/FacultyLoginChallenge"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FacultyTokenPair"
+                    }
+                  ],
+                  "title": "Response Faculty Login"
                 }
               }
             }
@@ -3798,7 +3806,7 @@
           "admin-auth"
         ],
         "summary": "Login Admin",
-        "description": "Verify credentials and issue no session until MFA completes.",
+        "description": "Require MFA, except with the explicit development-only skip setting.",
         "operationId": "login_admin_api_v1_auth_admin_login_post",
         "requestBody": {
           "content": {
@@ -3816,7 +3824,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AdminLoginChallenge"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AdminLoginChallenge"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdminTokenPair"
+                    }
+                  ],
+                  "title": "Response Login Admin Api V1 Auth Admin Login Post"
                 }
               }
             }
