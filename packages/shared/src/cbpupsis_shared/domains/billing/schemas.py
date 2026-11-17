@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from typing import Annotated, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
@@ -39,6 +40,8 @@ class StudentBillingAccountRead(BaseModel):
     balance: Decimal | None = None
     payment_status: str
     due_date: date
+    late_penalty_amount: Decimal = Decimal("0.00")
+    late_penalty_applied_at: datetime | None = None
 
 
 class AssessmentCourse(BaseModel):
@@ -85,6 +88,34 @@ class StoredAssessment(BaseModel):
     version: int = 1
     inputs: AssessmentInputs
     assessment: AssessmentRead
+
+
+Money = Annotated[str, Field(pattern=r"^\d+\.\d{2}$")]
+
+
+class AccountLineRead(BaseModel):
+    description: str
+    amount: Money
+    coveredByFhe: bool
+
+
+class AccountRead(BaseModel):
+    amountAssessed: Money
+    subsidyApplied: Money
+    netPayable: Money
+    paymentStatus: Literal["PAID", "PARTIAL", "DUE", "OVERDUE"]
+    holds: list[HoldRead]
+    lines: list[AccountLineRead]
+    fheQualified: bool
+    fheForfeited: bool
+    fheForfeitureReason: str | None
+
+
+class PaymentRead(BaseModel):
+    date: datetime
+    amount: Money
+    reference: str
+    status: str
 
 
 class ProgramTuitionRate(BaseModel):

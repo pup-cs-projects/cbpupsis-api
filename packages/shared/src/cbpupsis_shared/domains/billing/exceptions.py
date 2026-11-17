@@ -5,7 +5,18 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from cbpupsis_core.exceptions import ConflictError, ValidationError
+from cbpupsis_core.exceptions import AppError, ConflictError, ValidationError
+
+
+class BillingAccountUnavailableError(AppError):
+    status_code = 503
+    code = "SERVICE_UNAVAILABLE"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "The account cannot be safely computed with the available financial data.",
+            headers={"Retry-After": "30"},
+        )
 
 
 class FeeValidationError(ValidationError):

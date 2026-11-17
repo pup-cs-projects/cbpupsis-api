@@ -81,6 +81,17 @@ the standard 403 missing-permission response.
 | 404 | `RESOURCE_NOT_FOUND` | Student attempting to read another student's request, or admin reviewing a request outside their department/college scope (anti-probing). |
 | 403 | — | Registrar attempting to mutate/decide an add/drop request lacks the required permission (`require_permission(APPROVE_ADD_DROP)`). |
 
+## Student account and payments (US-FIN-001)
+
+| HTTP | Code | Meaning |
+| :-- | :-- | :-- |
+| 401 | `AUTH_SESSION_EXPIRED` | The student session expired. |
+| 403 | - | Student lacks `ReadAssessment` or `ReadPayment`. |
+| 404 | `RESOURCE_NOT_FOUND` | Non-student session or no accessible current-term account. |
+| 503 | `SERVICE_UNAVAILABLE` | Financial data cannot be verified or the computed account exceeds supported storage precision. No partial financial mutation is committed. |
+
+See [student account contracts and acceptance gates](STUDENT-ACCOUNT.md).
+
 ## Fee structure configuration (US-FIN-003)
 
 | HTTP | Code | Meaning |
