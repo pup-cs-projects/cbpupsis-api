@@ -28,6 +28,7 @@ from cbpupsis_shared.domains.grading.schemas import (
     GradeCourse,
     GradesRead,
     ScholasticStandingRead,
+    SectionRosterGrade,
     TranscriptRead,
     TranscriptTerm,
 )
@@ -343,3 +344,29 @@ async def academic_record(db: AsyncSession, student_id: uuid.UUID) -> AcademicRe
         ],
         cumulative_gwa=transcript.cumulative_gwa,
     )
+
+
+async def section_roster_grades(
+    db: AsyncSession, enrollment_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, SectionRosterGrade]:
+    result = {
+        enrollment_id: SectionRosterGrade(
+            enrollment_id=enrollment_id, grade_status="PENDING"
+        )
+        for enrollment_id in enrollment_ids
+    }
+    for row in await repository.roster_grades(db, enrollment_ids):
+        final_grade = (row.final_grade or "").strip().upper()
+        status = (
+            "INC"
+            if not row.is_draft and final_grade == "INC"
+            else "DRAFT"
+            if row.is_draft
+            else "SUBMITTED"
+            if row.is_locked or row.submitted_at is not None
+            else "PENDING"
+        )
+        result[row.enrollment_item_id] = SectionRosterGrade(
+            enrollment_id=row.enrollment_item_id, grade_status=status
+        )
+    return result

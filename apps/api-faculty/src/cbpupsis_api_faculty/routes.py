@@ -17,6 +17,6 @@ from cbpupsis_shared.application import RouterMount
 from cbpupsis_shared.routes import COMMON_MOUNTS
 
 FACULTY_AUTH = RouterMount(faculty_auth_router, "/auth/faculty", "faculty-auth")
-SECTIONS = RouterMount(sections_router, "/sections", "sections")
+SECTIONS = RouterMount(sections_router, "/faculty/sections", "faculty-sections")
 
 MOUNTS: tuple[RouterMount, ...] = (*COMMON_MOUNTS, FACULTY_AUTH, SECTIONS)

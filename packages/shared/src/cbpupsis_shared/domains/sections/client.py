@@ -1,14 +1,23 @@
 """Public section reads and admin catalog section operations."""
 
 from cbpupsis_shared.domains.sections.schemas import (
+    AddDropStatus,
     AdminSectionCreate,
     AdminSectionRead,
     AdminSectionUpdate,
+    CourseSectionRosterRead,
+    EnrollmentStatus,
+    FacultyStudentRead,
+    FacultyStudentRecordRead,
+    GradeStatus,
 )
 from cbpupsis_shared.domains.sections.service import (
     available_sections,
     create_admin_section,
+    export_section_roster_csv,
     get_section_roster,
+    get_section_student,
+    get_section_student_record,
     list_own_sections,
     lock_for_enrollment,
     mark_seats_taken,
@@ -18,12 +27,21 @@ from cbpupsis_shared.domains.sections.service import (
 )
 
 __all__ = [
+    "AddDropStatus",
     "AdminSectionCreate",
     "AdminSectionRead",
     "AdminSectionUpdate",
+    "CourseSectionRosterRead",
+    "EnrollmentStatus",
+    "FacultyStudentRead",
+    "FacultyStudentRecordRead",
+    "GradeStatus",
     "available_sections",
     "create_admin_section",
+    "export_section_roster_csv",
     "get_section_roster",
+    "get_section_student",
+    "get_section_student_record",
     "list_own_sections",
     "lock_for_enrollment",
     "mark_seats_taken",

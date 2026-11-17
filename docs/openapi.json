@@ -3423,14 +3423,14 @@
         ]
       }
     },
-    "/api/v1/sections": {
+    "/api/v1/faculty/sections": {
       "get": {
         "tags": [
-          "sections"
+          "faculty-sections"
         ],
         "summary": "List Sections",
         "description": "List the sections assigned to you.",
-        "operationId": "list_sections_api_v1_sections_get",
+        "operationId": "list_sections_api_v1_faculty_sections_get",
         "security": [
           {
             "HTTPBearer": []
@@ -3485,14 +3485,14 @@
         }
       }
     },
-    "/api/v1/sections/{section_id}/roster": {
+    "/api/v1/faculty/sections/{section_id}/roster": {
       "get": {
         "tags": [
-          "sections"
+          "faculty-sections"
         ],
         "summary": "Section Roster",
         "description": "Return one of your sections with its roster; 404 for anyone else's.",
-        "operationId": "section_roster_api_v1_sections__section_id__roster_get",
+        "operationId": "section_roster_api_v1_faculty_sections__section_id__roster_get",
         "security": [
           {
             "HTTPBearer": []
@@ -3508,6 +3508,61 @@
               "format": "uuid",
               "title": "Section Id"
             }
+          },
+          {
+            "name": "enrollmentStatus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/EnrollmentStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enrollmentstatus"
+            }
+          },
+          {
+            "name": "gradeStatus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/GradeStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Gradestatus"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
           }
         ],
         "responses": {
@@ -3517,6 +3572,209 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CourseSectionRosterRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/sections/{section_id}/roster/export": {
+      "get": {
+        "tags": [
+          "faculty-sections"
+        ],
+        "summary": "Export Section Roster",
+        "description": "Export every student matching the same roster filters.",
+        "operationId": "export_section_roster_api_v1_faculty_sections__section_id__roster_export_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Section Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "const": "csv",
+              "type": "string",
+              "default": "csv",
+              "title": "Format"
+            }
+          },
+          {
+            "name": "enrollmentStatus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/EnrollmentStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enrollmentstatus"
+            }
+          },
+          {
+            "name": "gradeStatus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/GradeStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Gradestatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/sections/{section_id}/roster/{student_id}": {
+      "get": {
+        "tags": [
+          "faculty-sections"
+        ],
+        "summary": "Section Student",
+        "description": "Return the teaching-safe details of one student in the section.",
+        "operationId": "section_student_api_v1_faculty_sections__section_id__roster__student_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Section Id"
+            }
+          },
+          {
+            "name": "student_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Student Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacultyStudentRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/sections/{section_id}/roster/{student_id}/record": {
+      "get": {
+        "tags": [
+          "faculty-sections"
+        ],
+        "summary": "Section Student Record",
+        "description": "Disclose course-scoped results and write the required audit row.",
+        "operationId": "section_student_record_api_v1_faculty_sections__section_id__roster__student_id__record_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Section Id"
+            }
+          },
+          {
+            "name": "student_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Student Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacultyStudentRecordRead"
                 }
               }
             }
@@ -7367,6 +7625,17 @@
         ],
         "title": "AddDropRequestRead"
       },
+      "AddDropStatus": {
+        "type": "string",
+        "enum": [
+          "NONE",
+          "PENDING_ADD",
+          "PENDING_DROP",
+          "APPROVED_ADD",
+          "APPROVED_DROP"
+        ],
+        "title": "AddDropStatus"
+      },
       "AddSectionItem": {
         "properties": {
           "sectionId": {
@@ -9356,8 +9625,19 @@
               "$ref": "#/components/schemas/RosterEntryRead"
             },
             "type": "array",
-            "title": "Roster",
-            "default": []
+            "title": "Roster"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
           }
         },
         "type": "object",
@@ -9365,10 +9645,13 @@
           "id",
           "section_name",
           "capacity",
-          "status"
+          "status",
+          "total",
+          "limit",
+          "offset"
         ],
         "title": "CourseSectionRosterRead",
-        "description": "A section with its roster.\n\nThe roster stays empty until the enrollment domain exists to fill it; the\nendpoint already enforces who may see it."
+        "description": "A filtered page of students in a section owned by the caller."
       },
       "CurrentEnrollmentRead": {
         "properties": {
@@ -10095,6 +10378,15 @@
         "title": "EnrollmentReportRow",
         "description": "An aggregated group count in the enrollment statistics report."
       },
+      "EnrollmentStatus": {
+        "type": "string",
+        "enum": [
+          "ENROLLED",
+          "DROPPED",
+          "WITHDRAWN"
+        ],
+        "title": "EnrollmentStatus"
+      },
       "EnrollmentSubmitRead": {
         "properties": {
           "enrollmentId": {
@@ -10251,6 +10543,53 @@
         "title": "EnrollmentSummaryRead",
         "description": "Enrolled load, limits, and schedule link for a term."
       },
+      "FacultyCourseAttemptRead": {
+        "properties": {
+          "enrollmentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Enrollmentid"
+          },
+          "academicTermId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Academictermid"
+          },
+          "academicYear": {
+            "type": "string",
+            "title": "Academicyear"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          },
+          "finalGrade": {
+            "type": "string",
+            "title": "Finalgrade"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "PASSED",
+              "FAILED",
+              "INCOMPLETE",
+              "WITHDRAWN"
+            ],
+            "title": "Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enrollmentId",
+          "academicTermId",
+          "academicYear",
+          "semester",
+          "finalGrade",
+          "result"
+        ],
+        "title": "FacultyCourseAttemptRead",
+        "description": "One published attempt relevant to the section's course."
+      },
       "FacultyEnrollmentResult": {
         "properties": {
           "access_token": {
@@ -10394,6 +10733,48 @@
         "title": "FacultyMfaVerifyRequest",
         "description": "Exactly one second factor: a TOTP code or an unused recovery code."
       },
+      "FacultyPrerequisiteRecordRead": {
+        "properties": {
+          "courseId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Courseid"
+          },
+          "courseCode": {
+            "type": "string",
+            "title": "Coursecode"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "PASSED",
+              "NOT_PASSED",
+              "NOT_TAKEN"
+            ],
+            "title": "Result"
+          },
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/FacultyCourseAttemptRead"
+            },
+            "type": "array",
+            "title": "Attempts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "courseId",
+          "courseCode",
+          "title",
+          "result"
+        ],
+        "title": "FacultyPrerequisiteRecordRead",
+        "description": "Published outcomes for one prerequisite of the taught course."
+      },
       "FacultySessionRead": {
         "properties": {
           "id": {
@@ -10432,6 +10813,69 @@
         ],
         "title": "FacultySessionRead",
         "description": "The signed-in faculty member, as returned by ``/auth/faculty/me``."
+      },
+      "FacultyStudentRead": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "program": {
+            "type": "string",
+            "title": "Program"
+          },
+          "yearLevel": {
+            "type": "integer",
+            "title": "Yearlevel"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "studentNumber",
+          "email",
+          "program",
+          "yearLevel"
+        ],
+        "title": "FacultyStudentRead",
+        "description": "Teaching and contact data; deliberately excludes private profile data."
+      },
+      "FacultyStudentRecordRead": {
+        "properties": {
+          "courseId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Courseid"
+          },
+          "courseAttempts": {
+            "items": {
+              "$ref": "#/components/schemas/FacultyCourseAttemptRead"
+            },
+            "type": "array",
+            "title": "Courseattempts"
+          },
+          "prerequisites": {
+            "items": {
+              "$ref": "#/components/schemas/FacultyPrerequisiteRecordRead"
+            },
+            "type": "array",
+            "title": "Prerequisites"
+          }
+        },
+        "type": "object",
+        "required": [
+          "courseId"
+        ],
+        "title": "FacultyStudentRecordRead",
+        "description": "Course-scoped academic record disclosed to the teaching faculty member."
       },
       "FacultyTokenPair": {
         "properties": {
@@ -10600,6 +11044,16 @@
         ],
         "title": "GradeCourse",
         "description": "One posted course attempt; draft marks are excluded."
+      },
+      "GradeStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "DRAFT",
+          "SUBMITTED",
+          "INC"
+        ],
+        "title": "GradeStatus"
       },
       "GradesRead": {
         "properties": {
@@ -12197,11 +12651,38 @@
             "type": "string",
             "format": "uuid",
             "title": "User Id"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "enrollmentStatus": {
+            "$ref": "#/components/schemas/EnrollmentStatus"
+          },
+          "gradeStatus": {
+            "$ref": "#/components/schemas/GradeStatus"
+          },
+          "addDropStatus": {
+            "$ref": "#/components/schemas/AddDropStatus"
           }
         },
         "type": "object",
         "required": [
-          "user_id"
+          "user_id",
+          "studentNumber",
+          "name",
+          "email",
+          "enrollmentStatus",
+          "gradeStatus",
+          "addDropStatus"
         ],
         "title": "RosterEntryRead",
         "description": "One enrolled student on a roster."

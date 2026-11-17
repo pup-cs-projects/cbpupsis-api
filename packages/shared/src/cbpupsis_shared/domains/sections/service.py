@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import uuid
 from collections.abc import Collection
@@ -20,22 +22,34 @@ from cbpupsis_shared.domains.auth.exceptions import (
 )
 from cbpupsis_shared.domains.curriculum import client as curriculum_client
 from cbpupsis_shared.domains.enrollment import client as enrollment_client
+from cbpupsis_shared.domains.grading import client as grading_client
 from cbpupsis_shared.domains.sections import repository
+from cbpupsis_shared.domains.sections.constants import ACADEMIC_RECORD_DISCLOSED
 from cbpupsis_shared.domains.sections.exceptions import (
+    InvalidRosterOffsetError,
     SectionCapacityBelowEnrolledError,
 )
 from cbpupsis_shared.domains.sections.schemas import (
+    AddDropStatus,
     AdminSectionCreate,
     AdminSectionRead,
     AdminSectionUpdate,
     CourseSectionRead,
     CourseSectionRosterRead,
+    EnrollmentStatus,
+    FacultyCourseAttemptRead,
+    FacultyPrerequisiteRecordRead,
+    FacultyStudentRead,
+    FacultyStudentRecordRead,
+    GradeStatus,
     MeetingSlot,
     RecordSection,
+    RosterEntryRead,
     ScheduleSection,
     SectionMeetingInput,
     SectionMeetingRead,
 )
+from cbpupsis_shared.domains.users import client as users_client
 
 logger = logging.getLogger(__name__)
 
@@ -145,9 +159,42 @@ async def list_own_sections(
 
 
 async def get_section_roster(
-    db: AsyncSession, *, faculty_id: uuid.UUID, section_id: uuid.UUID
+    db: AsyncSession,
+    *,
+    faculty_id: uuid.UUID,
+    section_id: uuid.UUID,
+    enrollment_status: EnrollmentStatus | None = None,
+    grade_status: GradeStatus | None = None,
+    limit: int = 50,
+    offset: int = 0,
 ) -> CourseSectionRosterRead:
-    """Return a section the caller teaches, or 404 for any other section."""
+    """Return one filtered roster page after enforcing section ownership."""
+    section = await _owned_section(db, faculty_id=faculty_id, section_id=section_id)
+    entries = await _filtered_roster_entries(
+        db,
+        section_id=section_id,
+        enrollment_status=enrollment_status,
+        grade_status=grade_status,
+    )
+    total = len(entries)
+    if total > 0 and offset >= total:
+        raise InvalidRosterOffsetError
+    return CourseSectionRosterRead(
+        id=section.id,
+        section_name=section.section_name,
+        capacity=section.capacity,
+        status=section.status,
+        roster=entries[offset : offset + limit],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+async def _owned_section(
+    db: AsyncSession, *, faculty_id: uuid.UUID, section_id: uuid.UUID
+):
+    """Use one opaque 404 for a missing section and a section owned by another."""
     section = await repository.get_course_section(db, section_id)
     if section is None or section.faculty_id != faculty_id:
         if section is not None:
@@ -157,7 +204,242 @@ async def get_section_roster(
                 extra={"faculty_id": str(faculty_id), "section_id": str(section_id)},
             )
         raise ResourceNotFoundError
-    return CourseSectionRosterRead.model_validate(section)
+    return section
+
+
+def _enrollment_status(value: str) -> EnrollmentStatus:
+    normalized = value.strip().lower()
+    if normalized in {"enrolled", "enrolled_pending", "officially_enrolled"}:
+        return EnrollmentStatus.ENROLLED
+    if normalized in {"dropped", "drop"}:
+        return EnrollmentStatus.DROPPED
+    if normalized in {"withdrawn", "withdraw", "w"}:
+        return EnrollmentStatus.WITHDRAWN
+    return EnrollmentStatus(value.strip().upper())
+
+
+async def _filtered_roster_entries(
+    db: AsyncSession,
+    *,
+    section_id: uuid.UUID,
+    enrollment_status: EnrollmentStatus | None,
+    grade_status: GradeStatus | None,
+) -> list[RosterEntryRead]:
+    memberships = await enrollment_client.section_roster_enrollments(db, section_id)
+    if enrollment_status is not None:
+        memberships = [
+            row
+            for row in memberships
+            if _enrollment_status(row.enrollment_status) == enrollment_status
+        ]
+    grades = await grading_client.section_roster_grades(
+        db, {row.enrollment_id for row in memberships}
+    )
+    if grade_status is not None:
+        memberships = [
+            row
+            for row in memberships
+            if grades[row.enrollment_id].grade_status == grade_status.value
+        ]
+    identities = await users_client.faculty_roster_identities(
+        db, {row.student_id for row in memberships}
+    )
+    add_drop = {
+        row.student_id: AddDropStatus(row.status)
+        for row in await enrollment_client.section_roster_add_drop(
+            db,
+            section_id=section_id,
+            student_ids=set(identities),
+        )
+    }
+    entries = []
+    for membership in memberships:
+        identity = identities.get(membership.student_id)
+        if identity is None:
+            continue
+        entries.append(
+            RosterEntryRead(
+                user_id=membership.student_id,
+                student_number=identity.student_number,
+                name=identity.name,
+                email=identity.email,
+                enrollment_status=_enrollment_status(membership.enrollment_status),
+                grade_status=GradeStatus(grades[membership.enrollment_id].grade_status),
+                add_drop_status=add_drop.get(membership.student_id, AddDropStatus.NONE),
+            )
+        )
+    return sorted(
+        entries,
+        key=lambda row: (row.name.casefold(), row.student_number, str(row.user_id)),
+    )
+
+
+async def export_section_roster_csv(
+    db: AsyncSession,
+    *,
+    faculty_id: uuid.UUID,
+    section_id: uuid.UUID,
+    enrollment_status: EnrollmentStatus | None = None,
+    grade_status: GradeStatus | None = None,
+) -> str:
+    """Export every row matching the same filters as the JSON roster."""
+    await _owned_section(db, faculty_id=faculty_id, section_id=section_id)
+    entries = await _filtered_roster_entries(
+        db,
+        section_id=section_id,
+        enrollment_status=enrollment_status,
+        grade_status=grade_status,
+    )
+    output = io.StringIO(newline="")
+    writer = csv.writer(output, lineterminator="\r\n")
+    writer.writerow(
+        (
+            "studentNumber",
+            "name",
+            "email",
+            "enrollmentStatus",
+            "gradeStatus",
+            "addDropStatus",
+        )
+    )
+    writer.writerows(
+        (
+            entry.student_number,
+            entry.name,
+            entry.email,
+            entry.enrollment_status.value,
+            entry.grade_status.value,
+            entry.add_drop_status.value,
+        )
+        for entry in entries
+    )
+    return output.getvalue()
+
+
+async def get_section_student(
+    db: AsyncSession,
+    *,
+    faculty_id: uuid.UUID,
+    section_id: uuid.UUID,
+    student_id: uuid.UUID,
+) -> FacultyStudentRead:
+    """Return only the teaching-safe identity fields listed in the contract."""
+    await _owned_section(db, faculty_id=faculty_id, section_id=section_id)
+    memberships = await enrollment_client.section_roster_enrollments(db, section_id)
+    if not any(row.student_id == student_id for row in memberships):
+        raise ResourceNotFoundError
+    identities = await users_client.faculty_roster_identities(db, {student_id})
+    identity = identities.get(student_id)
+    if identity is None:
+        raise ResourceNotFoundError
+    programs = await curriculum_client.programs_by_ids(db, {identity.program_id})
+    program = programs.get(identity.program_id)
+    if program is None:
+        raise ResourceNotFoundError
+    return FacultyStudentRead(
+        name=identity.name,
+        student_number=identity.student_number,
+        email=identity.email,
+        program=program.name,
+        year_level=identity.year_level,
+    )
+
+
+def _faculty_attempt(course, term) -> FacultyCourseAttemptRead:
+    outcome = {
+        "Passed": "PASSED",
+        "Failed": "FAILED",
+        "Incomplete": "INCOMPLETE",
+        "Withdrawn": "WITHDRAWN",
+    }[course.status]
+    return FacultyCourseAttemptRead(
+        enrollment_id=course.enrollment_id,
+        academic_term_id=term.id,
+        academic_year=term.academic_year,
+        semester=term.semester,
+        final_grade=course.final_grade,
+        result=outcome,
+    )
+
+
+async def get_section_student_record(
+    db: AsyncSession,
+    *,
+    faculty_id: uuid.UUID,
+    section_id: uuid.UUID,
+    student_id: uuid.UUID,
+) -> FacultyStudentRecordRead:
+    """Return course-scoped results and persist one disclosure audit row."""
+    section = await _owned_section(db, faculty_id=faculty_id, section_id=section_id)
+    memberships = await enrollment_client.section_roster_enrollments(db, section_id)
+    if not any(row.student_id == student_id for row in memberships):
+        raise ResourceNotFoundError
+
+    catalog = await curriculum_client.academic_catalog(db, None, {section.course_id})
+    prerequisite_ids = {
+        edge.prerequisite_course_id
+        for edge in catalog.prerequisites
+        if edge.course_id == section.course_id and not edge.is_corequisite
+    }
+    courses = {
+        row.id: row
+        for row in await curriculum_client.record_courses(db, prerequisite_ids)
+    }
+    transcript = await grading_client.read_transcript(
+        db, student_id=student_id, complete=True
+    )
+    attempts_by_course: dict[uuid.UUID, list[FacultyCourseAttemptRead]] = {}
+    for term_block in transcript.terms:
+        for course in term_block.courses:
+            if course.course_id in prerequisite_ids | {section.course_id}:
+                attempts_by_course.setdefault(course.course_id, []).append(
+                    _faculty_attempt(course, term_block.term)
+                )
+
+    prerequisites = []
+    for prerequisite_id in sorted(prerequisite_ids, key=str):
+        course = courses.get(prerequisite_id)
+        if course is None:
+            continue
+        attempts = attempts_by_course.get(prerequisite_id, [])
+        result = (
+            "PASSED"
+            if any(attempt.result == "PASSED" for attempt in attempts)
+            else "NOT_PASSED"
+            if attempts
+            else "NOT_TAKEN"
+        )
+        prerequisites.append(
+            FacultyPrerequisiteRecordRead(
+                course_id=course.id,
+                course_code=course.course_code,
+                title=course.title,
+                result=result,
+                attempts=attempts,
+            )
+        )
+
+    result = FacultyStudentRecordRead(
+        course_id=section.course_id,
+        course_attempts=attempts_by_course.get(section.course_id, []),
+        prerequisites=prerequisites,
+    )
+    occurred_at = datetime.now(UTC)
+    audit_client.stage(
+        db,
+        action=ACADEMIC_RECORD_DISCLOSED,
+        actor_id=faculty_id,
+        target_type="student_academic_record",
+        target_id=student_id,
+        occurred_at=occurred_at,
+        payload={
+            "studentId": str(student_id),
+            "sectionId": str(section_id),
+            "disclosedAt": occurred_at.isoformat(),
+        },
+    )
+    await db.commit()
+    return result
 
 
 def _normalize_meeting_tuples(

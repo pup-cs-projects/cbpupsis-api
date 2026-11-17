@@ -68,6 +68,15 @@ class OverloadStudentIdentity(BaseModel):
     program_id: uuid.UUID
 
 
+class FacultyRosterIdentity(BaseModel):
+    student_id: uuid.UUID
+    student_number: str
+    name: str
+    email: str
+    program_id: uuid.UUID
+    year_level: int
+
+
 class ScheduleIdentity(BaseModel):
     """Student identity for a private, caller-owned schedule."""
 

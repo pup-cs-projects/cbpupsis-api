@@ -89,6 +89,8 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     OverloadRequestRead,
     RecordEnrollment,
     ScheduleConflictCheckRead,
+    SectionRosterAddDrop,
+    SectionRosterEnrollment,
     TermEnrollmentRead,
 )
 from cbpupsis_shared.domains.grading import client as grading
@@ -391,6 +393,38 @@ async def record_enrollments(db: AsyncSession, student_id: uuid.UUID):
         RecordEnrollment.model_validate(row, from_attributes=True)
         for row in await repository.list_record_enrollments(db, student_id)
     ]
+
+
+async def section_roster_enrollments(
+    db: AsyncSession, section_id: uuid.UUID
+) -> list[SectionRosterEnrollment]:
+    rows = await repository.list_section_roster_enrollments(db, section_id)
+    return [SectionRosterEnrollment.model_validate(row) for row in rows]
+
+
+async def section_roster_add_drop(
+    db: AsyncSession,
+    *,
+    section_id: uuid.UUID,
+    student_ids: set[uuid.UUID],
+) -> list[SectionRosterAddDrop]:
+    rows = await repository.list_latest_section_add_drop(
+        db, section_id=section_id, student_ids=student_ids
+    )
+    found: set[uuid.UUID] = set()
+    result = []
+    for row in rows:
+        if row["student_id"] in found:
+            continue
+        found.add(row["student_id"])
+        state = row["state"].upper()
+        status = (
+            f"{state}_{row['action'].upper()}"
+            if state in {"PENDING", "APPROVED"}
+            else "NONE"
+        )
+        result.append(SectionRosterAddDrop(student_id=row["student_id"], status=status))
+    return result
 
 
 async def enrolled_sections(
