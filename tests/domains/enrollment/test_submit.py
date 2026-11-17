@@ -18,6 +18,7 @@ from cbpupsis_database import models as _models  # noqa: F401
 from cbpupsis_database.base import Base
 from cbpupsis_database.models.academics import AcademicTerm
 from cbpupsis_database.models.audit import AuditEntry
+from cbpupsis_database.models.billing import StudentHold
 from cbpupsis_database.models.curriculum import (
     Course,
     Curriculum,
@@ -25,6 +26,7 @@ from cbpupsis_database.models.curriculum import (
     Program,
 )
 from cbpupsis_database.models.enrollment import (
+    OverloadRequest,
     StudentCourseEnrollment,
     TermEnrollment,
 )
@@ -40,6 +42,7 @@ from cbpupsis_shared.domains.enrollment.constants import (
     ENROLLED_PENDING,
     ENROLLMENT_SUBMITTED_ACTION,
     ENROLLMENT_SUBMITTED_EVENT,
+    READ_ENROLLMENT,
 )
 from cbpupsis_shared.domains.enrollment.exceptions import (
     EnrollmentSectionFullError,
@@ -581,3 +584,273 @@ async def test_ac_enrl_001_11_last_seat_never_oversells_in_100_submits(
                 assert enrolled_count == section.capacity == 1
     finally:
         await engine.dispose()
+
+
+async def test_ac_enrl_001_2_3_submit_can_select_backlog_above_prescribed_load(
+    client: AsyncClient, db: AsyncSession, grant
+) -> None:
+    program, curriculum, courses = await _program_curriculum(
+        db, code=f"L{uuid.uuid4().hex[:6].upper()}", course_count=1
+    )
+    courses[0].lecture_units = Decimal("26")
+    backlog = []
+    for index, units in enumerate(("3", "6"), start=1):
+        course = Course(
+            course_code=f"BACK{uuid.uuid4().hex[:6].upper()}",
+            title=f"Backlog Course {index}",
+            lecture_units=Decimal(units),
+            lab_units=Decimal("0"),
+            is_active=True,
+        )
+        db.add(course)
+        await db.flush()
+        db.add(
+            CurriculumCourse(
+                curriculum_id=curriculum.id,
+                course_id=course.id,
+                year_level=2,
+                semester="Second Semester",
+            )
+        )
+        backlog.append(course)
+    future_course = Course(
+        course_code=f"FUT{uuid.uuid4().hex[:6].upper()}",
+        title="Future semester course",
+        lecture_units=Decimal("3"),
+        lab_units=Decimal("0"),
+        is_active=True,
+    )
+    db.add(future_course)
+    await db.flush()
+    db.add(
+        CurriculumCourse(
+            curriculum_id=curriculum.id,
+            course_id=future_course.id,
+            year_level=3,
+            semester="Second Semester",
+        )
+    )
+    term = await _term(db)
+    number = "2026-00267-MN-0"
+    student = await _student(db, program=program, curriculum=curriculum, number=number)
+    student_id = student.id
+    term_id = term.id
+    sections = [
+        await _section(
+            db,
+            term=term,
+            course=course,
+            name=f"Load {index}",
+            day=index,
+            start=time(9),
+            end=time(10),
+        )
+        for index, course in enumerate([courses[0], *backlog])
+    ]
+    section_ids = [str(section.id) for section in sections]
+    future_section = await _section(
+        db,
+        term=term,
+        course=future_course,
+        name="Future",
+        day=3,
+        start=time(9),
+        end=time(10),
+    )
+    future_section_id = str(future_section.id)
+    await db.commit()
+    await grant(student.id, CREATE_ENROLLMENT)
+    await grant(student_id, READ_ENROLLMENT)
+    headers = await _headers(client, number)
+
+    available = await client.get(
+        "/api/v1/student/enrollment/available-courses",
+        headers=headers,
+        params={"term": "2026-2027-First Semester"},
+    )
+    assert available.status_code == 200, available.text
+    assert {row["sectionId"] for row in available.json()} == set(section_ids)
+
+    future = await client.post(
+        URL,
+        headers=headers,
+        json={
+            "term": "2026-2027-First Semester",
+            "sectionIds": [future_section_id],
+            "confirmation": True,
+        },
+    )
+    assert future.status_code == 404
+
+    over_prescribed = await client.post(
+        URL,
+        headers=headers,
+        json={
+            "term": "2026-2027-First Semester",
+            "sectionIds": section_ids[:2],
+            "confirmation": True,
+        },
+    )
+    assert over_prescribed.status_code == 409, over_prescribed.text
+    assert over_prescribed.json()["code"] == "ENROLL_UNIT_CEILING_EXCEEDED"
+    assert over_prescribed.json()["details"]["attemptedUnits"] == 29
+    assert await db.scalar(select(func.count()).select_from(TermEnrollment)) == 0
+
+    db.add(
+        OverloadRequest(
+            student_id=student_id,
+            academic_term_id=term_id,
+            requested_units=9,
+            justification="Graduation backlog",
+            state="APPROVED",
+        )
+    )
+    await db.commit()
+    approved = await client.post(
+        URL,
+        headers=headers,
+        json={
+            "term": "2026-2027-First Semester",
+            "sectionIds": section_ids,
+            "confirmation": True,
+        },
+    )
+    assert approved.status_code == 201, approved.text
+    assert Decimal(approved.json()["totalUnits"]) == Decimal("35")
+
+
+async def test_ac_enrl_001_8_back_subject_third_summer_course_is_refused(
+    client: AsyncClient, db: AsyncSession, grant
+) -> None:
+    program, curriculum, courses = await _program_curriculum(
+        db,
+        code=f"U{uuid.uuid4().hex[:6].upper()}",
+        semester="Summer",
+        course_count=3,
+    )
+    back_course = Course(
+        course_code=f"SUM{uuid.uuid4().hex[:6].upper()}",
+        title="Earlier subject",
+        lecture_units=Decimal("3"),
+        lab_units=Decimal("0"),
+        is_active=True,
+    )
+    db.add(back_course)
+    await db.flush()
+    db.add(
+        CurriculumCourse(
+            curriculum_id=curriculum.id,
+            course_id=back_course.id,
+            year_level=2,
+            semester="First Semester",
+        )
+    )
+    term = await _term(db, semester="Summer")
+    number = "2026-00268-MN-0"
+    student = await _student(db, program=program, curriculum=curriculum, number=number)
+    selected = [
+        await _section(
+            db,
+            term=term,
+            course=course,
+            name=f"Summer {index}",
+            day=index,
+            start=time(9),
+            end=time(10),
+        )
+        for index, course in enumerate([*courses[:2], back_course])
+    ]
+    await db.commit()
+    await grant(student.id, CREATE_ENROLLMENT)
+
+    response = await client.post(
+        URL,
+        headers=await _headers(client, number),
+        json={
+            "term": "2026-2027-Summer",
+            "sectionIds": [str(section.id) for section in selected],
+            "confirmation": True,
+        },
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "ENROLL_SUMMER_SUBJECT_LIMIT"
+    assert await db.scalar(select(func.count()).select_from(TermEnrollment)) == 0
+
+
+async def test_ac_enrl_001_13_advisory_hold_does_not_block_submission(
+    client: AsyncClient, db: AsyncSession, submission, grant
+) -> None:
+    db.add(
+        StudentHold(
+            student_id=submission["student"].id,
+            type="ADMINISTRATIVE",
+            office="Registrar's Office",
+            description="Document reminder",
+            is_blocking=False,
+        )
+    )
+    db.add(
+        StudentHold(
+            student_id=submission["student"].id,
+            type="DISCIPLINARY",
+            office="Student Affairs Office",
+            description="Resolved action",
+            is_blocking=True,
+            resolved_at=datetime.now(UTC),
+        )
+    )
+    await db.commit()
+    await grant(submission["student"].id, READ_ENROLLMENT)
+    headers = await _headers(client, "2026-00169-MN-0")
+
+    eligibility = await client.get(
+        "/api/v1/student/enrollment/eligibility", headers=headers
+    )
+    assert eligibility.status_code == 200, eligibility.text
+    assert eligibility.json()["isEligible"] is True
+    assert len(eligibility.json()["holds"]) == 1
+    assert eligibility.json()["holds"][0]["isBlocking"] is False
+
+    response = await client.post(
+        URL,
+        headers=headers,
+        json=_body(submission),
+    )
+    assert response.status_code == 201, response.text
+
+
+async def test_ac_enrl_001_13_disciplinary_hold_blocks_submission(
+    client: AsyncClient, db: AsyncSession, submission, grant
+) -> None:
+    db.add(
+        StudentHold(
+            student_id=submission["student"].id,
+            type="DISCIPLINARY",
+            office="Student Affairs Office",
+            description="Unresolved disciplinary action",
+            is_blocking=True,
+        )
+    )
+    await db.commit()
+    await grant(submission["student"].id, READ_ENROLLMENT)
+    headers = await _headers(client, "2026-00169-MN-0")
+
+    eligibility = await client.get(
+        "/api/v1/student/enrollment/eligibility", headers=headers
+    )
+    assert eligibility.status_code == 200, eligibility.text
+    assert eligibility.json()["isEligible"] is False
+    assert eligibility.json()["holds"][0]["isBlocking"] is True
+    assert "ENROLL_HOLD_ACTIVE" in {
+        reason["code"] for reason in eligibility.json()["reasons"]
+    }
+
+    response = await client.post(
+        URL,
+        headers=headers,
+        json=_body(submission),
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "ENROLL_HOLD_ACTIVE"
+    assert response.json()["details"]["holdType"] == "DISCIPLINARY"
+    assert await db.scalar(select(func.count()).select_from(TermEnrollment)) == 0

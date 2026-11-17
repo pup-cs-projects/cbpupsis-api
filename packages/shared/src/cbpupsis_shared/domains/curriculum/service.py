@@ -96,8 +96,10 @@ async def enrollment_courses(
     semester: str,
 ) -> list[EnrollmentCourse]:
     return [
-        EnrollmentCourse.model_validate(row)
-        for row in await repository.list_enrollment_courses(
+        EnrollmentCourse.model_validate(row).model_copy(
+            update={"is_back_subject": is_back_subject}
+        )
+        for row, is_back_subject in await repository.list_enrollment_courses(
             db,
             curriculum_id=curriculum_id,
             program_id=program_id,

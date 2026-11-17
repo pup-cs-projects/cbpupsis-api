@@ -47,6 +47,12 @@ standing, and missing curriculum load as `isEligible: false` reasons in a 200
 response. Those are state, not request errors. Missing `ReadEnrollment` remains
 the standard 403 missing-permission response.
 
+Available sections may include earlier courses in the student's curriculum.
+Those count as back subjects for the summer subject limit; the prescribed load
+still comes from the current year and semester. Active rows in `student_holds`
+appear alongside legacy profile hold flags. Only unresolved holds marked both
+blocking and enrollment-blocking prevent submission.
+
 ## The envelope
 
 Every known application error has the same body:

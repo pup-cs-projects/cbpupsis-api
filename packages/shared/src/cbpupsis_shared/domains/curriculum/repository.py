@@ -146,8 +146,8 @@ async def list_enrollment_courses(
     program_id: uuid.UUID,
     year_level: int,
     semester: str,
-) -> list[Course]:
-    """Return courses in the student's curriculum template for one term.
+) -> list[tuple[Course, bool]]:
+    """Return current and earlier curriculum courses the student may select.
 
     SQL::
 
@@ -159,24 +159,57 @@ async def list_enrollment_courses(
           ON curricula.id = curriculum_courses.curriculum_id
         WHERE curricula.id = :curriculum_id
           AND curricula.program_id = :program_id
-          AND curriculum_courses.year_level = :year_level
-          AND curriculum_courses.semester = :semester
+          AND curriculum_courses.year_level <= :year_level
           AND courses.is_active IS true
         ORDER BY courses.course_code, courses.id;
     """
     if curriculum_id is None:
         return []
-    result = await db.scalars(
-        select(Course)
+    result = await db.execute(
+        select(Course, CurriculumCourse)
         .join(CurriculumCourse, CurriculumCourse.course_id == Course.id)
         .join(Curriculum, Curriculum.id == CurriculumCourse.curriculum_id)
         .where(
             Curriculum.id == curriculum_id,
             Curriculum.program_id == program_id,
-            CurriculumCourse.year_level == year_level,
-            CurriculumCourse.semester == semester,
+            CurriculumCourse.year_level <= year_level,
             Course.is_active.is_(True),
         )
         .order_by(Course.course_code, Course.id)
     )
-    return list(result)
+    current_semester = semester.strip().casefold()
+    current_rank = _semester_rank(current_semester)
+    courses = []
+    for course, placement in result.all():
+        placement_semester = placement.semester.strip().casefold()
+        if (
+            placement.year_level == year_level
+            and placement_semester != current_semester
+        ):
+            placement_rank = _semester_rank(placement_semester)
+            if (
+                current_rank is None
+                or placement_rank is None
+                or placement_rank >= current_rank
+            ):
+                continue
+        courses.append(
+            (
+                course,
+                placement.year_level < year_level
+                or placement_semester != current_semester,
+            )
+        )
+    return courses
+
+
+def _semester_rank(semester: str) -> int | None:
+    """Order the school's regular terms and summer within an academic year."""
+    normalized = semester.strip().casefold()
+    if normalized.startswith(("first", "1st")):
+        return 1
+    if normalized.startswith(("second", "2nd")):
+        return 2
+    if "summer" in normalized:
+        return 3
+    return None

@@ -33,8 +33,21 @@ async def get_student_holds(
     has_financial_hold: bool = False,
     has_academic_hold: bool = False,
 ) -> list[HoldRead]:
-    """Assemble all blocking and non-blocking holds for the student."""
+    """Assemble active recorded holds and legacy profile hold flags."""
     holds: list[HoldRead] = []
+
+    for row in await repository.list_active_student_holds(db, student_id):
+        holds.append(
+            HoldRead(
+                type=row.type,
+                office=row.office,
+                description=row.description,
+                amount_outstanding=f"{row.amount_outstanding:.2f}",
+                is_blocking=row.is_blocking,
+                blocks_enrollment=row.blocks_enrollment,
+                blocks=["ENROLLMENT"] if row.blocks_enrollment else [],
+            )
+        )
 
     if has_financial_hold:
         outstanding = await repository.get_total_outstanding_balance(db, student_id)

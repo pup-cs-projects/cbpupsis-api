@@ -11,7 +11,26 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_database.models.billing import StudentBillingAccount
+from cbpupsis_database.models.billing import StudentBillingAccount, StudentHold
+
+
+async def list_active_student_holds(
+    db: AsyncSession, student_id: uuid.UUID
+) -> list[StudentHold]:
+    """Return unresolved holds for one student.
+
+    SQL::
+
+        SELECT * FROM student_holds
+        WHERE student_id = :student_id AND resolved_at IS NULL
+        ORDER BY office, type, id;
+    """
+    result = await db.scalars(
+        select(StudentHold)
+        .where(StudentHold.student_id == student_id, StudentHold.resolved_at.is_(None))
+        .order_by(StudentHold.office, StudentHold.type, StudentHold.id)
+    )
+    return list(result)
 
 
 async def get_student_billing_account(

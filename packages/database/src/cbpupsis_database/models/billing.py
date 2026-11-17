@@ -118,6 +118,35 @@ class StudentBillingAccount(UUIDMixin, Base):
     )
 
 
+class StudentHold(UUIDMixin, Base):
+    """A recorded student hold, including advisory and resolved holds."""
+
+    __tablename__ = "student_holds"
+
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    type: Mapped[str] = mapped_column(String(30))
+    office: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str] = mapped_column(String(255))
+    amount_outstanding: Mapped[Decimal] = mapped_column(
+        Numeric(precision=10, scale=2), default=Decimal("0"), server_default="0"
+    )
+    is_blocking: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true"
+    )
+    blocks_enrollment: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true"
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+
+    __table_args__ = (
+        Index("idx_student_holds_student_active", "student_id", "resolved_at"),
+    )
+
+
 class BillingInstallment(UUIDMixin, Base):
     """Specific installment installment breakdown and due date."""
 

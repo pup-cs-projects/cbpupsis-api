@@ -487,7 +487,9 @@ async def submit_enrollment(
                 (
                     hold
                     for hold in holds
-                    if hold.is_blocking and hold.type.upper() == "FINANCIAL"
+                    if hold.is_blocking
+                    and hold.blocks_enrollment
+                    and hold.type.upper() == "FINANCIAL"
                 ),
                 None,
             )
@@ -496,7 +498,10 @@ async def submit_enrollment(
                     office=financial_hold.office,
                     amount=financial_hold.amount_outstanding,
                 )
-            active_hold = next((hold for hold in holds if hold.is_blocking), None)
+            active_hold = next(
+                (hold for hold in holds if hold.is_blocking and hold.blocks_enrollment),
+                None,
+            )
             if active_hold is not None:
                 raise EnrollmentHoldActiveError(
                     office=active_hold.office, hold_type=active_hold.type
@@ -528,7 +533,10 @@ async def submit_enrollment(
                         units=(
                             courses_by_id[section.course_id].lecture_units
                             + courses_by_id[section.course_id].lab_units
-                        )
+                        ),
+                        is_back_subject=courses_by_id[
+                            section.course_id
+                        ].is_back_subject,
                     )
                     for section in selected
                 ],

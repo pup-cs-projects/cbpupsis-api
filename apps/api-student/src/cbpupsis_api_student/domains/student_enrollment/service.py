@@ -172,7 +172,7 @@ async def get_eligibility(
             office=hold.office,
             type=hold.type,
             amount=Decimal(hold.amount_outstanding),
-            is_blocking=hold.is_blocking,
+            is_blocking=hold.is_blocking and hold.blocks_enrollment,
         )
         for hold in hold_rows
     ]
