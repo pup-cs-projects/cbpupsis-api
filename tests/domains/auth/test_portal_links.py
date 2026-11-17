@@ -307,7 +307,7 @@ class TestCreatedAccounts:
     ) -> None:
         row = CREATED_ROWS[role]
         response = await client.post(
-            "/api/v1/users", headers=superadmin_headers, json=row
+            "/api/v1/admin/users", headers=superadmin_headers, json=row
         )
         assert response.status_code == 201, response.text
 

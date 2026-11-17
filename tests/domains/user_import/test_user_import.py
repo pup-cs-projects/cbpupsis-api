@@ -16,7 +16,7 @@ from cbpupsis_core.config import settings
 from cbpupsis_database.models.users import AdminProfile, StudentProfile, User
 from tests.conftest import temporary_password_from
 
-IMPORT = "/api/v1/users/import"
+IMPORT = "/api/v1/admin/users/import"
 HEADER = (
     "first_name,surname,email,role,institutional_id,birthdate,department,"
     "college,program,year_level"

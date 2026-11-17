@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class HoldRead(BaseModel):
@@ -39,6 +40,8 @@ class StudentBillingAccountRead(BaseModel):
     balance: Decimal | None = None
     payment_status: str
     due_date: date
+    late_penalty_amount: Decimal = Decimal("0.00")
+    late_penalty_applied_at: datetime | None = None
 
 
 class AssessmentCourse(BaseModel):
@@ -61,6 +64,7 @@ class AssessmentInputs(BaseModel):
     fhe_qualified: bool
     fhe_forfeited: bool
     fhe_forfeiture_reason: str | None
+    subsidy_covered_fees: list[str] | None = None
 
 
 class AssessmentLine(BaseModel):
@@ -84,3 +88,137 @@ class StoredAssessment(BaseModel):
     version: int = 1
     inputs: AssessmentInputs
     assessment: AssessmentRead
+
+
+Money = Annotated[str, Field(pattern=r"^\d+\.\d{2}$")]
+
+
+class AccountLineRead(BaseModel):
+    description: str
+    amount: Money
+    coveredByFhe: bool
+
+
+class AccountRead(BaseModel):
+    amountAssessed: Money
+    subsidyApplied: Money
+    netPayable: Money
+    paymentStatus: Literal["PAID", "PARTIAL", "DUE", "OVERDUE"]
+    holds: list[HoldRead]
+    lines: list[AccountLineRead]
+    fheQualified: bool
+    fheForfeited: bool
+    fheForfeitureReason: str | None
+
+
+class PaymentRead(BaseModel):
+    date: datetime
+    amount: Money
+    reference: str
+    status: str
+
+
+class ProgramTuitionRate(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    program_id: uuid.UUID = Field(
+        validation_alias=AliasChoices("programId", "program_id")
+    )
+    tuition_per_unit: Decimal = Field(
+        validation_alias=AliasChoices("tuitionPerUnit", "tuition_per_unit")
+    )
+
+
+class ProgramTuitionRateRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    program_id: uuid.UUID = Field(serialization_alias="programId")
+    tuition_per_unit: str = Field(serialization_alias="tuitionPerUnit")
+
+
+class InstallmentItem(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    installment_number: int = Field(
+        ge=1, validation_alias=AliasChoices("installmentNumber", "installment_number")
+    )
+    percentage: Decimal = Field(validation_alias=AliasChoices("percentage", "percent"))
+    due_date: date = Field(validation_alias=AliasChoices("dueDate", "due_date"))
+
+
+class InstallmentItemRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    installment_number: int = Field(serialization_alias="installmentNumber")
+    percentage: str
+    due_date: date = Field(serialization_alias="dueDate")
+
+
+class FeeStructureSaveRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    tuition_per_unit: Decimal = Field(
+        default=Decimal("0.00"),
+        validation_alias=AliasChoices("tuitionPerUnit", "tuition_per_unit"),
+    )
+    program_tuition_rates: list[ProgramTuitionRate] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices(
+            "programTuitionRates", "program_tuition_rates", "programs"
+        ),
+    )
+    registration_fee: Decimal = Field(
+        default=Decimal("0.00"),
+        validation_alias=AliasChoices("registrationFee", "registration_fee"),
+    )
+    lab_fee: Decimal = Field(
+        default=Decimal("0.00"),
+        validation_alias=AliasChoices("labFee", "lab_fee"),
+    )
+    misc_fee: Decimal = Field(
+        default=Decimal("0.00"),
+        validation_alias=AliasChoices("miscFee", "misc_fee"),
+    )
+    late_fee_rate: Decimal = Field(
+        default=Decimal("0.00"),
+        validation_alias=AliasChoices("lateFeeRate", "late_fee_rate"),
+    )
+    due_date: date | None = Field(
+        default=None,
+        validation_alias=AliasChoices("dueDate", "due_date"),
+    )
+    subsidy_covered_fees: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("subsidyCoveredFees", "subsidy_covered_fees"),
+    )
+    installments: list[InstallmentItem] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("installments"),
+    )
+
+
+class FeeStructureRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    academic_term_id: uuid.UUID = Field(serialization_alias="academicTermId")
+    tuition_per_unit: str = Field(serialization_alias="tuitionPerUnit")
+    program_tuition_rates: list[ProgramTuitionRateRead] = Field(
+        default_factory=list,
+        serialization_alias="programTuitionRates",
+    )
+    registration_fee: str = Field(serialization_alias="registrationFee")
+    lab_fee: str = Field(serialization_alias="labFee")
+    misc_fee: str = Field(serialization_alias="miscFee")
+    late_fee_rate: str = Field(serialization_alias="lateFeeRate")
+    due_date: date | None = Field(
+        default=None,
+        serialization_alias="dueDate",
+    )
+    subsidy_covered_fees: list[str] = Field(
+        default_factory=list,
+        serialization_alias="subsidyCoveredFees",
+    )
+    installments: list[InstallmentItemRead] = Field(
+        default_factory=list,
+        serialization_alias="installments",
+    )
