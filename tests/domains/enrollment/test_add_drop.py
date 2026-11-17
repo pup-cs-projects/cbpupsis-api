@@ -16,7 +16,7 @@ from cbpupsis_core.config import settings
 from cbpupsis_core.events import Event
 from cbpupsis_database.models.academics import AcademicTerm
 from cbpupsis_database.models.audit import AuditEntry
-from cbpupsis_database.models.billing import FeeStructure
+from cbpupsis_database.models.billing import FeeStructure, StudentBillingAccount
 from cbpupsis_database.models.curriculum import (
     Course,
     Curriculum,
@@ -1214,6 +1214,13 @@ async def test_ac_enrl_004_holds_block_filing(
 
     # 1. Financial hold
     profile.has_financial_hold = True
+    account = StudentBillingAccount(
+        student_id=s["student"].id,
+        academic_term_id=s["term"].id,
+        gross_amount=Decimal("100.00"),
+        due_date=date(2099, 1, 1),
+    )
+    db.add(account)
     await db.commit()
 
     resp = await client.post(
@@ -1229,6 +1236,7 @@ async def test_ac_enrl_004_holds_block_filing(
 
     # 2. Administrative hold
     profile.has_financial_hold = False
+    account.amount_paid = Decimal("100.00")
     profile.has_academic_hold = True
     await db.commit()
 

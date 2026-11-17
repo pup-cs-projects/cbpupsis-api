@@ -81,6 +81,28 @@ the standard 403 missing-permission response.
 | 404 | `RESOURCE_NOT_FOUND` | Student attempting to read another student's request, or admin reviewing a request outside their department/college scope (anti-probing). |
 | 403 | — | Registrar attempting to mutate/decide an add/drop request lacks the required permission (`require_permission(APPROVE_ADD_DROP)`). |
 
+## Student account and payments (US-FIN-001)
+
+| HTTP | Code | Meaning |
+| :-- | :-- | :-- |
+| 401 | `AUTH_SESSION_EXPIRED` | The student session expired. |
+| 403 | - | Student lacks `ReadAssessment` or `ReadPayment`. |
+| 404 | `RESOURCE_NOT_FOUND` | Non-student session or no accessible current-term account. |
+| 503 | `SERVICE_UNAVAILABLE` | Financial data cannot be verified or the computed account exceeds supported storage precision. No partial financial mutation is committed. |
+
+See [student account contracts and acceptance gates](STUDENT-ACCOUNT.md).
+
+## Fee structure configuration (US-FIN-003)
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 422 | `VALIDATION_ERROR` | A fee or rate value is negative. `field` names the violating field. |
+| 422 | `INSTALLMENT_SUM_INVALID` | Installment percentage allocations do not sum to exactly 100. |
+| 422 | `INSTALLMENT_DATE_ORDER` | An installment due date is earlier than the one before it. `dates` lists both out-of-order dates. |
+| 409 | `FEE_STRUCTURE_IN_USE` | The fee structure cannot be modified because student assessments have already been generated for this term. |
+| 404 | `RESOURCE_NOT_FOUND` | Unknown academic term ID. |
+| 403 | — | Session lacks `ManageFeeStructure` permission (Registrar, Dean, or Chairperson). |
+
 ## The envelope
 
 Every known application error has the same body:
