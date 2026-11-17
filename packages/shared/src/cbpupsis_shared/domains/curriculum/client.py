@@ -104,11 +104,15 @@ async def active_curriculum_courses(
     *,
     curriculum_id: uuid.UUID | None,
     program_id: uuid.UUID,
+    year_level: int,
+    semester: str,
 ) -> list[EnrollmentCourse]:
     return await service.active_curriculum_courses(
         db,
         curriculum_id=curriculum_id,
         program_id=program_id,
+        year_level=year_level,
+        semester=semester,
     )
 
 

@@ -61,6 +61,10 @@ standing, and missing curriculum load as `isEligible: false` reasons in a 200
 response. Those are state, not request errors. Missing `ReadEnrollment` remains
 the standard 403 missing-permission response.
 
+Available sections include courses from the student's current or earlier
+curriculum placement. Earlier placements count as back subjects for the summer
+subject limit. Future curriculum placements are not enrollment choices.
+
 ## Add and drop requests (US-ENRL-004)
 
 | HTTP | Code | Meaning |

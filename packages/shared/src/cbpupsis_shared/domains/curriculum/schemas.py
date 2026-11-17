@@ -443,6 +443,7 @@ class EnrollmentCourse(BaseModel):
     title: str
     lecture_units: Decimal
     lab_units: Decimal
+    is_back_subject: bool = False
 
 
 class AcademicCourse(BaseModel):
