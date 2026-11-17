@@ -289,6 +289,50 @@ def _body(submission, **extra) -> dict[str, object]:
     return body
 
 
+@pytest.mark.parametrize(
+    "qualified,fine_only,expected",
+    [(True, False, 201), (False, False, 409), (True, True, 409)],
+)
+async def test_ac_fin_001_3_real_submit_uses_shared_payable(
+    client, db, submission, qualified, fine_only, expected
+):
+    student_id = submission["student"].id
+    term_id = submission["term"].id
+    profile = await db.get(StudentProfile, student_id)
+    profile.fhe_qualified = qualified
+    # Prove stale profile hints cannot override the actual shared account.
+    profile.has_financial_hold = qualified
+    await billing.stage_assessment(
+        db,
+        student_id=student_id,
+        term_id=term_id,
+        courses=[
+            billing.AssessmentCourse(section_id=section.id, units=Decimal("3"))
+            for section in submission["sections"]
+        ],
+        due_date=date(2099, 1, 1),
+    )
+    await db.commit()
+    if fine_only:
+        account = await db.scalar(
+            select(StudentBillingAccount).where(
+                StudentBillingAccount.student_id == student_id,
+                StudentBillingAccount.academic_term_id == term_id,
+            )
+        )
+        account.late_penalty_amount = Decimal("100.00")
+        account.late_penalty_applied_at = datetime.now(UTC)
+        await db.commit()
+    response = await client.post(
+        URL, headers=await _headers(client, "2026-00169-MN-0"), json=_body(submission)
+    )
+    assert response.status_code == expected, response.text
+    if expected == 201:
+        assert response.json().get("code") != "ENROLL_FINANCIAL_HOLD"
+    else:
+        assert response.json()["code"] == "ENROLL_FINANCIAL_HOLD"
+
+
 async def _cross_placement_submission(
     db: AsyncSession,
     grant,
@@ -635,6 +679,8 @@ async def test_ac_enrl_001_10_ordered_refusals_write_nothing(
     }
 
     profile.has_financial_hold = False
+    settled_account = await db.scalar(select(StudentBillingAccount))
+    settled_account.amount_paid = Decimal("1500.50")
     await db.commit()
     administrative = await client.post(URL, headers=headers, json=body)
     assert administrative.status_code == 409
@@ -832,7 +878,22 @@ async def test_ac_enrl_001_12_replay_returns_original_without_second_seat(
     assert (
         await db.scalar(select(func.count()).select_from(StudentCourseEnrollment)) == 2
     )
-    assert await db.scalar(select(func.count()).select_from(AuditEntry)) == 1
+    assert (
+        await db.scalar(
+            select(func.count())
+            .select_from(AuditEntry)
+            .where(AuditEntry.action == ENROLLMENT_SUBMITTED_ACTION)
+        )
+        == 1
+    )
+    assert (
+        await db.scalar(
+            select(func.count())
+            .select_from(AuditEntry)
+            .where(AuditEntry.action == "billing.subsidy_applied")
+        )
+        == 1
+    )
     assert (
         await db.scalar(
             select(func.count())
@@ -869,7 +930,9 @@ async def test_ac_enrl_001_14_audit_and_confirmation_are_atomic_and_append_only(
     )
     assert response.status_code == 201, response.text
 
-    audit = await db.scalar(select(AuditEntry))
+    audit = await db.scalar(
+        select(AuditEntry).where(AuditEntry.action == ENROLLMENT_SUBMITTED_ACTION)
+    )
     assert audit is not None
     assert audit.action == ENROLLMENT_SUBMITTED_ACTION
     assert audit.actor_id == submission["student"].id
