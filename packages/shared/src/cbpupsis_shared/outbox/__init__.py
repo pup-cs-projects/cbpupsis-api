@@ -23,6 +23,7 @@ for (no router, no schemas, no HTTP surface at all). Its tables live in
     constants.py   the wake-up channel, error bound, re-exported status vocabulary
     store.py       the queries — staging, claiming, marking, receipts
     wakeup.py      LISTEN/NOTIFY, so the worker sleeps instead of polling
+    nudge.py       invokes the worker Lambda right after a commit that staged a message
 
 Import from the package, not the submodules::
 
@@ -39,6 +40,7 @@ from cbpupsis_shared.outbox.constants import (
     WAKEUP_CHANNEL,
     OutboxStatus,
 )
+from cbpupsis_shared.outbox.nudge import nudge_worker
 from cbpupsis_shared.outbox.store import (
     add_receipt,
     already_delivered,
@@ -65,6 +67,7 @@ __all__ = [
     "mark_dispatched",
     "mark_failed",
     "notify_wakeup",
+    "nudge_worker",
     "pending_stats",
     "publish_transactional",
     "start_attempt",

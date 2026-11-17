@@ -20,6 +20,9 @@ from cbpupsis_api_student.domains.schedule.cor_router import (
     router as cor_router,
 )
 from cbpupsis_api_student.domains.schedule.router import router as schedule_router
+from cbpupsis_api_student.domains.student_account.router import (
+    router as student_account_router,
+)
 from cbpupsis_api_student.domains.student_auth.router import (
     router as student_auth_router,
 )
@@ -52,6 +55,7 @@ MOUNTS: tuple[RouterMount, ...] = (
     *COMMON_MOUNTS,
     STUDENT_AUTH,
     STUDENT_PROFILE,
+    RouterMount(student_account_router, "/student", "student-account"),
     STUDENT_DASHBOARD,
     ITEMS,
     GRADES,
