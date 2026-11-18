@@ -1,14 +1,14 @@
 """Add section_grade_submissions table for draft/finalize state and optimistic locking.
 
 Revision ID: f177_section_grade_submissions
-Revises: c192_student_account_late_fine
+Revises: c193_exactly_once_payments
 """
 
 import sqlalchemy as sa
 from alembic import op
 
 revision = "f177_section_grade_submissions"
-down_revision = "c192_student_account_late_fine"
+down_revision = "c193_exactly_once_payments"
 branch_labels = None
 depends_on = None
 
