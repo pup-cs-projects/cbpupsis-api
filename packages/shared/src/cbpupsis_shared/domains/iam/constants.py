@@ -22,6 +22,8 @@ from cbpupsis_database.models.iam import (
 )
 
 MANAGE_IAM = "ManageIAM"
+MANAGE_FEE_STRUCTURE = "ManageFeeStructure"
+FEE_STRUCTURE_ADMIN = "FeeStructureAdmin"
 
 #: The group bootstrap_admin promotes into. Must exist in seed_iam's GROUPS.
 ADMIN_GROUP = "Admins"
@@ -70,6 +72,7 @@ ADMIN_POSITION_POLICIES: dict[str, tuple[str, ...]] = {
         "EnrollmentReportReader",
         "OverloadRequestReader",
     ),
+    "finance": (FEE_STRUCTURE_ADMIN,),
 }
 
 SUPERADMIN_ACTIONS = frozenset(

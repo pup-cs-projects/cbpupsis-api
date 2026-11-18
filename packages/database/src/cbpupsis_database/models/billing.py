@@ -9,6 +9,7 @@ from decimal import Decimal
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Computed,
     Date,
     DateTime,
@@ -31,8 +32,8 @@ class FeeStructure(UUIDMixin, Base):
 
     __tablename__ = "fee_structures"
 
-    program_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("programs.id", ondelete="CASCADE")
+    program_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("programs.id", ondelete="CASCADE"), nullable=True, default=None
     )
     academic_term_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("academic_terms.id", ondelete="CASCADE")
@@ -51,6 +52,13 @@ class FeeStructure(UUIDMixin, Base):
     )
     late_fee_rate: Mapped[Decimal] = mapped_column(
         Numeric(precision=10, scale=2), default=Decimal("0.0"), server_default="0"
+    )
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True, default=None)
+    subsidy_covered_fees: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True, default=list
+    )
+    installments: Mapped[list[dict] | None] = mapped_column(
+        JSON, nullable=True, default=list
     )
 
     __table_args__ = (
@@ -115,6 +123,15 @@ class StudentBillingAccount(UUIDMixin, Base):
     __tablename__ = "student_billing_accounts"
 
     assessment_snapshot: Mapped[dict | None] = mapped_column(JSON, default=None)
+    overdue_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    late_penalty_amount: Mapped[Decimal] = mapped_column(
+        Numeric(precision=10, scale=2), default=Decimal("0.00"), server_default="0"
+    )
+    late_penalty_applied_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
 
     student_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE")
@@ -131,14 +148,19 @@ class StudentBillingAccount(UUIDMixin, Base):
     )
     net_amount_due: Mapped[Decimal | None] = mapped_column(
         Numeric(precision=10, scale=2),
-        Computed("gross_amount - fhe_subsidy_amount", persisted=True),
+        Computed(
+            "gross_amount + late_penalty_amount - fhe_subsidy_amount", persisted=True
+        ),
     )
     amount_paid: Mapped[Decimal] = mapped_column(
         Numeric(precision=10, scale=2), default=Decimal("0.0"), server_default="0"
     )
     balance: Mapped[Decimal | None] = mapped_column(
         Numeric(precision=10, scale=2),
-        Computed("gross_amount - fhe_subsidy_amount - amount_paid", persisted=True),
+        Computed(
+            "gross_amount + late_penalty_amount - fhe_subsidy_amount - amount_paid",
+            persisted=True,
+        ),
     )
     payment_status: Mapped[str] = mapped_column(
         String(30), default="unpaid", server_default="unpaid"
@@ -146,6 +168,11 @@ class StudentBillingAccount(UUIDMixin, Base):
     due_date: Mapped[date] = mapped_column(Date)
 
     __table_args__ = (
+        CheckConstraint(
+            "(late_penalty_applied_at IS NULL AND late_penalty_amount = 0) OR "
+            "(late_penalty_applied_at IS NOT NULL AND late_penalty_amount > 0)",
+            name="ck_billing_late_penalty_state",
+        ),
         UniqueConstraint(
             "student_id",
             "academic_term_id",

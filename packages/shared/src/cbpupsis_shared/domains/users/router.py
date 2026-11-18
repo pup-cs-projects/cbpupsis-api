@@ -48,7 +48,7 @@ from cbpupsis_shared.domains.users.schemas import (
 #: Your own account. Every app serves it: any role reads and edits only itself.
 router = APIRouter()
 #: Other people's accounts: create, list, read, deactivate, reactivate, reissue.
-#: Only the admin app serves it, beside ``/users/import``, because only a
+#: Only the admin app serves it, beside ``/admin/users/import``, because only a
 #: Superadmin may call any of it. ``tests/core/test_architecture.py`` fails if
 #: the student or faculty app mounts a Superadmin-only route.
 management_router = APIRouter()

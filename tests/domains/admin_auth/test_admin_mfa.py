@@ -303,7 +303,7 @@ async def test_password_reset_expires_admin_session_and_pending_challenge(
     await db.commit()
     sent_emails.clear()
     request = await client.post(
-        f"{AUTH}/forgot-password", json={"email": admin_user["email"]}
+        f"{AUTH}/forgot-password", json={"identifier": admin_user["email"]}
     )
     assert request.status_code == 202
     await drain_outbox()

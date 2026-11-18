@@ -31,6 +31,7 @@ from cbpupsis_shared.domains.auth.schemas import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     LoginRequest,
+    PasswordPolicyResponse,
     RefreshRequest,
     ResendVerificationRequest,
     ResetPasswordRequest,
@@ -138,6 +139,16 @@ async def resend_verification(
     await auth_service.resend_verification(db, data.email)
 
 
+@router.get(
+    "/password-policy",
+    status_code=status.HTTP_200_OK,
+    response_model=PasswordPolicyResponse,
+)
+async def get_password_policy() -> PasswordPolicyResponse:
+    """Return password length and character-class rules for reset and change."""
+    return PasswordPolicyResponse()
+
+
 @router.post(
     "/forgot-password",
     status_code=status.HTTP_202_ACCEPTED,
@@ -149,16 +160,16 @@ async def forgot_password(
     data: ForgotPasswordRequest,
     db: AsyncSession = Depends(get_db),
 ) -> ForgotPasswordResponse:
-    """Request a password-reset email.
+    """Request a password-reset email by email address or institutional ID.
 
-    Always 202 Accepted. Returning 404 for an unknown address would make this endpoint a
-    membership oracle for any email list.
+    Always 202 Accepted. Returning 404 for an unknown identifier would make this
+    endpoint a membership oracle.
 
-    A shared per-address allowance prevents inbox flooding; an outer IP limit
+    A shared per-account allowance prevents inbox flooding; an outer IP limit
     also guards abusive request volume. Earlier usable links remain valid.
     """
     ip_address = client_ip(request)
-    await auth_service.forgot_password(db, data.email, ip_address=ip_address)
+    await auth_service.forgot_password(db, data.identifier, ip_address=ip_address)
     return ForgotPasswordResponse()
 
 

@@ -315,12 +315,12 @@ class SessionExpiredError(AuthError, UnauthorizedError):
 
 
 class InvalidEmailAddressError(AuthError):
-    """Malformed email, independent of account existence (HTTP 400)."""
+    """Malformed reset identifier, independent of account existence (HTTP 400)."""
 
     code = "INVALID_EMAIL_ADDRESS"
 
     def __init__(self) -> None:
-        super().__init__("Enter a valid email address.")
+        super().__init__("Enter a valid email address or institutional ID.")
 
 
 class ResetRateLimitError(AuthError):

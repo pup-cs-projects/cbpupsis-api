@@ -24,11 +24,17 @@ from cbpupsis_database.models.auth import (
     TokenPurpose,
 )
 from cbpupsis_database.models.outbox import OutboxMessage
-from cbpupsis_database.models.users import User
+from cbpupsis_database.models.users import (
+    AdminProfile,
+    FacultyProfile,
+    StudentProfile,
+    User,
+)
 from cbpupsis_shared import worker
 from cbpupsis_shared.domains.audit.schemas import AuditEntryRead
+from cbpupsis_shared.domains.auth import constants as auth_constants
 from cbpupsis_shared.domains.auth import delivery, repository, service
-from cbpupsis_shared.domains.auth.security import verify_password
+from cbpupsis_shared.domains.auth.security import hash_password, verify_password
 from cbpupsis_shared.domains.auth.subscribers import register_auth_subscribers
 from tests.conftest import token_from_email
 
@@ -36,7 +42,7 @@ from tests.conftest import token_from_email
 async def request_link(client, registered_user, sent_emails, drain_outbox):
     sent_emails.clear()
     result = await client.post(
-        "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
+        "/api/v1/auth/forgot-password", json={"identifier": registered_user["email"]}
     )
     assert result.status_code == 202
     assert sent_emails == []
@@ -50,10 +56,10 @@ async def test_request_queues_encrypted_delivery_and_uniform_audit(
 ):
     sent_emails.clear()
     known = await client.post(
-        "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
+        "/api/v1/auth/forgot-password", json={"identifier": registered_user["email"]}
     )
     unknown = await client.post(
-        "/api/v1/auth/forgot-password", json={"email": "unknown@example.com"}
+        "/api/v1/auth/forgot-password", json={"identifier": "unknown@example.com"}
     )
     assert known.status_code == unknown.status_code == 202
     assert known.content == unknown.content
@@ -96,7 +102,9 @@ async def test_request_queues_encrypted_delivery_and_uniform_audit(
 
 @pytest.mark.parametrize("invalid", ["abc", "missing-at-sign", "", None, 123, [], {}])
 async def test_invalid_email_has_required_error(client, invalid):
-    result = await client.post("/api/v1/auth/forgot-password", json={"email": invalid})
+    result = await client.post(
+        "/api/v1/auth/forgot-password", json={"identifier": invalid}
+    )
     assert result.status_code == 400
     assert result.json()["code"] == "INVALID_EMAIL_ADDRESS"
 
@@ -308,7 +316,7 @@ async def test_delivery_retries_same_token_with_backoff_and_receipt_deduplicatio
 ):
     sent_emails.clear()
     await client.post(
-        "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
+        "/api/v1/auth/forgot-password", json={"identifier": registered_user["email"]}
     )
     message = await db.scalar(
         select(OutboxMessage).where(
@@ -360,7 +368,7 @@ async def test_address_limit_is_uniform_across_ips_and_keeps_existing_link_usabl
         sent_emails.clear()
         result = await client.post(
             "/api/v1/auth/forgot-password",
-            json={"email": registered_user["email"]},
+            json={"identifier": registered_user["email"]},
             headers={"X-Forwarded-For": f"203.0.113.{i + 1}"},
         )
         assert result.status_code == 202
@@ -368,14 +376,14 @@ async def test_address_limit_is_uniform_across_ips_and_keeps_existing_link_usabl
         tokens.append(token_from_email(sent_emails[0]))
     refused = await client.post(
         "/api/v1/auth/forgot-password",
-        json={"email": registered_user["email"].upper()},
+        json={"identifier": registered_user["email"].upper()},
         headers={"X-Forwarded-For": "203.0.113.3"},
     )
     assert refused.status_code == 429
     assert refused.json()["code"] == "RATE_LIMIT_EXCEEDED"
     assert int(refused.headers["Retry-After"]) > 0
     other = await client.post(
-        "/api/v1/auth/forgot-password", json={"email": "someone-else@example.com"}
+        "/api/v1/auth/forgot-password", json={"identifier": "someone-else@example.com"}
     )
     assert other.status_code == 202
     for token in tokens:
@@ -461,7 +469,7 @@ async def test_expired_queue_job_is_skipped_without_mailing(
 ):
     sent_emails.clear()
     await client.post(
-        "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
+        "/api/v1/auth/forgot-password", json={"identifier": registered_user["email"]}
     )
     await db.execute(
         update(OneTimeToken)
@@ -484,7 +492,7 @@ async def test_configured_lifetime_applies_to_new_links(
 ):
     monkeypatch.setattr(settings, "password_reset_ttl_minutes", 60)
     await client.post(
-        "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
+        "/api/v1/auth/forgot-password", json={"identifier": registered_user["email"]}
     )
     record = await db.scalar(
         select(OneTimeToken).where(OneTimeToken.purpose == TokenPurpose.password_reset)
@@ -497,10 +505,10 @@ async def test_unknown_address_has_same_shared_allowance(client, db, monkeypatch
     monkeypatch.setattr(settings, "rate_limit_enabled", True)
     monkeypatch.setattr(settings, "password_reset_request_limit", 1)
     accepted = await client.post(
-        "/api/v1/auth/forgot-password", json={"email": "unknown@example.com"}
+        "/api/v1/auth/forgot-password", json={"identifier": "unknown@example.com"}
     )
     refused = await client.post(
-        "/api/v1/auth/forgot-password", json={"email": "unknown@example.com"}
+        "/api/v1/auth/forgot-password", json={"identifier": "unknown@example.com"}
     )
     assert accepted.status_code == 202
     assert refused.status_code == 429
@@ -569,3 +577,183 @@ async def test_wrong_current_password_returns_400_with_code(
     assert response.json()["code"] == "AUTH_CURRENT_PASSWORD_INCORRECT"
     user = await db.get(User, uuid.UUID(registered_user["id"]), populate_existing=True)
     assert verify_password(registered_user["password"], user.password_hash)
+
+
+async def test_ac_auth_change_password_applies_same_complexity_policy_as_reset(
+    client, db, registered_user, auth_headers
+):
+    weak = await client.post(
+        "/api/v1/auth/change-password",
+        headers=auth_headers,
+        json={
+            "current_password": registered_user["password"],
+            "new_password": "alllowercasepassword",
+        },
+    )
+    assert weak.status_code == 422
+    body = weak.json()
+    assert body["code"] == "AUTH_PASSWORD_TOO_WEAK"
+    assert set(body["unmet_rules"]) == {"uppercase", "digit", "symbol"}
+
+    short_weak = await client.post(
+        "/api/v1/auth/change-password",
+        headers=auth_headers,
+        json={
+            "current_password": registered_user["password"],
+            "new_password": "Ab1!",
+        },
+    )
+    assert short_weak.status_code == 422
+    assert short_weak.json()["code"] == "AUTH_PASSWORD_TOO_WEAK"
+    assert "at least 8 characters" in short_weak.json()["unmet_rules"]
+
+    accepted = await client.post(
+        "/api/v1/auth/change-password",
+        headers=auth_headers,
+        json={
+            "current_password": registered_user["password"],
+            "new_password": "Strong1!",
+        },
+    )
+    assert accepted.status_code == 200
+    user = await db.get(User, uuid.UUID(registered_user["id"]), populate_existing=True)
+    assert verify_password("Strong1!", user.password_hash)
+
+
+async def test_ac_auth_both_flows_use_single_minimum_length_constant(
+    client, registered_user, sent_emails, drain_outbox
+):
+    assert auth_constants.PASSWORD_MIN_LENGTH == 8
+    assert not hasattr(auth_constants, "RESET_PASSWORD_MIN_LENGTH")
+
+    policy_response = await client.get("/api/v1/auth/password-policy")
+    assert policy_response.status_code == 200
+    policy = policy_response.json()
+
+    token = await request_link(client, registered_user, sent_emails, drain_outbox)
+    verify_response = await client.post(
+        "/api/v1/auth/reset-password",
+        json={"token": token, "verify_only": True},
+    )
+    assert verify_response.status_code == 200
+    verify_body = verify_response.json()
+    assert policy["minimumLength"] == verify_body["minimumLength"] == 8
+    assert policy["requiredRules"] == verify_body["requiredRules"]
+
+
+async def test_ac_auth_password_policy_endpoint_returns_policy_without_auth(client):
+    response = await client.get("/api/v1/auth/password-policy")
+    assert response.status_code == 200
+    assert response.json() == {
+        "minimumLength": 8,
+        "requiredRules": ["uppercase", "lowercase", "digit", "symbol"],
+    }
+
+
+@pytest.mark.parametrize(
+    ("role_kind", "identifier"),
+    [
+        ("student", "2023-00042-MN-0"),
+        ("faculty", "2021-00456-MN-0"),
+        ("admin", "2020-00111-MN-0"),
+    ],
+)
+async def test_ac_auth_forgot_password_accepts_institutional_id_and_shares_throttle(
+    client, db, sent_emails, drain_outbox, monkeypatch, role_kind, identifier
+):
+    email = f"{role_kind}-reset@example.com"
+    user = User(
+        email=email,
+        password_hash=hash_password("OldPassword1!"),
+        is_active=True,
+        email_verified_at=datetime.now(UTC),
+    )
+    db.add(user)
+    await db.flush()
+    if role_kind == "student":
+        db.add(
+            StudentProfile(
+                user_id=user.id,
+                student_number=identifier,
+                program_id=uuid.uuid4(),
+                year_level=1,
+            )
+        )
+    elif role_kind == "faculty":
+        db.add(
+            FacultyProfile(
+                user_id=user.id,
+                employee_id=identifier,
+                department="CS",
+            )
+        )
+    else:
+        db.add(
+            AdminProfile(
+                user_id=user.id,
+                employee_id=identifier,
+                position="registrar",
+            )
+        )
+    await db.commit()
+
+    monkeypatch.setattr(settings, "rate_limit_enabled", True)
+    monkeypatch.setattr(settings, "password_reset_request_limit", 1)
+    sent_emails.clear()
+
+    first = await client.post(
+        "/api/v1/auth/forgot-password", json={"identifier": identifier}
+    )
+    assert first.status_code == 202
+    await drain_outbox()
+    assert len(sent_emails) == 1
+    assert sent_emails[0]["to"] == email
+
+    # Same resolved account shares one allowance across institutional ID and email.
+    second = await client.post(
+        "/api/v1/auth/forgot-password", json={"identifier": email}
+    )
+    assert second.status_code == 429
+    assert second.json()["code"] == "RATE_LIMIT_EXCEEDED"
+
+
+async def test_ac_auth_forgot_password_same_202_for_known_and_unknown_identifiers(
+    client, db, sent_emails, drain_outbox
+):
+    known_email = "known-student@example.com"
+    known_student_id = "2024-00099-MN-0"
+    user = User(
+        email=known_email,
+        password_hash=hash_password("OldPassword1!"),
+        is_active=True,
+        email_verified_at=datetime.now(UTC),
+    )
+    db.add(user)
+    await db.flush()
+    db.add(
+        StudentProfile(
+            user_id=user.id,
+            student_number=known_student_id,
+            program_id=uuid.uuid4(),
+            year_level=1,
+        )
+    )
+    await db.commit()
+    sent_emails.clear()
+
+    responses = [
+        await client.post(
+            "/api/v1/auth/forgot-password", json={"identifier": candidate}
+        )
+        for candidate in (
+            known_email,
+            known_student_id,
+            "unknown-person@example.com",
+            "2099-99999-MN-0",
+        )
+    ]
+    assert all(r.status_code == 202 for r in responses)
+    assert len({r.content for r in responses}) == 1
+    await drain_outbox()
+    assert len(sent_emails) == 2
+    assert {mail["to"] for mail in sent_emails} == {known_email}
