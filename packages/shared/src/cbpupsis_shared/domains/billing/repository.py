@@ -6,7 +6,7 @@ Only this module builds SQL or calls into the session for billing models.
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cbpupsis_database.models.billing import (
     FeeStructure,
     Payment,
+    PaymentReconciliationRun,
+    PaymentWebhookEvent,
     StudentBillingAccount,
     StudentHold,
 )
@@ -233,3 +235,216 @@ async def list_student_payments(
             )
         )
     )
+
+
+async def get_payment_by_idempotency(
+    db: AsyncSession, student_id: uuid.UUID, key: str
+) -> Payment | None:
+    """Read the attempt previously created for one student's key.
+
+    SQL:: SELECT * FROM payments WHERE student_id=:student AND idempotency_key=:key;
+    """
+    return await db.scalar(
+        select(Payment).where(
+            Payment.student_id == student_id, Payment.idempotency_key == key
+        )
+    )
+
+
+async def lock_outstanding_account(
+    db: AsyncSession, student_id: uuid.UUID
+) -> StudentBillingAccount | None:
+    """Lock the oldest account that still has a balance.
+
+    SQL:: SELECT * FROM student_billing_accounts WHERE student_id=:student
+    AND balance > 0 ORDER BY due_date, id LIMIT 1 FOR UPDATE;
+    """
+    return await db.scalar(
+        select(StudentBillingAccount)
+        .where(
+            StudentBillingAccount.student_id == student_id,
+            StudentBillingAccount.balance > 0,
+        )
+        .order_by(StudentBillingAccount.due_date, StudentBillingAccount.id)
+        .limit(1)
+        .with_for_update()
+    )
+
+
+async def pending_reservations(
+    db: AsyncSession, billing_account_id: uuid.UUID
+) -> Decimal:
+    """Sum unsettled attempts so concurrent checkouts cannot over-reserve.
+
+    SQL:: SELECT COALESCE(SUM(amount), 0) FROM payments
+    WHERE billing_account_id=:account AND payment_status='PENDING';
+    """
+    value = await db.scalar(
+        select(func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.billing_account_id == billing_account_id,
+            Payment.payment_status == "PENDING",
+        )
+    )
+    return Decimal(str(value or 0))
+
+
+def stage_payment(
+    db: AsyncSession,
+    *,
+    payment_id: uuid.UUID,
+    billing_account_id: uuid.UUID,
+    student_id: uuid.UUID,
+    idempotency_key: str,
+    merchant_reference: str,
+    amount: Decimal,
+    initiated_ip: str | None,
+) -> Payment:
+    """Stage one durable payment attempt before contacting Xendit.
+
+    SQL:: INSERT INTO payments (id, billing_account_id, student_id,
+    idempotency_key, merchant_reference, amount, initiated_ip) VALUES (...);
+    """
+    row = Payment(
+        id=payment_id,
+        billing_account_id=billing_account_id,
+        student_id=student_id,
+        idempotency_key=idempotency_key,
+        merchant_reference=merchant_reference,
+        amount=amount,
+        initiated_ip=initiated_ip,
+    )
+    db.add(row)
+    return row
+
+
+async def get_student_payment(
+    db: AsyncSession, student_id: uuid.UUID, payment_id: uuid.UUID
+) -> Payment | None:
+    """Read a payment only when it belongs to the requesting student.
+
+    SQL:: SELECT * FROM payments WHERE id=:id AND student_id=:student;
+    """
+    return await db.scalar(
+        select(Payment).where(
+            Payment.id == payment_id, Payment.student_id == student_id
+        )
+    )
+
+
+async def lock_payment_by_merchant_reference(
+    db: AsyncSession, merchant_reference: str
+) -> Payment | None:
+    """Lock the payment named by the non-secret merchant reference.
+
+    SQL:: SELECT * FROM payments WHERE merchant_reference=:reference FOR UPDATE;
+    """
+    return await db.scalar(
+        select(Payment)
+        .where(Payment.merchant_reference == merchant_reference)
+        .with_for_update()
+    )
+
+
+async def lock_payment(db: AsyncSession, payment_id: uuid.UUID) -> Payment | None:
+    """Lock a payment while settlement changes its account balance.
+
+    SQL:: SELECT * FROM payments WHERE id=:id FOR UPDATE;
+    """
+    return await db.scalar(
+        select(Payment).where(Payment.id == payment_id).with_for_update()
+    )
+
+
+async def lock_billing_account(
+    db: AsyncSession, billing_account_id: uuid.UUID
+) -> StudentBillingAccount | None:
+    """Lock the account whose paid amount is about to change.
+
+    SQL:: SELECT * FROM student_billing_accounts WHERE id=:id FOR UPDATE;
+    """
+    return await db.scalar(
+        select(StudentBillingAccount)
+        .where(StudentBillingAccount.id == billing_account_id)
+        .with_for_update()
+    )
+
+
+async def get_webhook_event(
+    db: AsyncSession, webhook_id: str
+) -> PaymentWebhookEvent | None:
+    """Find a previously processed Xendit delivery.
+
+    SQL:: SELECT * FROM payment_webhook_events WHERE webhook_id=:webhook_id;
+    """
+    return await db.scalar(
+        select(PaymentWebhookEvent).where(PaymentWebhookEvent.webhook_id == webhook_id)
+    )
+
+
+def stage_webhook_event(
+    db: AsyncSession,
+    *,
+    webhook_id: str,
+    payment_id: uuid.UUID,
+    event_type: str,
+    event_created_at: datetime,
+) -> PaymentWebhookEvent:
+    """Stage a durable delivery receipt in the settlement transaction.
+
+    SQL:: INSERT INTO payment_webhook_events
+    (webhook_id, payment_id, event_type, event_created_at) VALUES (...);
+    """
+    row = PaymentWebhookEvent(
+        webhook_id=webhook_id,
+        payment_id=payment_id,
+        event_type=event_type,
+        event_created_at=event_created_at,
+    )
+    db.add(row)
+    return row
+
+
+async def list_stale_pending_payments(
+    db: AsyncSession, cutoff: datetime, limit: int
+) -> list[Payment]:
+    """Lock a bounded batch of old pending attempts for reconciliation.
+
+    SQL:: SELECT * FROM payments WHERE payment_status='PENDING'
+    AND created_at <= :cutoff ORDER BY created_at, id LIMIT :limit
+    FOR UPDATE SKIP LOCKED;
+    """
+    return list(
+        await db.scalars(
+            select(Payment)
+            .where(Payment.payment_status == "PENDING", Payment.created_at <= cutoff)
+            .order_by(Payment.created_at, Payment.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+    )
+
+
+async def get_reconciliation_run(
+    db: AsyncSession, run_key: str
+) -> PaymentReconciliationRun | None:
+    """Read a prior reconciliation result by scheduler run key.
+
+    SQL:: SELECT * FROM payment_reconciliation_runs WHERE run_key=:run_key;
+    """
+    return await db.scalar(
+        select(PaymentReconciliationRun).where(
+            PaymentReconciliationRun.run_key == run_key
+        )
+    )
+
+
+def stage_reconciliation_run(
+    db: AsyncSession, run_key: str
+) -> PaymentReconciliationRun:
+    """Stage the unique marker that makes one scheduler run replay-safe.
+
+    SQL:: INSERT INTO payment_reconciliation_runs (run_key) VALUES (:run_key);
+    """
+    row = PaymentReconciliationRun(run_key=run_key)
+    db.add(row)
+    return row

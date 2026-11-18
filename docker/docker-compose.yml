@@ -1,6 +1,7 @@
 # Local development stack: the three API apps, the outbox worker, and a Postgres.
 #
-#   docker compose up                   start everything
+#   docker compose up                   start everything except migrations
+#   docker compose run --rm migrate     apply migrations (on purpose, never on up)
 #   docker compose logs -f api-student  follow one app's logs
 #   docker compose exec api-admin sh    a shell inside one app's container
 #   docker compose down                 stop; add -v to also drop the database
@@ -38,19 +39,21 @@ x-admin-build: &admin-build
   context: ..
   dockerfile: docker/admin/Dockerfile.dev
 
-# Each app starts only after the one-shot migration has finished. Without that
-# you get containers that start and 500 on every request.
+# Each app waits only for the database. `up` never migrates: the dev env files
+# point at a shared Neon database, and a migration from one person's branch
+# breaks everyone else's checkout. Run `make migrate` on purpose instead. An app
+# whose database is not at the code's head refuses to start and says so.
 x-app-depends: &app-depends
-  migrate:
-    condition: service_completed_successfully
+  db:
+    condition: service_healthy
 
 services:
   migrate:
-    # Runs `alembic upgrade head` once and exits, so three app containers never
-    # race each other to migrate the same database. Also the container the
-    # Makefile runs one-off scripts in (seeds, create-admin), with the command
-    # overridden.
+    # Runs `alembic upgrade head` once and exits. Behind a profile, so `up`
+    # leaves it out; `make migrate` (`compose run --rm migrate`) starts it on
+    # purpose. Also the container the Makefile runs Alembic commands in.
     <<: *workspace
+    profiles: [migrate]
     env_file: ../env/admin/env.${ENV_FILE:-dev}
     build: *admin-build
     depends_on:
