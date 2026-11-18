@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Body, Depends, Path, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_api_faculty.domains.faculty_auth.dependencies import (
@@ -55,7 +55,16 @@ router = APIRouter(
     dependencies=[Depends(require_permission(READ_COURSE_SECTION))],
 )
 async def get_section_grades(
-    section_id: uuid.UUID,
+    section_id: uuid.UUID = Path(
+        ...,
+        description="Course section UUID assigned to the faculty member.",
+        openapi_examples={
+            "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000",
+            }
+        },
+    ),
     user: CurrentUser = Depends(require_faculty_session),
     db: AsyncSession = Depends(get_db),
 ) -> SectionGradesRead:
@@ -72,7 +81,16 @@ async def get_section_grades(
     dependencies=[Depends(require_permission(READ_COURSE_SECTION))],
 )
 async def get_section_grade_deadline(
-    section_id: uuid.UUID,
+    section_id: uuid.UUID = Path(
+        ...,
+        description="Course section UUID assigned to the faculty member.",
+        openapi_examples={
+            "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000",
+            }
+        },
+    ),
     user: CurrentUser = Depends(require_faculty_session),
     db: AsyncSession = Depends(get_db),
 ) -> GradeDeadlineRead:
@@ -99,9 +117,36 @@ async def get_section_grade_deadline(
     },
 )
 async def save_section_grade_draft(
-    section_id: uuid.UUID,
-    body: SaveGradeDraftRequest,
     request: Request,
+    section_id: uuid.UUID = Path(
+        ...,
+        description="Course section UUID assigned to the faculty member.",
+        openapi_examples={
+            "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000",
+            }
+        },
+    ),
+    body: SaveGradeDraftRequest = Body(
+        ...,
+        openapi_examples={
+            "default": {
+                "summary": "Sample draft payload",
+                "value": {
+                    "version": 0,
+                    "grades": [
+                        {
+                            "enrollmentId": "00000000-0000-0000-0000-000000000001",
+                            "finalGrade": "1.25",
+                            "midtermGrade": "1.50",
+                            "remarks": "Draft mark",
+                        }
+                    ],
+                },
+            }
+        },
+    ),
     user: CurrentUser = Depends(require_faculty_session),
     db: AsyncSession = Depends(get_db),
 ) -> SectionGradesRead:
@@ -136,9 +181,28 @@ async def save_section_grade_draft(
     },
 )
 async def finalize_section_grades(
-    section_id: uuid.UUID,
     request: Request,
-    body: FinalizeGradesRequest | None = None,
+    section_id: uuid.UUID = Path(
+        ...,
+        description="Course section UUID assigned to the faculty member.",
+        openapi_examples={
+            "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000",
+            }
+        },
+    ),
+    body: FinalizeGradesRequest | None = Body(
+        default=None,
+        openapi_examples={
+            "default": {
+                "summary": "Sample finalize payload",
+                "value": {
+                    "version": 0,
+                },
+            }
+        },
+    ),
     user: CurrentUser = Depends(require_faculty_session),
     db: AsyncSession = Depends(get_db),
 ) -> FinalizeGradesRead:

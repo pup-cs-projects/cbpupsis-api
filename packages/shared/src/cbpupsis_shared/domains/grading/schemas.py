@@ -297,14 +297,47 @@ class GradeDraftItemInput(BaseModel):
         alias_generator=to_camel,
         populate_by_name=True,
         extra="forbid",
+        json_schema_extra={
+            "example": {
+                "enrollmentId": "00000000-0000-0000-0000-000000000001",
+                "finalGrade": "1.25",
+                "midtermGrade": "1.50",
+                "remarks": "Draft mark",
+            }
+        },
     )
 
-    enrollment_id: uuid.UUID | None = None
-    student_id: uuid.UUID | None = None
-    final_grade: str | int | float | Decimal | None = None
-    raw_score: Decimal | int | float | str | None = None
-    midterm_grade: str | None = Field(default=None, max_length=10)
-    remarks: str | None = Field(default=None, max_length=100)
+    enrollment_id: uuid.UUID | None = Field(
+        default=None,
+        description="Enrolled student's course enrollment ID.",
+        examples=["00000000-0000-0000-0000-000000000001"],
+    )
+    student_id: uuid.UUID | None = Field(
+        default=None,
+        description="Optional student user ID (omit when enrollmentId is provided).",
+    )
+    final_grade: str | int | float | Decimal | None = Field(
+        default=None,
+        description="Final grade mark (1.00 to 5.00 or INC).",
+        examples=["1.25"],
+    )
+    raw_score: Decimal | int | float | str | None = Field(
+        default=None,
+        description="Optional numeric raw score.",
+        examples=["88.5"],
+    )
+    midterm_grade: str | None = Field(
+        default=None,
+        max_length=10,
+        description="Optional midterm grade.",
+        examples=["1.50"],
+    )
+    remarks: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Optional remarks for this grade entry.",
+        examples=["Draft mark"],
+    )
 
 
 class SaveGradeDraftRequest(BaseModel):
@@ -314,9 +347,26 @@ class SaveGradeDraftRequest(BaseModel):
         alias_generator=to_camel,
         populate_by_name=True,
         extra="forbid",
+        json_schema_extra={
+            "example": {
+                "version": 0,
+                "grades": [
+                    {
+                        "enrollmentId": "00000000-0000-0000-0000-000000000001",
+                        "finalGrade": "1.25",
+                        "midtermGrade": "1.50",
+                        "remarks": "Draft mark",
+                    }
+                ],
+            }
+        },
     )
 
-    version: int
+    version: int = Field(
+        ...,
+        description="Expected version of draft submission for optimistic locking.",
+        examples=[0],
+    )
     grades: list[GradeDraftItemInput]
 
 
@@ -327,9 +377,18 @@ class FinalizeGradesRequest(BaseModel):
         alias_generator=to_camel,
         populate_by_name=True,
         extra="forbid",
+        json_schema_extra={
+            "example": {
+                "version": 0,
+            }
+        },
     )
 
-    version: int | None = None
+    version: int | None = Field(
+        default=None,
+        description="Optional expected version of the grade sheet before finalizing.",
+        examples=[0],
+    )
 
 
 class FinalizeGradesRead(BaseModel):

@@ -3813,7 +3813,15 @@
             "schema": {
               "type": "string",
               "format": "uuid",
+              "description": "Course section UUID assigned to the faculty member.",
               "title": "Section Id"
+            },
+            "description": "Course section UUID assigned to the faculty member.",
+            "examples": {
+              "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000"
+              }
             }
           }
         ],
@@ -3871,7 +3879,15 @@
             "schema": {
               "type": "string",
               "format": "uuid",
+              "description": "Course section UUID assigned to the faculty member.",
               "title": "Section Id"
+            },
+            "description": "Course section UUID assigned to the faculty member.",
+            "examples": {
+              "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000"
+              }
             }
           }
         ],
@@ -3929,7 +3945,15 @@
             "schema": {
               "type": "string",
               "format": "uuid",
+              "description": "Course section UUID assigned to the faculty member.",
               "title": "Section Id"
+            },
+            "description": "Course section UUID assigned to the faculty member.",
+            "examples": {
+              "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000"
+              }
             }
           }
         ],
@@ -3939,6 +3963,22 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/SaveGradeDraftRequest"
+              },
+              "examples": {
+                "default": {
+                  "summary": "Sample draft payload",
+                  "value": {
+                    "version": 0,
+                    "grades": [
+                      {
+                        "enrollmentId": "00000000-0000-0000-0000-000000000001",
+                        "finalGrade": "1.25",
+                        "midtermGrade": "1.50",
+                        "remarks": "Draft mark"
+                      }
+                    ]
+                  }
+                }
               }
             }
           }
@@ -3993,7 +4033,15 @@
             "schema": {
               "type": "string",
               "format": "uuid",
+              "description": "Course section UUID assigned to the faculty member.",
               "title": "Section Id"
+            },
+            "description": "Course section UUID assigned to the faculty member.",
+            "examples": {
+              "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000"
+              }
             }
           }
         ],
@@ -4010,6 +4058,14 @@
                   }
                 ],
                 "title": "Body"
+              },
+              "examples": {
+                "default": {
+                  "summary": "Sample finalize payload",
+                  "value": {
+                    "version": 0
+                  }
+                }
               }
             }
           }
@@ -11216,13 +11272,20 @@
                 "type": "null"
               }
             ],
-            "title": "Version"
+            "title": "Version",
+            "description": "Optional expected version of the grade sheet before finalizing.",
+            "examples": [
+              0
+            ]
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "FinalizeGradesRequest",
-        "description": "Optional optimistic-lock version check when finalizing a section."
+        "description": "Optional optimistic-lock version check when finalizing a section.",
+        "example": {
+          "version": 0
+        }
       },
       "ForgotPasswordRequest": {
         "properties": {
@@ -11401,7 +11464,11 @@
                 "type": "null"
               }
             ],
-            "title": "Enrollmentid"
+            "title": "Enrollmentid",
+            "description": "Enrolled student's course enrollment ID.",
+            "examples": [
+              "00000000-0000-0000-0000-000000000001"
+            ]
           },
           "studentId": {
             "anyOf": [
@@ -11413,7 +11480,8 @@
                 "type": "null"
               }
             ],
-            "title": "Studentid"
+            "title": "Studentid",
+            "description": "Optional student user ID (omit when enrollmentId is provided)."
           },
           "finalGrade": {
             "anyOf": [
@@ -11434,7 +11502,11 @@
                 "type": "null"
               }
             ],
-            "title": "Finalgrade"
+            "title": "Finalgrade",
+            "description": "Final grade mark (1.00 to 5.00 or INC).",
+            "examples": [
+              "1.25"
+            ]
           },
           "rawScore": {
             "anyOf": [
@@ -11455,7 +11527,11 @@
                 "type": "null"
               }
             ],
-            "title": "Rawscore"
+            "title": "Rawscore",
+            "description": "Optional numeric raw score.",
+            "examples": [
+              "88.5"
+            ]
           },
           "midtermGrade": {
             "anyOf": [
@@ -11467,7 +11543,11 @@
                 "type": "null"
               }
             ],
-            "title": "Midtermgrade"
+            "title": "Midtermgrade",
+            "description": "Optional midterm grade.",
+            "examples": [
+              "1.50"
+            ]
           },
           "remarks": {
             "anyOf": [
@@ -11479,13 +11559,23 @@
                 "type": "null"
               }
             ],
-            "title": "Remarks"
+            "title": "Remarks",
+            "description": "Optional remarks for this grade entry.",
+            "examples": [
+              "Draft mark"
+            ]
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "GradeDraftItemInput",
-        "description": "One student's draft mark input; validated in the service layer."
+        "description": "One student's draft mark input; validated in the service layer.",
+        "example": {
+          "enrollmentId": "00000000-0000-0000-0000-000000000001",
+          "finalGrade": "1.25",
+          "midtermGrade": "1.50",
+          "remarks": "Draft mark"
+        }
       },
       "GradeStatus": {
         "type": "string",
@@ -13133,7 +13223,11 @@
         "properties": {
           "version": {
             "type": "integer",
-            "title": "Version"
+            "title": "Version",
+            "description": "Expected version of draft submission for optimistic locking.",
+            "examples": [
+              0
+            ]
           },
           "grades": {
             "items": {
@@ -13150,7 +13244,18 @@
           "grades"
         ],
         "title": "SaveGradeDraftRequest",
-        "description": "Versioned draft save payload for a section's grade sheet."
+        "description": "Versioned draft save payload for a section's grade sheet.",
+        "example": {
+          "grades": [
+            {
+              "enrollmentId": "00000000-0000-0000-0000-000000000001",
+              "finalGrade": "1.25",
+              "midtermGrade": "1.50",
+              "remarks": "Draft mark"
+            }
+          ],
+          "version": 0
+        }
       },
       "ScheduleCourse": {
         "properties": {
