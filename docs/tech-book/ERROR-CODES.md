@@ -352,6 +352,21 @@ arrive through the outbox.
 | 404 | `RESOURCE_NOT_FOUND` | Resource not found. | The course, program, curriculum version, section, faculty member, or student does not exist or is outside the caller's department or college scope. | `auth/exceptions.py` (raised by `curriculum/service.py`, `sections/service.py`, `admin_catalog/service.py`) |
 | 403 | `AUTH_INSUFFICIENT_ROLE` | This action is not available to your role | A College Dean, Registrar, or non-Admin attempts an admin catalog write (`ManageCatalog` or `ApproveSubstitution`), or a non-Admin attempts to read the admin catalog (`ReadCatalog`). | `auth/exceptions.py` (raised by `admin_auth/dependencies.py`) |
 
+### student payments and Xendit
+
+| Status | Code | Message | When | Raised in |
+|---|---|---|---|---|
+| 400 | `IDEMPOTENCY_KEY_REQUIRED` | A non-empty Idempotency-Key header is required. | `POST /student/payments` omits the header or sends only whitespace. | `billing/exceptions.py` |
+| 409 | `PAYMENT_IN_PROGRESS` | A payment with this idempotency key is still being created. | The same student retries a key while its original attempt is still processing. The response includes `Retry-After`. | `billing/exceptions.py` |
+| 422 | `AMOUNT_EXCEEDS_BALANCE` | The payment amount exceeds the available balance. | The requested amount exceeds the account balance after pending payment reservations. | `billing/exceptions.py` |
+| 502 | `PAYMENT_GATEWAY_ERROR` | The payment gateway rejected the request. | Xendit rejects session creation; the sanitized gateway reason is returned separately. | `billing/exceptions.py` |
+| 504 | `PAYMENT_GATEWAY_TIMEOUT` | The payment gateway did not respond in time. The attempt remains pending. | Xendit session creation times out. Reconciliation owns the uncertain attempt. | `billing/exceptions.py` |
+| 401 | `WEBHOOK_SIGNATURE_INVALID` | The webhook signature or timestamp is invalid. | Xendit's `x-callback-token` does not match, is absent, or the event timestamp falls outside the allowed window. No payment state is read or changed. | `billing/exceptions.py`, `payments/router.py` |
+
+There is deliberately no `DUPLICATE_PAYMENT` code. Completed idempotency-key
+replays return their original response; duplicate valid webhooks return 200 and
+do not settle the balance again.
+
 ### Removed in this revision
 
 These were returned by earlier builds and no longer are. Clients branching on
