@@ -6,10 +6,15 @@ deployed. Never substitute the migration-owner URL for this check.
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
+from cbpupsis_core.config import settings
 from cbpupsis_database.session import to_asyncpg_url
+
+logger = logging.getLogger(__name__)
 
 #: The migration head every deployed process must find. A constant, not read
 #: from the migrations folder, because the student and faculty images do not
@@ -234,6 +239,20 @@ async def validate_runtime_engine(engine: AsyncEngine, role: str | None) -> None
         raise RuntimeError(
             f"Runtime database verification failed ({type(exc).__name__})"
         ) from None
+    if settings.environment == "development":
+        # Every developer shares one Neon dev branch, and each FR branch can add
+        # its own migration on top of it. A head this branch does not know about
+        # is expected there, so it is a warning, not a crash. Staging and
+        # production keep the strict check, as does the deploy gate in
+        # check_database.
+        drift = [f for f in failures if f.startswith("Expected sole Alembic head")]
+        if drift:
+            logger.warning(
+                "Database head differs from this branch (%s); continuing in "
+                "development. Pull the latest branch if a table is missing.",
+                EXPECTED_HEAD,
+            )
+            failures = [f for f in failures if f not in drift]
     if failures:
         raise RuntimeError(
             "Runtime database verification failed: " + "; ".join(failures)
