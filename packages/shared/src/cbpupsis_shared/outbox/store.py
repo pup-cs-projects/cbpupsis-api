@@ -33,6 +33,7 @@ from cbpupsis_shared.outbox.constants import (
     LAST_ERROR_MAX_LENGTH,
     OutboxStatus,
 )
+from cbpupsis_shared.outbox.nudge import mark_staged
 
 
 def publish_transactional(db: AsyncSession, event: Event) -> OutboxMessage:
@@ -68,6 +69,7 @@ def publish_transactional(db: AsyncSession, event: Event) -> OutboxMessage:
         available_at=datetime.now(UTC),
     )
     db.add(message)
+    mark_staged(db)
     return message
 
 

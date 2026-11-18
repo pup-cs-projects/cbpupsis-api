@@ -1,4 +1,4 @@
-"""HTTP routing for faculty sections, mounted at /api/v1/sections.
+"""HTTP routing for faculty sections, mounted at /api/v1/faculty/sections.
 
 Both checks on every endpoint: the coarse ``ReadCourseSection`` permission plus
 an MFA-completed faculty session here, and the ownership check in the service.
