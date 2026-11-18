@@ -1,14 +1,14 @@
 """Persist private correction evidence and scope; permit undefined cached GWA.
 
 Revision ID: f103_grade_corrections
-Revises: f177_section_grade_submissions
+Revises: f178_inc_lifecycle
 """
 
 import sqlalchemy as sa
 from alembic import op
 
 revision = "f103_grade_corrections"
-down_revision = "f177_section_grade_submissions"
+down_revision = "f178_inc_lifecycle"
 branch_labels = None
 depends_on = None
 

@@ -7,8 +7,9 @@ or section permission, and section ownership enforced in the service layer.
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
-from fastapi import APIRouter, Body, Depends, Path, Request
+from fastapi import APIRouter, Body, Depends, Path, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_api_faculty.domains.faculty_auth.dependencies import (
@@ -16,16 +17,24 @@ from cbpupsis_api_faculty.domains.faculty_auth.dependencies import (
 )
 from cbpupsis_api_faculty.domains.faculty_grades import service
 from cbpupsis_api_faculty.domains.faculty_grades.schemas import (
+    CreateIncompleteCompletionRequest,
     FinalizeGradesRead,
     FinalizeGradesRequest,
     GradeDeadlineRead,
+    IncompleteCompletionRead,
+    IncompleteGradeRead,
     SaveGradeDraftRequest,
     SectionGradesRead,
 )
 from cbpupsis_core.middleware import client_ip_or_none
+from cbpupsis_core.pagination import Page
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.auth.dependencies import CurrentUser
-from cbpupsis_shared.domains.grading.constants import SUBMIT_GRADE, UPDATE_GRADE
+from cbpupsis_shared.domains.grading.constants import (
+    CREATE_INCOMPLETE_COMPLETION,
+    SUBMIT_GRADE,
+    UPDATE_GRADE,
+)
 from cbpupsis_shared.domains.iam.dependencies import require_permission
 from cbpupsis_shared.domains.sections.constants import READ_COURSE_SECTION
 
@@ -211,6 +220,116 @@ async def finalize_section_grades(
         db,
         faculty_id=user.id,
         section_id=section_id,
+        payload=body,
+        client_ip=client_ip_or_none(request),
+    )
+
+
+@router.get(
+    "/{section_id}/incompletes",
+    response_model=Page[IncompleteGradeRead],
+    operation_id="list_faculty_section_incompletes",
+    dependencies=[Depends(require_permission(READ_COURSE_SECTION))],
+)
+async def list_section_incompletes(
+    section_id: uuid.UUID = Path(
+        ...,
+        description="Course section UUID assigned to the faculty member.",
+    ),
+    state: Literal["PENDING_COMPLETION", "COMPLETED", "EXPIRED"] | None = Query(
+        default=None
+    ),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    user: CurrentUser = Depends(require_faculty_session),
+    db: AsyncSession = Depends(get_db),
+) -> Page[IncompleteGradeRead]:
+    """List finalized Incomplete (INC) grades and deadlines for one assigned section."""
+    return await service.list_section_incompletes(
+        db,
+        faculty_id=user.id,
+        section_id=section_id,
+        state=state,
+        limit=limit,
+        offset=offset,
+    )
+
+
+incompletes_router = APIRouter(
+    dependencies=[Depends(require_faculty_session)],
+    responses={
+        401: {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required "
+            "(AUTH_MFA_REQUIRED)."
+        },
+        403: {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE) or missing permission."
+        },
+        404: {
+            "description": "RESOURCE_NOT_FOUND when the Inc record does not exist or "
+            "belongs to another faculty member's section."
+        },
+    },
+)
+
+
+@incompletes_router.get(
+    "",
+    response_model=Page[IncompleteGradeRead],
+    operation_id="list_faculty_incompletes",
+    dependencies=[Depends(require_permission(READ_COURSE_SECTION))],
+)
+async def list_faculty_incompletes(
+    state: Literal["PENDING_COMPLETION", "COMPLETED", "EXPIRED"] | None = Query(
+        default=None
+    ),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    user: CurrentUser = Depends(require_faculty_session),
+    db: AsyncSession = Depends(get_db),
+) -> Page[IncompleteGradeRead]:
+    """List finalized Incomplete (INC) grades across all assigned sections."""
+    return await service.list_faculty_incompletes(
+        db,
+        faculty_id=user.id,
+        state=state,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@incompletes_router.post(
+    "/{inc_id}/completion",
+    response_model=IncompleteCompletionRead,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="file_faculty_incomplete_completion",
+    dependencies=[Depends(require_permission(CREATE_INCOMPLETE_COMPLETION))],
+    responses={
+        409: {
+            "description": "INC_COMPLETION_WINDOW_CLOSED if already expired to 5.00, "
+            "INC_ALREADY_COMPLETED, or INC_COMPLETION_PENDING."
+        },
+        422: {
+            "description": "VALIDATION_ERROR when proposed mark is outside 1.00 to "
+            "3.00 or completion form is missing."
+        },
+    },
+)
+async def file_incomplete_completion(
+    request: Request,
+    inc_id: uuid.UUID = Path(
+        ...,
+        description="Identifier of the finalized Incomplete grade row.",
+    ),
+    body: CreateIncompleteCompletionRequest = Body(...),
+    user: CurrentUser = Depends(require_faculty_session),
+    db: AsyncSession = Depends(get_db),
+) -> IncompleteCompletionRead:
+    """File a passing completion mark (1.00 to 3.00) for Dean endorsement."""
+    return await service.file_incomplete_completion(
+        db,
+        faculty_id=user.id,
+        inc_id=inc_id,
         payload=body,
         client_ip=client_ip_or_none(request),
     )

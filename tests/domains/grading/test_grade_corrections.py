@@ -806,9 +806,11 @@ async def test_commit_without_standing_cache_uses_derived_gwa_without_fake_stand
     )
 
 
+@pytest.mark.parametrize("completion_days", [365, 180])
 async def test_correction_to_inc_keeps_undefined_gwa_null_and_release_unchanged(
-    db, setup
+    db, setup, monkeypatch, completion_days
 ):
+    monkeypatch.setattr(settings, "inc_completion_days", completion_days)
     before = await db.scalar(
         select(StudentGrade.submitted_at).where(
             StudentGrade.enrollment_item_id == setup["alice_enr_id"]
@@ -819,6 +821,15 @@ async def test_correction_to_inc_keeps_undefined_gwa_null_and_release_unchanged(
     row = await decide(db, setup, row, "dean")
     await decide(db, setup, row, "registrar", "COMMIT")
     assert await persisted(db, setup) == ("INC", (None, None))
+    grade = await db.scalar(
+        select(StudentGrade).where(
+            StudentGrade.enrollment_item_id == setup["alice_enr_id"]
+        )
+    )
+    assert grade.completion_status == "PENDING_COMPLETION"
+    assert grades.utc(grade.inc_expires_at) == grades.utc(before) + timedelta(
+        days=completion_days
+    )
     result = await grades.read_grades(db, student_id=setup["alice_id"])
     assert result.gwa is None
     assert (

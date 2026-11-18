@@ -81,7 +81,8 @@ and their evaluation timestamps are preserved; standing evaluation belongs to
 #105, not this issue. Student login deactivation does not prevent an authorized
 faculty/approver correcting an existing record; student self-read guards are
 unchanged. A correction
-to INC reuses #177's expiry duration from the original publication instant.
+to INC reuses the grading owner's configured `INC_COMPLETION_DAYS` from the
+original publication instant and records `PENDING_COMPLETION` for the INC workflow.
 
 Each successful filing/decision writes exactly one audit row with old/new marks,
 actor, role/position, client IP, and UTC+8 presentation of its UTC instant. Free
@@ -90,7 +91,10 @@ produce no successful-step row. No replacement for #226's logging work is added.
 
 ## Migration and deployment
 
-Run owner-managed migrations to `f103_grade_corrections` and seed IAM. The migration
+Run owner-managed migrations to `f103_grade_corrections` and seed IAM. The chain is
+`f177_section_grade_submissions` -> `f178_inc_lifecycle` -> `f103_grade_corrections`;
+#103 preserves the INC tables/indexes and does not replay or replace #178.
+The migration
 adds private document metadata/content, source-version evidence, scope identity,
 and rejection resolution metadata to the existing correction table. It backfills
 only section/student relational identity for legacy rows; it does not invent

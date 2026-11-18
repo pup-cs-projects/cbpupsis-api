@@ -45,6 +45,8 @@ class RecordSection(BaseModel):
     id: uuid.UUID
     course_id: uuid.UUID
     academic_term_id: uuid.UUID
+    section_name: str = ""
+    faculty_id: uuid.UUID | None = None
 
 
 class MeetingSlot(BaseModel):

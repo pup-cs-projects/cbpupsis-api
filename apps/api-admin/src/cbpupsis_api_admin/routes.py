@@ -33,6 +33,9 @@ from cbpupsis_api_admin.domains.fee_structures.router import (
 from cbpupsis_api_admin.domains.grade_corrections.router import (
     router as grade_corrections_router,
 )
+from cbpupsis_api_admin.domains.incomplete_completions.router import (
+    router as incomplete_completions_router,
+)
 from cbpupsis_api_admin.domains.overload_requests.router import (
     router as overload_requests_router,
 )
@@ -79,6 +82,11 @@ MOUNTS: tuple[RouterMount, ...] = (
         fee_structures_router,
         "/admin/fee-structures",
         "admin-fee-structures",
+    ),
+    RouterMount(
+        incomplete_completions_router,
+        "/admin/incomplete-completions",
+        "admin-incomplete-completions",
     ),
     IAM,
     AUDIT,

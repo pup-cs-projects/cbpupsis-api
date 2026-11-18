@@ -205,6 +205,14 @@ async def ids_for_courses(db: AsyncSession, course_ids):
     return await repository.ids_for_courses(db, course_ids)
 
 
+async def list_owned_sections(
+    db: AsyncSession, *, faculty_id: uuid.UUID
+) -> list[OwnedSectionRead]:
+    """Return every section assigned to ``faculty_id`` for cross-domain callers."""
+    rows = await repository.list_all_course_sections_for_faculty(db, faculty_id)
+    return [OwnedSectionRead.model_validate(row) for row in rows]
+
+
 async def _owned_section(
     db: AsyncSession, *, faculty_id: uuid.UUID, section_id: uuid.UUID
 ):

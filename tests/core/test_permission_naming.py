@@ -61,6 +61,7 @@ TRANSITIONS: frozenset[str] = frozenset(
         "ApproveSubstitution",
         "SubmitGrade",
         "ApproveGradeCorrection",
+        "ApproveIncompleteCompletion",
     }
 )
 

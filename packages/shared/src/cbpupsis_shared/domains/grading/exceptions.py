@@ -126,3 +126,71 @@ class GradeValidationError(GradingError, ValidationError):
                 "details": {"rows": errors},
             },
         )
+
+
+class IncCompletionWindowClosedError(GradingError, ConflictError):
+    """Inc completion attempted after conversion to 5.00 or past deadline (HTTP 409)."""
+
+    code = "INC_COMPLETION_WINDOW_CLOSED"
+
+    def __init__(
+        self,
+        detail: str = (
+            "The completion window for this Incomplete grade has closed and the "
+            "mark remains 5.00."
+        ),
+    ) -> None:
+        super().__init__(detail)
+
+
+class IncAlreadyCompletedError(GradingError, ConflictError):
+    """Inc has already been completed and endorsed (HTTP 409)."""
+
+    code = "INC_ALREADY_COMPLETED"
+
+    def __init__(self) -> None:
+        super().__init__("This Incomplete grade has already been completed.")
+
+
+class IncCompletionPendingError(GradingError, ConflictError):
+    """A pending completion request already exists for this Inc (HTTP 409)."""
+
+    code = "INC_COMPLETION_PENDING"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "A completion request for this Incomplete grade is already pending review."
+        )
+
+
+class IncCompletionAlreadyDecidedError(GradingError, ConflictError):
+    """Completion request has already been endorsed, rejected, or expired (HTTP 409)."""
+
+    code = "REQUEST_ALREADY_DECIDED"
+
+    def __init__(self) -> None:
+        super().__init__("This completion request has already been decided.")
+
+
+class IncompleteValidationError(GradingError, ValidationError):
+    """Invalid mark or missing completion form on an Inc completion (HTTP 422)."""
+
+    code = "VALIDATION_ERROR"
+
+    def __init__(self, detail: str, *, field: str | None = None) -> None:
+        response_fields: dict[str, object] = {}
+        if field is not None:
+            response_fields["details"] = {"field": field}
+        super().__init__(detail, response_fields=response_fields)
+
+
+class IncompleteDecisionRemarksRequiredError(GradingError, ValidationError):
+    """Rejecting a completion requires non-blank remarks (HTTP 422)."""
+
+    code = "DECISION_REMARKS_REQUIRED"
+
+    def __init__(
+        self,
+        detail: str = "Remarks are required when rejecting an incomplete completion.",
+    ) -> None:
+        super().__init__(detail)

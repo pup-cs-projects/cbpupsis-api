@@ -70,6 +70,15 @@ MESSAGES_BY_EVENT: dict[str, tuple[str, str]] = {
         "Grades available",
         "Your finalized grade for this course is now available.",
     ),
+    "grading.inc_completion_decided": (
+        "Incomplete completion reviewed",
+        "A College Dean has reviewed an Incomplete completion request.",
+    ),
+    "grading.inc_expired": (
+        "Incomplete grade expired",
+        "An Incomplete grade whose 365-day completion window elapsed has expired "
+        "to 5.00.",
+    ),
 }
 
 
@@ -95,6 +104,28 @@ def render(event: Event) -> RenderedNotification:
                 f"Your finalized grade for {course_code} ({section_name}) "
                 "is now available."
             )
+    elif event.name == "grading.inc_completion_decided":
+        state = str(event.payload.get("state", "DECIDED")).upper()
+        course_code = event.payload.get("course_code") or "your course"
+        proposed_mark = event.payload.get("proposed_mark")
+        remarks = event.payload.get("remarks")
+        if state == "ENDORSED":
+            title = f"Incomplete completion endorsed for {course_code}"
+            body = f"The Incomplete completion for {course_code} was endorsed" + (
+                f" with final grade {proposed_mark}." if proposed_mark else "."
+            )
+        else:
+            title = f"Incomplete completion rejected for {course_code}"
+            body = f"The Incomplete completion for {course_code} was rejected."
+        if remarks:
+            body += f" Remarks: {remarks}"
+    elif event.name == "grading.inc_expired":
+        course_code = event.payload.get("course_code") or "a course"
+        title = f"Incomplete grade expired for {course_code}"
+        body = (
+            f"The Incomplete mark for {course_code} was not completed before its "
+            "deadline and has been converted to 5.00."
+        )
     return RenderedNotification(
         notification_type=event.name,
         title=title,

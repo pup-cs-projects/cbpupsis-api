@@ -216,9 +216,21 @@ async def test_ac_fac_002_8_postgres_audit_atomicity_and_concurrent_decisions(
             ), "Nonempty database: refusing destructive reuse"
             await ensure_runtime_role(connection)
         await asyncio.to_thread(migrate, url, "upgrade", "head")
-        await asyncio.to_thread(
-            migrate, url, "downgrade", "f177_section_grade_submissions"
-        )
+        await asyncio.to_thread(migrate, url, "downgrade", "f178_inc_lifecycle")
+        async with owner.connect() as connection:
+            assert (
+                await connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == "f178_inc_lifecycle"
+            )
+            assert await connection.scalar(
+                text("SELECT to_regclass('public.inc_expiry_runs')")
+            )
+            assert await connection.scalar(
+                text(
+                    "SELECT to_regclass("
+                    "'public.uq_incomplete_completions_pending_grade')"
+                )
+            )
         await asyncio.to_thread(migrate, url, "upgrade", "head")
         async with runtime.connect() as connection:
             assert await inspect_runtime(connection, "issue103_runtime") == []
@@ -353,9 +365,7 @@ async def test_migration_preserves_legacy_correction_without_fabricated_evidence
                 text("SELECT to_regclass('public.student_grades')")
             )
             await ensure_runtime_role(connection)
-        await asyncio.to_thread(
-            migrate, url, "upgrade", "f177_section_grade_submissions"
-        )
+        await asyncio.to_thread(migrate, url, "upgrade", "f178_inc_lifecycle")
         async with sessions() as db:
             data, _actors = await seed_record(db)
             grade_id = await db.scalar(

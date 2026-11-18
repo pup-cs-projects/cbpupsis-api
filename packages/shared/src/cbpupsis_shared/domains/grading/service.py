@@ -1,9 +1,11 @@
-"""Grade, standing, and transcript reads, without workflow mutations."""
+"""Grade, standing, transcript reads, faculty submission, and INC lifecycle."""
 
 from __future__ import annotations
 
+import math
 import re
 import uuid
+from collections.abc import Collection
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
@@ -11,8 +13,10 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cbpupsis_core.config import settings
 from cbpupsis_core.events import Event
-from cbpupsis_core.exceptions import ValidationError
+from cbpupsis_core.exceptions import ForbiddenError, ValidationError
+from cbpupsis_core.pagination import Page
 from cbpupsis_shared.domains.academics import client as academics
 from cbpupsis_shared.domains.audit import client as audit
 from cbpupsis_shared.domains.auth.exceptions import ResourceNotFoundError
@@ -20,13 +24,26 @@ from cbpupsis_shared.domains.curriculum import client as curriculum
 from cbpupsis_shared.domains.enrollment import client as enrollment
 from cbpupsis_shared.domains.grading import repository
 from cbpupsis_shared.domains.grading.constants import (
+    COMPLETION_STATE_ENDORSED,
+    COMPLETION_STATE_EXPIRED,
+    COMPLETION_STATE_PENDING_DEAN,
+    COMPLETION_STATE_REJECTED,
     ENROLLED_COURSE_STATUSES,
     GRADE_DRAFT_SAVED_ACTION,
     GRADE_STATE_DRAFT,
     GRADE_STATE_FINAL,
     GRADES_FINALIZED_ACTION,
     GRADES_FINALIZED_EVENT,
-    INC_EXPIRY_DAYS,
+    INC_COMPLETION_DECIDED_EVENT,
+    INC_COMPLETION_ENDORSED_ACTION,
+    INC_COMPLETION_FILED_ACTION,
+    INC_COMPLETION_REJECTED_ACTION,
+    INC_EXPIRED_ACTION,
+    INC_EXPIRED_EVENT,
+    INC_STATE_COMPLETED,
+    INC_STATE_EXPIRED,
+    INC_STATE_PENDING,
+    NUMERIC_COMPLETION_MARKS,
     NUMERIC_MARKS,
     UNIT_REDUCTIONS,
     AcademicStanding,
@@ -37,15 +54,27 @@ from cbpupsis_shared.domains.grading.exceptions import (
     GradesLockedError,
     GradeValidationError,
     GradeVersionConflictError,
+    IncAlreadyCompletedError,
+    IncCompletionAlreadyDecidedError,
+    IncCompletionPendingError,
+    IncCompletionWindowClosedError,
+    IncompleteDecisionRemarksRequiredError,
+    IncompleteValidationError,
 )
 from cbpupsis_shared.domains.grading.schemas import (
     AcademicAttempt,
     AcademicRecord,
+    CreateIncompleteCompletionRequest,
     FinalizeGradesRead,
     FinalizeGradesRequest,
     GradeCourse,
     GradeDeadlineRead,
     GradesRead,
+    IncExpiryRunResult,
+    IncompleteCompletionDecisionRequest,
+    IncompleteCompletionRead,
+    IncompleteCompletionSummaryRead,
+    IncompleteGradeRead,
     SaveGradeDraftRequest,
     ScholasticStandingRead,
     SectionGradeEntryRead,
@@ -403,6 +432,10 @@ def _utc8_iso(value: datetime) -> str:
     return utc(value).astimezone(timezone(timedelta(hours=8))).isoformat()
 
 
+def _inc_deadline_for(submitted_at: datetime) -> datetime:
+    return utc(submitted_at) + timedelta(days=settings.inc_completion_days)
+
+
 def _is_enrolled(status: str) -> bool:
     return status.strip().lower() in ENROLLED_COURSE_STATUSES
 
@@ -572,6 +605,11 @@ def _build_section_grades_read(
                 final_grade=final_grade,
                 remarks=None if grade is None else grade.remarks,
                 inc_expires_at=(
+                    utc(grade.inc_expires_at)
+                    if grade is not None and grade.inc_expires_at is not None
+                    else None
+                ),
+                completion_deadline=(
                     utc(grade.inc_expires_at)
                     if grade is not None and grade.inc_expires_at is not None
                     else None
@@ -828,13 +866,22 @@ async def save_section_grade_draft(
                     is_locked=False,
                     updated_at=now,
                 )
+                if updates.get("final_grade") == "INC":
+                    row.inc_expires_at = _inc_deadline_for(now)
+                    row.completion_status = INC_STATE_PENDING
                 grades_by_enrollment[target.enrollment_id] = row
             else:
                 for key, val in updates.items():
                     setattr(row, key, val)
                 row.is_draft = True
                 row.is_locked = False
-                row.inc_expires_at = None
+                if "final_grade" in updates:
+                    if updates["final_grade"] == "INC":
+                        row.inc_expires_at = _inc_deadline_for(now)
+                        row.completion_status = INC_STATE_PENDING
+                    else:
+                        row.inc_expires_at = None
+                        row.completion_status = None
                 row.updated_at = now
 
         submission.state = GRADE_STATE_DRAFT
@@ -978,12 +1025,13 @@ async def finalize_section_grades(
         prior_version = submission.version
         prior_state_name = submission.state
 
-        inc_deadline = now + timedelta(days=INC_EXPIRY_DAYS)
+        inc_deadline = _inc_deadline_for(now)
         for membership in memberships:
             row = grades_by_enrollment[membership.enrollment_id]
             mark = normalized_final_marks[membership.enrollment_id]
             row.final_grade = mark
             row.inc_expires_at = inc_deadline if mark == "INC" else None
+            row.completion_status = INC_STATE_PENDING if mark == "INC" else None
             row.is_draft = False
             row.is_locked = True
             row.submitted_by = faculty_id
@@ -1059,4 +1107,983 @@ async def finalize_section_grades(
         records_committed=len(memberships),
         notifications_queued=len(memberships),
         submitted_at=now,
+    )
+
+
+def _normalize_completion_mark(value: object) -> str:
+    if isinstance(value, bool) or value is None:
+        raise ValueError("Proposed mark must be between 1.00 and 3.00.")
+    raw = str(value).strip()
+    if not raw:
+        raise ValueError("Proposed mark must not be blank.")
+    try:
+        numeric = Decimal(raw)
+    except InvalidOperation as exc:
+        raise ValueError("Proposed mark must be between 1.00 and 3.00.") from exc
+    if not numeric.is_finite():
+        raise ValueError("Proposed mark must be finite.")
+    formatted = format(numeric, ".2f")
+    if numeric != Decimal(formatted) or formatted not in NUMERIC_COMPLETION_MARKS:
+        raise ValueError(
+            "Proposed mark must be a passing grade from 1.00 to 3.00 in 0.25 steps."
+        )
+    return formatted
+
+
+def _colleges_match(student_college: str | None, dean_college: str | None) -> bool:
+    if not student_college or not dean_college:
+        return False
+    return student_college.strip().casefold() == dean_college.strip().casefold()
+
+
+def _derive_inc_lifecycle_state(
+    grade, now: datetime
+) -> tuple[str, int | None, datetime | None]:
+    deadline = utc(grade.inc_expires_at) if grade.inc_expires_at is not None else None
+    mark = (grade.final_grade or "").strip().upper()
+    if grade.completion_status == INC_STATE_COMPLETED:
+        return INC_STATE_COMPLETED, None, deadline
+    if grade.completion_status == INC_STATE_EXPIRED or mark == "5.00":
+        return INC_STATE_EXPIRED, 0, deadline
+    if deadline is not None and now >= deadline:
+        return INC_STATE_EXPIRED, 0, deadline
+    if deadline is not None:
+        seconds_left = (deadline - now).total_seconds()
+        days_left = max(0, math.ceil(seconds_left / 86400))
+        return INC_STATE_PENDING, days_left, deadline
+    return INC_STATE_PENDING, None, None
+
+
+def _is_inc_window_closed(grade, now: datetime) -> bool:
+    mark = (grade.final_grade or "").strip().upper()
+    if grade.completion_status == INC_STATE_EXPIRED or mark == "5.00":
+        return True
+    return grade.inc_expires_at is not None and now >= utc(grade.inc_expires_at)
+
+
+async def _load_inc_grade_context(
+    db: AsyncSession, grades: Collection[object]
+) -> tuple[
+    dict[uuid.UUID, object],
+    dict[uuid.UUID, object],
+    dict[uuid.UUID, object],
+    dict[uuid.UUID, object],
+    dict[uuid.UUID, object],
+    dict[uuid.UUID, object],
+    dict[uuid.UUID, object],
+]:
+    enrollment_ids = {g.enrollment_item_id for g in grades}
+    owners = await enrollment.get_enrollment_owners(db, enrollment_ids)
+    section_ids = {o.section_id for o in owners.values()}
+    term_ids = {o.academic_term_id for o in owners.values()}
+    student_ids = {o.student_id for o in owners.values()}
+
+    section_map = {s.id: s for s in await sections.record_sections(db, section_ids)}
+    course_ids = {s.course_id for s in section_map.values()}
+    course_map = {c.id: c for c in await curriculum.record_courses(db, course_ids)}
+    term_map = {t.id: t for t in await academics.record_terms(db, term_ids)}
+    student_map = await users.overload_student_identities(db, student_ids)
+    program_ids = {s.program_id for s in student_map.values()}
+    program_map = await curriculum.programs_by_ids(db, program_ids)
+    completions = await repository.list_completions_for_grades(
+        db, {g.id for g in grades}
+    )
+    latest_completion_by_grade: dict[uuid.UUID, object] = {}
+    for comp in completions:
+        latest_completion_by_grade.setdefault(comp.grade_id, comp)
+    return (
+        owners,
+        section_map,
+        course_map,
+        term_map,
+        student_map,
+        program_map,
+        latest_completion_by_grade,
+    )
+
+
+def _build_incomplete_grade_read(
+    grade,
+    *,
+    owners,
+    section_map,
+    course_map,
+    term_map,
+    student_map,
+    latest_completion_by_grade,
+    now: datetime,
+) -> IncompleteGradeRead | None:
+    owner = owners.get(grade.enrollment_item_id)
+    if owner is None:
+        return None
+    section = section_map.get(owner.section_id)
+    course = course_map.get(section.course_id) if section is not None else None
+    term = term_map.get(owner.academic_term_id)
+    student = student_map.get(owner.student_id)
+    if section is None or course is None or term is None or student is None:
+        return None
+    state, days_left, deadline = _derive_inc_lifecycle_state(grade, now)
+    latest = latest_completion_by_grade.get(grade.id)
+    raw_mark = (grade.final_grade or "").strip()
+    display_mark = "Inc" if raw_mark.upper() == "INC" else raw_mark
+    return IncompleteGradeRead(
+        inc_id=grade.id,
+        grade_id=grade.id,
+        enrollment_id=grade.enrollment_item_id,
+        section_id=section.id,
+        section_name=section.section_name,
+        course_id=course.id,
+        course_code=course.course_code,
+        course_title=course.title,
+        academic_term_id=term.id,
+        academic_year=term.academic_year,
+        semester=term.semester,
+        student_id=owner.student_id,
+        student_number=student.student_number,
+        student_name=student.full_name,
+        final_grade=display_mark,
+        submitted_at=utc(grade.submitted_at) if grade.submitted_at else None,
+        completion_deadline=deadline,
+        days_left=days_left,
+        state=state,  # type: ignore[arg-type]
+        latest_completion=(
+            IncompleteCompletionSummaryRead.model_validate(latest)
+            if latest is not None
+            else None
+        ),
+    )
+
+
+def _build_incomplete_completion_read(
+    completion,
+    *,
+    grade,
+    owners,
+    section_map,
+    course_map,
+    term_map,
+    student_map,
+    program_map,
+) -> IncompleteCompletionRead | None:
+    if grade is None:
+        return None
+    owner = owners.get(grade.enrollment_item_id)
+    if owner is None:
+        return None
+    section = section_map.get(owner.section_id)
+    course = course_map.get(section.course_id) if section is not None else None
+    term = term_map.get(owner.academic_term_id)
+    student = student_map.get(owner.student_id)
+    if section is None or course is None or term is None or student is None:
+        return None
+    program = program_map.get(student.program_id)
+    deadline = utc(grade.inc_expires_at) if grade.inc_expires_at is not None else None
+    return IncompleteCompletionRead(
+        id=completion.id,
+        completion_id=completion.id,
+        inc_id=grade.id,
+        grade_id=grade.id,
+        enrollment_id=grade.enrollment_item_id,
+        section_id=section.id,
+        section_name=section.section_name,
+        course_id=course.id,
+        course_code=course.course_code,
+        course_title=course.title,
+        academic_term_id=term.id,
+        academic_year=term.academic_year,
+        semester=term.semester,
+        student_id=owner.student_id,
+        student_number=student.student_number,
+        student_name=student.full_name,
+        college=program.college if program is not None else None,
+        proposed_mark=completion.proposed_mark,
+        completion_form_file_id=completion.completion_form_file_id,
+        remarks=completion.remarks,
+        state=completion.state,  # type: ignore[arg-type]
+        version=completion.version,
+        reviewed_by=completion.reviewed_by,
+        review_remarks=completion.review_remarks,
+        resolved_at=utc(completion.resolved_at) if completion.resolved_at else None,
+        completion_deadline=deadline,
+        created_at=utc(completion.created_at),
+    )
+
+
+def _evaluate_term_standing(
+    term_courses: list[GradeCourse], *, prior_standing: str | None = None
+) -> str:
+    total_units = sum((c.units for c in term_courses if c.units > 0), Decimal("0"))
+    failed_units = sum(
+        (c.units for c in term_courses if c.final_grade == "5.00" and c.units > 0),
+        Decimal("0"),
+    )
+    if total_units <= 0 or failed_units <= 0:
+        return AcademicStanding.GOOD.value
+    ratio = failed_units / total_units
+    if ratio < Decimal("0.25"):
+        return AcademicStanding.GOOD.value
+    if ratio < Decimal("0.50"):
+        if prior_standing == AcademicStanding.WARNING_1.value:
+            return AcademicStanding.WARNING_2.value
+        return AcademicStanding.WARNING_1.value
+    if ratio <= Decimal("0.75"):
+        return AcademicStanding.PROBATION.value
+    if ratio < Decimal("1.00"):
+        return AcademicStanding.COLLEGE_DROPPING.value
+    return AcademicStanding.UNIVERSITY_DISMISSAL.value
+
+
+async def _recompute_student_term_evaluation(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    term_id: uuid.UUID,
+    evaluated_at: datetime,
+) -> None:
+    enrolled = await enrollment.record_enrollments(db, student_id)
+    term_ids = {row.academic_term_id for row in enrolled}
+    terms = await academics.record_terms(db, term_ids)
+    terms.sort(key=lambda row: (row.start_date, row.end_date, str(row.id)))
+    attempts = {row.id: row for row in enrolled}
+    marks = await repository.published_marks(db, list(attempts))
+    section_rows = {
+        row.id: row
+        for row in await sections.record_sections(
+            db, {attempts[m.enrollment_item_id].section_id for m in marks}
+        )
+    }
+    catalog = {
+        row.id: row
+        for row in await curriculum.record_courses(
+            db, {row.course_id for row in section_rows.values()}
+        )
+    }
+    by_term: dict[uuid.UUID, list[GradeCourse]] = {t.id: [] for t in terms}
+    for mark in marks:
+        attempt = attempts[mark.enrollment_item_id]
+        section = section_rows.get(attempt.section_id)
+        course = catalog.get(section.course_id) if section is not None else None
+        if section is None or course is None:
+            continue
+        by_term.setdefault(attempt.academic_term_id, []).append(
+            _course(mark, section, course)
+        )
+
+    existing_evals = {
+        row.academic_term_id: row
+        for row in await repository.list_student_term_gpas(db, student_id=student_id)
+    }
+    cum_num, cum_den = Decimal("0"), Decimal("0")
+    prior_standing: str | None = None
+    target_term_data: tuple[Decimal, Decimal, Decimal, str] | None = None
+
+    for term in terms:
+        courses = by_term.get(term.id, [])
+        term_num, term_den = weighted_totals(courses)
+        cum_num += term_num
+        cum_den += term_den
+        if term.id == term_id:
+            term_gwa = average(term_num, term_den) or Decimal("0.00")
+            cum_gwa = average(cum_num, cum_den) or Decimal("0.00")
+            standing = _evaluate_term_standing(courses, prior_standing=prior_standing)
+            target_term_data = (
+                term_den.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP),
+                term_gwa.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                cum_gwa.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                standing,
+            )
+            break
+        if prev_eval := existing_evals.get(term.id):
+            prior_standing = prev_eval.academic_standing
+
+    if target_term_data is None:
+        return
+    total_gpa_units, term_gpa, cumulative_gpa, academic_standing = target_term_data
+    await repository.upsert_student_term_gpa(
+        db,
+        student_id=student_id,
+        academic_term_id=term_id,
+        total_gpa_units=total_gpa_units,
+        term_gpa=term_gpa,
+        cumulative_gpa=cumulative_gpa,
+        academic_standing=academic_standing,
+        calculated_at=evaluated_at,
+    )
+
+
+async def list_section_incompletes(
+    db: AsyncSession,
+    *,
+    faculty_id: uuid.UUID,
+    section_id: uuid.UUID,
+    state: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Page[IncompleteGradeRead]:
+    """List finalized INC rows for one section assigned to ``faculty_id``."""
+    await sections.get_owned_section(db, faculty_id=faculty_id, section_id=section_id)
+    memberships = [
+        m
+        for m in await enrollment.list_sections_enrollments(db, {section_id})
+        if _is_enrolled(m.status)
+    ]
+    grades = await repository.list_incomplete_grades_for_enrollments(
+        db, {m.enrollment_id for m in memberships}
+    )
+    if not grades:
+        return Page[IncompleteGradeRead](items=[], total=0, limit=limit, offset=offset)
+
+    now = datetime.now(UTC)
+    (
+        owners,
+        section_map,
+        course_map,
+        term_map,
+        student_map,
+        _program_map,
+        latest_completion_by_grade,
+    ) = await _load_inc_grade_context(db, grades)
+    items = [
+        item
+        for grade in grades
+        if (
+            item := _build_incomplete_grade_read(
+                grade,
+                owners=owners,
+                section_map=section_map,
+                course_map=course_map,
+                term_map=term_map,
+                student_map=student_map,
+                latest_completion_by_grade=latest_completion_by_grade,
+                now=now,
+            )
+        )
+        is not None
+        and (state is None or item.state == state)
+    ]
+    items.sort(
+        key=lambda r: (r.student_name.casefold(), r.student_number, str(r.inc_id))
+    )
+    total = len(items)
+    return Page[IncompleteGradeRead](
+        items=items[offset : offset + limit],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+async def list_faculty_incompletes(
+    db: AsyncSession,
+    *,
+    faculty_id: uuid.UUID,
+    state: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Page[IncompleteGradeRead]:
+    """List finalized INC rows across all sections assigned to ``faculty_id``."""
+    owned_sections = await sections.list_owned_sections(db, faculty_id=faculty_id)
+    if not owned_sections:
+        return Page[IncompleteGradeRead](items=[], total=0, limit=limit, offset=offset)
+    memberships = [
+        m
+        for m in await enrollment.list_sections_enrollments(
+            db, {s.id for s in owned_sections}
+        )
+        if _is_enrolled(m.status)
+    ]
+    grades = await repository.list_incomplete_grades_for_enrollments(
+        db, {m.enrollment_id for m in memberships}
+    )
+    if not grades:
+        return Page[IncompleteGradeRead](items=[], total=0, limit=limit, offset=offset)
+
+    now = datetime.now(UTC)
+    (
+        owners,
+        section_map,
+        course_map,
+        term_map,
+        student_map,
+        _program_map,
+        latest_completion_by_grade,
+    ) = await _load_inc_grade_context(db, grades)
+    items = [
+        item
+        for grade in grades
+        if (
+            item := _build_incomplete_grade_read(
+                grade,
+                owners=owners,
+                section_map=section_map,
+                course_map=course_map,
+                term_map=term_map,
+                student_map=student_map,
+                latest_completion_by_grade=latest_completion_by_grade,
+                now=now,
+            )
+        )
+        is not None
+        and (state is None or item.state == state)
+    ]
+    items.sort(
+        key=lambda r: (
+            r.course_code,
+            r.section_name,
+            r.student_name.casefold(),
+            str(r.inc_id),
+        )
+    )
+    total = len(items)
+    return Page[IncompleteGradeRead](
+        items=items[offset : offset + limit],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+async def file_incomplete_completion(
+    db: AsyncSession,
+    *,
+    faculty_id: uuid.UUID,
+    inc_id: uuid.UUID,
+    payload: CreateIncompleteCompletionRequest,
+    client_ip: str | None = None,
+) -> IncompleteCompletionRead:
+    """File a passing completion grade (1.00-3.00) and form for an Inc row."""
+    now = datetime.now(UTC)
+    try:
+        grade = await repository.get_student_grade_by_id(db, inc_id, lock=True)
+        if grade is None or grade.is_draft:
+            raise ResourceNotFoundError
+        owners = await enrollment.get_enrollment_owners(db, {grade.enrollment_item_id})
+        owner = owners.get(grade.enrollment_item_id)
+        if owner is None:
+            raise ResourceNotFoundError
+        await sections.get_owned_section(
+            db, faculty_id=faculty_id, section_id=owner.section_id
+        )
+        is_inc_row = (grade.final_grade or "").strip().upper() == "INC" or (
+            grade.completion_status
+            in {INC_STATE_PENDING, INC_STATE_COMPLETED, INC_STATE_EXPIRED}
+        )
+        if not is_inc_row:
+            raise ResourceNotFoundError
+
+        if _is_inc_window_closed(grade, now):
+            raise IncCompletionWindowClosedError
+        if grade.completion_status == INC_STATE_COMPLETED:
+            raise IncAlreadyCompletedError
+        if await repository.get_pending_completion_for_grade(db, grade.id) is not None:
+            raise IncCompletionPendingError
+
+        form_id = (payload.completion_form_file_id or "").strip()
+        if not form_id:
+            raise IncompleteValidationError(
+                "Completion form file ID is required.",
+                field="completionFormFileId",
+            )
+        if len(form_id) > 100:
+            raise IncompleteValidationError(
+                "Completion form file ID must be at most 100 characters.",
+                field="completionFormFileId",
+            )
+        try:
+            proposed_mark = _normalize_completion_mark(payload.proposed_mark)
+        except ValueError as exc:
+            raise IncompleteValidationError(str(exc), field="proposedMark") from exc
+
+        remarks = payload.remarks.strip() if payload.remarks is not None else None
+        completion = repository.add_incomplete_completion(
+            db,
+            grade_id=grade.id,
+            proposed_mark=proposed_mark,
+            completion_form_file_id=form_id,
+            remarks=remarks or None,
+            created_at=now,
+        )
+        try:
+            await db.flush()
+        except IntegrityError as exc:
+            raise IncCompletionPendingError from exc
+
+        audit.stage(
+            db,
+            action=INC_COMPLETION_FILED_ACTION,
+            actor_id=faculty_id,
+            target_type="incomplete_completion",
+            target_id=completion.id,
+            occurred_at=now,
+            prior_state={
+                "finalGrade": grade.final_grade,
+                "state": grade.completion_status,
+            },
+            new_state={
+                "proposedMark": proposed_mark,
+                "completionFormFileId": form_id,
+                "state": COMPLETION_STATE_PENDING_DEAN,
+            },
+            payload={
+                "incId": str(grade.id),
+                "enrollmentId": str(grade.enrollment_item_id),
+                "sectionId": str(owner.section_id),
+                "studentId": str(owner.student_id),
+                "actorId": str(faculty_id),
+                "role": "faculty",
+                "ip_address": client_ip,
+                "timestampUtc8": _utc8_iso(now),
+            },
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    (
+        owners_ctx,
+        section_map,
+        course_map,
+        term_map,
+        student_map,
+        program_map,
+        _latest,
+    ) = await _load_inc_grade_context(db, [grade])
+    result = _build_incomplete_completion_read(
+        completion,
+        grade=grade,
+        owners=owners_ctx,
+        section_map=section_map,
+        course_map=course_map,
+        term_map=term_map,
+        student_map=student_map,
+        program_map=program_map,
+    )
+    if result is None:  # pragma: no cover - hydrated from already-verified owners
+        raise GradeRecordUnavailableError
+    return result
+
+
+async def list_admin_incomplete_completions(
+    db: AsyncSession,
+    *,
+    position: str,
+    college_id: str | None,
+    state: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Page[IncompleteCompletionRead]:
+    """List college-scoped incomplete completion requests for a College Dean."""
+    if position != "dean":
+        raise ForbiddenError(
+            "Only a College Dean may review incomplete completion requests."
+        )
+    completions = await repository.list_incomplete_completions(db, state=state)
+    if not completions or not college_id:
+        return Page[IncompleteCompletionRead](
+            items=[], total=0, limit=limit, offset=offset
+        )
+
+    grades = await repository.list_grades_by_ids(db, {c.grade_id for c in completions})
+    grade_by_id = {g.id: g for g in grades}
+    (
+        owners,
+        section_map,
+        course_map,
+        term_map,
+        student_map,
+        program_map,
+        _latest,
+    ) = await _load_inc_grade_context(db, grades)
+
+    items = [
+        dto
+        for comp in completions
+        if (
+            dto := _build_incomplete_completion_read(
+                comp,
+                grade=grade_by_id.get(comp.grade_id),
+                owners=owners,
+                section_map=section_map,
+                course_map=course_map,
+                term_map=term_map,
+                student_map=student_map,
+                program_map=program_map,
+            )
+        )
+        is not None
+        and _colleges_match(dto.college, college_id)
+    ]
+    total = len(items)
+    return Page[IncompleteCompletionRead](
+        items=items[offset : offset + limit],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+async def decide_incomplete_completion(
+    db: AsyncSession,
+    *,
+    completion_id: uuid.UUID,
+    reviewer_id: uuid.UUID,
+    position: str,
+    college_id: str | None,
+    payload: IncompleteCompletionDecisionRequest,
+    client_ip: str | None = None,
+) -> IncompleteCompletionRead:
+    """Endorse or reject an Incomplete completion within the Dean's own college."""
+    if position != "dean":
+        raise ForbiddenError(
+            "Only a College Dean may endorse or reject incomplete completions."
+        )
+    now = datetime.now(UTC)
+    try:
+        completion = await repository.get_incomplete_completion(
+            db, completion_id, lock=True
+        )
+        if completion is None:
+            raise ResourceNotFoundError
+        grade = await repository.get_student_grade_by_id(
+            db, completion.grade_id, lock=True
+        )
+        if grade is None:
+            raise ResourceNotFoundError
+
+        (
+            owners,
+            section_map,
+            course_map,
+            term_map,
+            student_map,
+            program_map,
+            _latest,
+        ) = await _load_inc_grade_context(db, [grade])
+        dto = _build_incomplete_completion_read(
+            completion,
+            grade=grade,
+            owners=owners,
+            section_map=section_map,
+            course_map=course_map,
+            term_map=term_map,
+            student_map=student_map,
+            program_map=program_map,
+        )
+        if dto is None or not _colleges_match(dto.college, college_id):
+            raise ResourceNotFoundError
+
+        if payload.version is not None and completion.version != payload.version:
+            raise GradeVersionConflictError(current_version=completion.version)
+        if completion.state == COMPLETION_STATE_EXPIRED or _is_inc_window_closed(
+            grade, now
+        ):
+            raise IncCompletionWindowClosedError
+        if completion.state != COMPLETION_STATE_PENDING_DEAN:
+            raise IncCompletionAlreadyDecidedError
+
+        normalized_remarks = (
+            payload.remarks.strip() if payload.remarks is not None else None
+        )
+        if payload.decision == "REJECT" and not normalized_remarks:
+            raise IncompleteDecisionRemarksRequiredError
+
+        owner = owners[grade.enrollment_item_id]
+        section = section_map[owner.section_id]
+        course = course_map[section.course_id]
+
+        if payload.decision == "ENDORSE":
+            prior_state = {
+                "completionState": completion.state,
+                "finalGrade": grade.final_grade,
+                "completionStatus": grade.completion_status,
+                "incExpiresAt": (
+                    utc(grade.inc_expires_at).isoformat()
+                    if grade.inc_expires_at is not None
+                    else None
+                ),
+            }
+            grade.final_grade = completion.proposed_mark
+            grade.inc_expires_at = None
+            grade.completion_status = INC_STATE_COMPLETED
+            grade.updated_at = now
+            completion.state = COMPLETION_STATE_ENDORSED
+            completion.version += 1
+            completion.reviewed_by = reviewer_id
+            completion.review_remarks = normalized_remarks or None
+            completion.resolved_at = now
+            await db.flush()
+            await _recompute_student_term_evaluation(
+                db,
+                student_id=owner.student_id,
+                term_id=owner.academic_term_id,
+                evaluated_at=now,
+            )
+            audit.stage(
+                db,
+                action=INC_COMPLETION_ENDORSED_ACTION,
+                actor_id=reviewer_id,
+                target_type="incomplete_completion",
+                target_id=completion.id,
+                occurred_at=now,
+                prior_state=prior_state,
+                new_state={
+                    "completionState": completion.state,
+                    "finalGrade": grade.final_grade,
+                    "completionStatus": grade.completion_status,
+                    "incExpiresAt": None,
+                },
+                payload={
+                    "incId": str(grade.id),
+                    "studentId": str(owner.student_id),
+                    "sectionId": str(section.id),
+                    "college": dto.college,
+                    "actorId": str(reviewer_id),
+                    "role": position,
+                    "ip_address": client_ip,
+                    "timestampUtc8": _utc8_iso(now),
+                },
+            )
+            recipients = [owner.student_id]
+            if section.faculty_id and section.faculty_id != owner.student_id:
+                recipients.append(section.faculty_id)
+            for recipient_id in recipients:
+                publish_transactional(
+                    db,
+                    Event(
+                        name=INC_COMPLETION_DECIDED_EVENT,
+                        payload={
+                            "user_id": str(recipient_id),
+                            "completion_id": str(completion.id),
+                            "inc_id": str(grade.id),
+                            "state": COMPLETION_STATE_ENDORSED,
+                            "course_code": course.course_code,
+                            "proposed_mark": completion.proposed_mark,
+                            "remarks": normalized_remarks,
+                        },
+                    ),
+                )
+        else:
+            prior_state = {"completionState": completion.state}
+            completion.state = COMPLETION_STATE_REJECTED
+            completion.version += 1
+            completion.reviewed_by = reviewer_id
+            completion.review_remarks = normalized_remarks
+            completion.resolved_at = now
+            await db.flush()
+            audit.stage(
+                db,
+                action=INC_COMPLETION_REJECTED_ACTION,
+                actor_id=reviewer_id,
+                target_type="incomplete_completion",
+                target_id=completion.id,
+                occurred_at=now,
+                prior_state=prior_state,
+                new_state={
+                    "completionState": completion.state,
+                    "reviewRemarks": normalized_remarks,
+                },
+                payload={
+                    "incId": str(grade.id),
+                    "studentId": str(owner.student_id),
+                    "sectionId": str(section.id),
+                    "college": dto.college,
+                    "actorId": str(reviewer_id),
+                    "role": position,
+                    "ip_address": client_ip,
+                    "timestampUtc8": _utc8_iso(now),
+                },
+            )
+            if section.faculty_id:
+                publish_transactional(
+                    db,
+                    Event(
+                        name=INC_COMPLETION_DECIDED_EVENT,
+                        payload={
+                            "user_id": str(section.faculty_id),
+                            "completion_id": str(completion.id),
+                            "inc_id": str(grade.id),
+                            "state": COMPLETION_STATE_REJECTED,
+                            "course_code": course.course_code,
+                            "proposed_mark": completion.proposed_mark,
+                            "remarks": normalized_remarks,
+                        },
+                    ),
+                )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    updated = _build_incomplete_completion_read(
+        completion,
+        grade=grade,
+        owners=owners,
+        section_map=section_map,
+        course_map=course_map,
+        term_map=term_map,
+        student_map=student_map,
+        program_map=program_map,
+    )
+    if updated is None:  # pragma: no cover - hydrated above
+        raise GradeRecordUnavailableError
+    return updated
+
+
+async def expire_overdue_incompletes(
+    db: AsyncSession,
+    *,
+    run_key: str | None = None,
+    as_of: datetime | None = None,
+) -> IncExpiryRunResult:
+    """Convert overdue finalized INC marks to 5.00 once per run key."""
+    now = utc(as_of) if as_of is not None else datetime.now(UTC)
+    resolved_run_key = (
+        run_key
+        or f"inc-expiry-{now.astimezone(ZoneInfo('Asia/Manila')).date().isoformat()}"
+    )
+    existing = await repository.get_inc_expiry_run(db, resolved_run_key)
+    if existing is not None and existing.status == "COMPLETED":
+        return IncExpiryRunResult(
+            run_key=resolved_run_key,
+            processed=0,
+            converted=0,
+            skipped_duplicate_run=True,
+        )
+
+    run = existing or repository.stage_inc_expiry_run(
+        db, resolved_run_key, started_at=now
+    )
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        run = await repository.get_inc_expiry_run(db, resolved_run_key)
+        if run is None:
+            raise
+        if run.status == "COMPLETED":
+            return IncExpiryRunResult(
+                run_key=resolved_run_key,
+                processed=0,
+                converted=0,
+                skipped_duplicate_run=True,
+            )
+
+    converted = 0
+    try:
+        overdue = await repository.list_overdue_inc_grades_for_update(db, cutoff=now)
+        if overdue:
+            owners = await enrollment.get_enrollment_owners(
+                db, {g.enrollment_item_id for g in overdue}
+            )
+            section_map = {
+                s.id: s
+                for s in await sections.record_sections(
+                    db, {o.section_id for o in owners.values()}
+                )
+            }
+            course_map = {
+                c.id: c
+                for c in await curriculum.record_courses(
+                    db, {s.course_id for s in section_map.values()}
+                )
+            }
+            affected_terms: set[tuple[uuid.UUID, uuid.UUID]] = set()
+
+            for grade in overdue:
+                prior_deadline = (
+                    utc(grade.inc_expires_at).isoformat()
+                    if grade.inc_expires_at is not None
+                    else None
+                )
+                prior_state = {
+                    "finalGrade": grade.final_grade,
+                    "completionStatus": grade.completion_status,
+                    "incExpiresAt": prior_deadline,
+                }
+                grade.final_grade = "5.00"
+                grade.completion_status = INC_STATE_EXPIRED
+                grade.updated_at = now
+                converted += 1
+
+                for pending in await repository.list_pending_completions_for_grade(
+                    db, grade.id, lock=True
+                ):
+                    pending.state = COMPLETION_STATE_EXPIRED
+                    pending.resolved_at = now
+
+                owner = owners.get(grade.enrollment_item_id)
+                if owner is not None:
+                    affected_terms.add((owner.student_id, owner.academic_term_id))
+                    section = section_map.get(owner.section_id)
+                    course = (
+                        course_map.get(section.course_id)
+                        if section is not None
+                        else None
+                    )
+                    publish_transactional(
+                        db,
+                        Event(
+                            name=INC_EXPIRED_EVENT,
+                            payload={
+                                "user_id": str(owner.student_id),
+                                "inc_id": str(grade.id),
+                                "enrollment_id": str(grade.enrollment_item_id),
+                                "course_code": course.course_code if course else None,
+                            },
+                        ),
+                    )
+
+                audit.stage(
+                    db,
+                    action=INC_EXPIRED_ACTION,
+                    actor_id=None,
+                    target_type="student_grade",
+                    target_id=grade.id,
+                    occurred_at=now,
+                    prior_state=prior_state,
+                    new_state={
+                        "finalGrade": "5.00",
+                        "completionStatus": INC_STATE_EXPIRED,
+                    },
+                    payload={
+                        "actor": "system",
+                        "runKey": resolved_run_key,
+                        "enrollmentId": str(grade.enrollment_item_id),
+                        "studentId": str(owner.student_id) if owner else None,
+                        "academicTermId": (
+                            str(owner.academic_term_id) if owner else None
+                        ),
+                        "timestampUtc8": _utc8_iso(now),
+                    },
+                )
+
+            await db.flush()
+            for student_id, term_id in sorted(
+                affected_terms, key=lambda pair: (str(pair[0]), str(pair[1]))
+            ):
+                await _recompute_student_term_evaluation(
+                    db,
+                    student_id=student_id,
+                    term_id=term_id,
+                    evaluated_at=now,
+                )
+
+        run_row = await repository.get_inc_expiry_run(db, resolved_run_key)
+        if run_row is None:  # pragma: no cover - created above
+            raise RuntimeError("INC expiry run marker is missing")
+        run_row.status = "COMPLETED"
+        run_row.processed_count = len(overdue)
+        run_row.converted_count = converted
+        run_row.completed_at = now
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    return IncExpiryRunResult(
+        run_key=resolved_run_key,
+        processed=len(overdue),
+        converted=converted,
+        skipped_duplicate_run=False,
     )

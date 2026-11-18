@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import uuid
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime, time
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -24,7 +24,7 @@ from cbpupsis_shared.domains.curriculum import client as curriculum
 from cbpupsis_shared.domains.enrollment import client as enrollment
 from cbpupsis_shared.domains.grading import repository, service
 from cbpupsis_shared.domains.grading.attachments import inspect_grading_sheet
-from cbpupsis_shared.domains.grading.constants import INC_EXPIRY_DAYS
+from cbpupsis_shared.domains.grading.constants import INC_STATE_PENDING
 from cbpupsis_shared.domains.grading.correction_schemas import (
     CorrectionDecision,
     CorrectionPage,
@@ -407,11 +407,13 @@ async def decide_correction(
                 grade.final_grade = row.proposed_mark
                 grade.updated_at = now
                 grade.inc_expires_at = (
-                    service.utc(grade.submitted_at) + timedelta(days=INC_EXPIRY_DAYS)
+                    service._inc_deadline_for(grade.submitted_at)
                     if row.proposed_mark == "INC"
                     else None
                 )
-                grade.completion_status = None
+                grade.completion_status = (
+                    INC_STATE_PENDING if row.proposed_mark == "INC" else None
+                )
                 await db.flush()
                 await _refresh_gpas(db, student_id, now)
                 row.resolved_at = now

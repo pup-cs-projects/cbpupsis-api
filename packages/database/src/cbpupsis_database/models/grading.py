@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
+import sqlalchemy as sa
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -129,7 +130,35 @@ class IncompleteCompletion(UUIDMixin, Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    __table_args__ = (Index("idx_fk_incomplete_completions_grade_id", "grade_id"),)
+    __table_args__ = (
+        Index("idx_fk_incomplete_completions_grade_id", "grade_id"),
+        Index(
+            "uq_incomplete_completions_pending_grade",
+            "grade_id",
+            unique=True,
+            postgresql_where=sa.text("state = 'PENDING_DEAN'"),
+            sqlite_where=sa.text("state = 'PENDING_DEAN'"),
+        ),
+    )
+
+
+class IncExpiryRun(UUIDMixin, Base):
+    """Idempotent daily INC expiry sweep marker identified by its run key."""
+
+    __tablename__ = "inc_expiry_runs"
+
+    run_key: Mapped[str] = mapped_column(String(255), unique=True)
+    status: Mapped[str] = mapped_column(
+        String(20), default="RUNNING", server_default="RUNNING"
+    )
+    processed_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    converted_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
 
 
 class GradeCorrection(UUIDMixin, Base):
