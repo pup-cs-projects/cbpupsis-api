@@ -35,16 +35,19 @@ over the shared database, and reusing that image avoids a fourth image per stage
 ## Local development
 
 ```bash
-make up                                  # everything, in the background
+make migrate                             # apply migrations, only when you mean to
+make up                                  # everything else, in the background
 docker compose -f docker/docker-compose.yml logs -f api-student
 docker compose -f docker/docker-compose.yml exec api-admin sh
 make down                                # stop (add wipe=1 to drop the database)
 ```
 
-Compose starts, in order: `db`; then `migrate`, which runs `alembic upgrade head`
-once and exits; then `api-student`, `api-faculty`, `api-admin`, and `worker`,
-which wait for `migrate` to finish successfully. Three app containers never race
-each other to migrate the same database. Source is bind-mounted: an edit on the
+`up` starts `db`, then `api-student`, `api-faculty`, `api-admin`, and `worker`.
+It never migrates: the one-shot `migrate` service sits behind the `migrate`
+profile, so only `make migrate` (`compose run --rm migrate`) runs it. The dev env
+files point at a shared Neon database, and a migration applied from one person's
+branch breaks every other checkout. An app whose database is not at the code's
+head refuses to start with "Expected sole Alembic head"; run `make migrate` then. Source is bind-mounted: an edit on the
 host reloads the apps in a few seconds.
 
 ### The web clients
