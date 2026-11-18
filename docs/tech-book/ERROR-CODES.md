@@ -85,6 +85,28 @@ subject limit. Future curriculum placements are not enrollment choices.
 | 404 | `RESOURCE_NOT_FOUND` | Student attempting to read another student's request, or admin reviewing a request outside their department/college scope (anti-probing). |
 | 403 | — | Registrar attempting to mutate/decide an add/drop request lacks the required permission (`require_permission(APPROVE_ADD_DROP)`). |
 
+## Student account and payments (US-FIN-001)
+
+| HTTP | Code | Meaning |
+| :-- | :-- | :-- |
+| 401 | `AUTH_SESSION_EXPIRED` | The student session expired. |
+| 403 | - | Student lacks `ReadAssessment` or `ReadPayment`. |
+| 404 | `RESOURCE_NOT_FOUND` | Non-student session or no accessible current-term account. |
+| 503 | `SERVICE_UNAVAILABLE` | Financial data cannot be verified or the computed account exceeds supported storage precision. No partial financial mutation is committed. |
+
+See [student account contracts and acceptance gates](STUDENT-ACCOUNT.md).
+
+## Fee structure configuration (US-FIN-003)
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 422 | `VALIDATION_ERROR` | A fee or rate value is negative. `field` names the violating field. |
+| 422 | `INSTALLMENT_SUM_INVALID` | Installment percentage allocations do not sum to exactly 100. |
+| 422 | `INSTALLMENT_DATE_ORDER` | An installment due date is earlier than the one before it. `dates` lists both out-of-order dates. |
+| 409 | `FEE_STRUCTURE_IN_USE` | The fee structure cannot be modified because student assessments have already been generated for this term. |
+| 404 | `RESOURCE_NOT_FOUND` | Unknown academic term ID. |
+| 403 | — | Session lacks `ManageFeeStructure` permission (Registrar, Dean, or Chairperson). |
+
 ## The envelope
 
 Every known application error has the same body:
@@ -179,13 +201,13 @@ Every table has the same columns. A blank **Code** means the error carries no
 | 401 | `AUTH_SESSION_EXPIRED` | Your session has ended. Sign in again. | The server-side session is missing or idle past `SESSION_IDLE_TIMEOUT_MINUTES` (15), for every role; or an account-wide revocation changed the session generation. The session and its refresh tokens are deleted. | `auth/service/sessions.py`, `auth/security.py` |
 | 401 | | User is no longer active | The account was deactivated after the token was issued. | `auth/dependencies.py`, `auth/service/sessions.py`, `auth/service/tokens.py` |
 | 401 | | Refresh token already used | A rotated token was replayed. Revokes the user's whole token family. | `auth/service/tokens.py` |
-| 401 | `AUTH_TEMPORARY_PASSWORD_EXPIRED` | Your temporary password has expired. Ask the system administrator to issue a new one. | A sign-in (student, faculty, Admin, Superadmin, `/auth/login`) with a correct temporary password past `TEMPORARY_PASSWORD_TTL_DAYS`, or a password change from one. **Only reachable after the credential step passes**, so a wrong password still gets that role's identical 401. Recorded on the sign-in ledger; does not count toward the lockout. A Superadmin must reissue (`POST /users/{id}/reissue-temporary-password`). | `auth/service/role_sign_in.py`, `auth/service/passwords.py` |
+| 401 | `AUTH_TEMPORARY_PASSWORD_EXPIRED` | Your temporary password has expired. Ask the system administrator to issue a new one. | A sign-in (student, faculty, Admin, Superadmin, `/auth/login`) with a correct temporary password past `TEMPORARY_PASSWORD_TTL_DAYS`, or a password change from one. **Only reachable after the credential step passes**, so a wrong password still gets that role's identical 401. Recorded on the sign-in ledger; does not count toward the lockout. A Superadmin must reissue (`POST /admin/users/{id}/reissue-temporary-password`). | `auth/service/role_sign_in.py`, `auth/service/passwords.py` |
 | 401 | `AUTH_MFA_INVALID` | The security code or hardware-key response is invalid | A wrong TOTP code, an unknown or used recovery code, or an invalid hardware-key response. Counts toward the lockout. | `auth/service/mfa.py`, `admin_auth/service.py` |
 | 401 | `AUTH_MFA_CODE_REUSED` | That security code has already been used; enter the current code | A TOTP time-step at or below the last accepted one. Counts toward the lockout. | `auth/service/mfa.py` |
 | 401 | `AUTH_MFA_REQUIRED` | A second factor is required | An Admin or faculty challenge token presented where a completed session is required. | `admin_auth/dependencies.py`, `faculty_auth/dependencies.py` |
 | 403 | `AUTH_MFA_ENROLLMENT_REQUIRED` | Set up multi-factor authentication to continue | Enrollment is not available or not finished: enrolling when TOTP is already enrolled, confirming without a pending seed, verifying before enrolling, or an Admin or faculty enrollment challenge presented as a session. | `auth/service/mfa.py`, `admin_auth/*`, `faculty_auth/*` |
 | 403 | `AUTH_INSUFFICIENT_ROLE` | This action is not available to your role | The session is not a current MFA-completed session of the role the endpoint needs (student, faculty, Admin), or the faculty profile is inactive. | `auth/exceptions.py` (raised by each role's `dependencies.py`) |
-| 403 | `SUPERADMIN_ROLE_REQUIRED` | A live MFA-completed Superadmin session is required | Live, verified, non-conflicting Superadmin MFA session required. Also every account-management route (`POST /users`, `POST /users/import`, `POST /users/{id}/reissue-temporary-password`) called with another role's session. | `auth/service/sessions.py`, `iam/dependencies.py` |
+| 403 | `SUPERADMIN_ROLE_REQUIRED` | A live MFA-completed Superadmin session is required | Live, verified, non-conflicting Superadmin MFA session required. Also every account-management route (`POST /admin/users`, `POST /admin/users/import`, `POST /admin/users/{id}/reissue-temporary-password`) called with another role's session. | `auth/service/sessions.py`, `iam/dependencies.py` |
 | 403 | `PASSWORD_CHANGE_REQUIRED` | Change your temporary password to continue. | **Every authenticated route, for every role,** while the account holds a Superadmin-issued temporary password, except `POST /auth/change-password` (which clears it) and the logout routes. Refresh still rotates; the tokens it mints get this 403 too. | `auth/service/sessions.py` |
 | 403 | `email_not_verified` | Verify your email address to continue. Check your inbox, or request a new verification link. | Email sign-in or refresh with a correct password, but the address is unverified. **Only reachable after the password check passes**; see below. | `auth/service/sessions.py` |
 | 404 | `RESOURCE_NOT_FOUND` | Resource not found. | The record is absent or outside the caller's reach: an Admin position's scope, or a course section not assigned to the faculty member. Identical for both cases. | `auth/exceptions.py` |
@@ -236,24 +258,24 @@ and counts toward the lockout without issuing a session.
 
 | Status | Code | Message | When | Raised in |
 |---|---|---|---|---|
-| 404 | | User {id} not found | No live user with that id, **or** someone else's profile on `GET /users/{id}` without the Superadmin role and `ReadAllUser`. Identical for both cases, so the response never confirms the id. | `users/exceptions.py` |
+| 404 | | User {id} not found | No live user with that id, **or** someone else's profile on `GET /admin/users/{id}` without the Superadmin role and `ReadAllUser`. Identical for both cases, so the response never confirms the id. | `users/exceptions.py` |
 | 422 | | Missing required profile fields: [...] | Onboarding completed with required fields unset. | `users/exceptions.py` |
 | 401 | | Password is incorrect | Password confirmation failed on account deletion. | `users/exceptions.py` |
 | 422 | | A deleted account cannot be reactivated | Deletion scrubs identity, so there is nothing to restore. | `users/exceptions.py` |
-| 422 | | You cannot deactivate your own account through the admin endpoint... | An admin aimed `POST /users/{id}/deactivate` at themselves. Refused because it has no undo through the API: reactivating needs `ManageUser`, which they would just have lost. Self-deactivation is `POST /users/me/deactivate`. | `users/exceptions.py` |
-| 403 | | Missing required permission(s): ['ReadAllUser'] | `GET /users` without `ReadAllUser`. A listing is inherently a cross-ownership read, so unlike `GET /users/{id}` there is no self-service branch. | `users/exceptions.py` |
+| 422 | | You cannot deactivate your own account through the admin endpoint... | An admin aimed `POST /admin/users/{id}/deactivate` at themselves. Refused because it has no undo through the API: reactivating needs `ManageUser`, which they would just have lost. Self-deactivation is `POST /users/me/deactivate`. | `users/exceptions.py` |
+| 403 | | Missing required permission(s): ['ReadAllUser'] | `GET /admin/users` without `ReadAllUser`. A listing is inherently a cross-ownership read, so unlike `GET /admin/users/{id}` there is no self-service branch. | `users/exceptions.py` |
 | 403 | | Missing required permission(s): ['ManageUser'] | Admin deactivate or reactivate without `ManageUser`. `ReadAllUser` alone does **not** confer it. | `users/exceptions.py` |
-| 403 | `OVERRIDE_REQUIRED` | Admin suspension requires a justified override | `POST /users/{id}/deactivate` aimed at an Admin; that needs the Superadmin override instead. | `users/service.py` |
+| 403 | `OVERRIDE_REQUIRED` | Admin suspension requires a justified override | `POST /admin/users/{id}/deactivate` aimed at an Admin; that needs the Superadmin override instead. | `users/service.py` |
 | 403 | `OVERRIDE_TARGET_INVALID` | Override target must be an Admin | The Admin suspension override was aimed at a non-Admin. | `users/service.py` |
 | 409 | `AUTH_ROLE_CONFLICT` | Admin and Superadmin memberships are mutually exclusive | A user was added to both groups. | `iam/service.py` |
-| 409 | `USER_ALREADY_EXISTS` | Email already registered | `POST /users` with an email some account already holds (case-insensitive, deleted accounts included). Extra field `field: "email"`. | `users/exceptions.py` |
-| 409 | `USER_ALREADY_EXISTS` | Institutional ID already registered | `POST /users` with a student number or employee id its profile table already holds. Extra field `field: "institutional_id"`. | `users/exceptions.py` |
-| 409 | `USER_ALREADY_EXISTS` | An account with these details already exists | A concurrent create won the unique constraint after the checks passed (`POST /users` or `POST /users/import`). Extra field `field: null`. | `users/exceptions.py` |
-| 422 | `ACCOUNT_PROGRAM_UNKNOWN` | Unknown or inactive program code | `POST /users` for a student whose `program` names no active program. | `users/exceptions.py` |
-| 422 | | (validation envelope) required for this role: ... | `POST /users` without a field the role requires (student: `institutional_id`, `birthdate`, `program`, `year_level`; faculty: `institutional_id`, `department`; chairperson: `department`; dean: `college`), or with an invalid value (institutional id not `YYYY-NNNNN-XX-N`, birthdate not in the past, `year_level` outside 1 to 6, unknown `role`). The standard request-validation 422. | `users/schemas.py` |
-| 404 | | User {id} not found | `POST /users/{id}/reissue-temporary-password` for a missing, deleted, or deactivated account. | `users/service.py` |
+| 409 | `USER_ALREADY_EXISTS` | Email already registered | `POST /admin/users` with an email some account already holds (case-insensitive, deleted accounts included). Extra field `field: "email"`. | `users/exceptions.py` |
+| 409 | `USER_ALREADY_EXISTS` | Institutional ID already registered | `POST /admin/users` with a student number or employee id its profile table already holds. Extra field `field: "institutional_id"`. | `users/exceptions.py` |
+| 409 | `USER_ALREADY_EXISTS` | An account with these details already exists | A concurrent create won the unique constraint after the checks passed (`POST /admin/users` or `POST /admin/users/import`). Extra field `field: null`. | `users/exceptions.py` |
+| 422 | `ACCOUNT_PROGRAM_UNKNOWN` | Unknown or inactive program code | `POST /admin/users` for a student whose `program` names no active program. | `users/exceptions.py` |
+| 422 | | (validation envelope) required for this role: ... | `POST /admin/users` without a field the role requires (student: `institutional_id`, `birthdate`, `program`, `year_level`; faculty: `institutional_id`, `department`; chairperson: `department`; dean: `college`), or with an invalid value (institutional id not `YYYY-NNNNN-XX-N`, birthdate not in the past, `year_level` outside 1 to 6, unknown `role`). The standard request-validation 422. | `users/schemas.py` |
+| 404 | | User {id} not found | `POST /admin/users/{id}/reissue-temporary-password` for a missing, deleted, or deactivated account. | `users/service.py` |
 
-### user_import (`POST /users/import`, admin app)
+### user_import (`POST /admin/users/import`, admin app)
 
 | Status | Code | Message | When | Raised in |
 |---|---|---|---|---|
@@ -264,7 +286,7 @@ and counts toward the lockout without issuing a session.
 
 | Status | Code | Message | When | Raised in |
 |---|---|---|---|---|
-| 403 | | Missing required permission(s): [...] | The caller lacks a permission the endpoint requires. Also raised by `users` for `GET /users` and admin deactivate or reactivate, through the same class so the two cannot diverge. Reading another profile by id answers 404 instead. | `iam/exceptions.py` |
+| 403 | | Missing required permission(s): [...] | The caller lacks a permission the endpoint requires. Also raised by `users` for `GET /admin/users` and admin deactivate or reactivate, through the same class so the two cannot diverge. Reading another profile by id answers 404 instead. | `iam/exceptions.py` |
 | 403 | | Requires at least one of: [...] | The caller holds none of a set where any one would suffice. | `iam/exceptions.py` |
 | 404 | | Unknown permissions: [...] | A policy referenced an action that does not exist. | `iam/exceptions.py` |
 | 404 | | Permission {id} not found | `GET /iam/permissions/{id}` for an id that does not exist. | `iam/exceptions.py` |
@@ -349,12 +371,12 @@ them must move to the rows above.
 | Faculty 503 `SERVICE_UNAVAILABLE` | The generic 500 with a `request_id` |
 | Student 401 "Your session has expired due to inactivity." | 401 `AUTH_SESSION_EXPIRED` "Your session has ended. Sign in again." |
 | Admin 404 "Resource not found" (no period) | 404 `RESOURCE_NOT_FOUND` "Resource not found." |
-| 403 `Missing required permission(s): ['ReadAllUser']` (or 403 `SUPERADMIN_ROLE_REQUIRED`) on `GET /users/{id}` for another user's profile | 404 `User {id} not found` |
+| 403 `Missing required permission(s): ['ReadAllUser']` (or 403 `SUPERADMIN_ROLE_REQUIRED`) on `GET /admin/users/{id}` for another user's profile | 404 `User {id} not found` |
 | 403 `You do not have access to this item` on `PATCH` or `DELETE /items/{id}` for someone else's item, without `ReadAllItem` | 404 `Item {id} not found` |
 | 422 `INVALID_CLIENT_ADDRESS` on every sign-in route (student, faculty, admin, superadmin, `/auth/login`) | No error: the sign-in proceeds and the session and sign-in ledger record a NULL address |
-| `POST /auth/register` (201, 409 "Email already registered", 429 `rate_limited`) | 404: there is no public registration. A Superadmin creates accounts with `POST /users` or `POST /users/import` |
-| 409 "Email already registered" (no code) on `POST /users` | 409 `USER_ALREADY_EXISTS` with `field` |
-| `POST /users` body `{email, password, full_name}` | The account fields (`first_name`, `surname`, `email`, `role`, and the role's fields); the system generates the password |
+| `POST /auth/register` (201, 409 "Email already registered", 429 `rate_limited`) | 404: there is no public registration. A Superadmin creates accounts with `POST /admin/users` or `POST /admin/users/import` |
+| 409 "Email already registered" (no code) on `POST /admin/users` | 409 `USER_ALREADY_EXISTS` with `field` |
+| `POST /admin/users` body `{email, password, full_name}` | The account fields (`first_name`, `surname`, `email`, `role`, and the role's fields); the system generates the password |
 
 ## Optional Google Calendar integration
 

@@ -1126,6 +1126,85 @@
         }
       }
     },
+    "/api/v1/student/account": {
+      "get": {
+        "tags": [
+          "student-account"
+        ],
+        "summary": "Read My Student Account",
+        "description": "Read the signed-in student's current-term shared assessment, per-line FHE coverage, forfeiture decision, payment status, and holds. Requires ReadAssessment. Money is returned as decimal strings. netPayable is the remaining balance after subsidy and recorded payments, including a non-covered PHP 100 fine once per term account after the due date if principal remains unpaid, floored at zero. Non-student sessions receive 404 RESOURCE_NOT_FOUND. Responses are private and must not be cached.",
+        "operationId": "read_account_api_v1_student_account_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED: the student session has expired."
+          },
+          "403": {
+            "description": "The student lacks the operation's permission."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: non-student session or no owned record."
+          },
+          "503": {
+            "description": "SERVICE_UNAVAILABLE: financial data cannot be verified or the computed account exceeds supported storage precision."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/student/payments": {
+      "get": {
+        "tags": [
+          "student-account"
+        ],
+        "summary": "Read My Payment History",
+        "description": "Read only the signed-in student's payments across terms, newest first by payment date (creation date for unpaid transactions), then creation date and identifier for stable ties. Requires ReadPayment. Each item contains date, decimal-string amount, gateway reference, and status. An empty history is []. Non-student sessions receive 404 RESOURCE_NOT_FOUND. Responses are private and must not be cached.",
+        "operationId": "read_payments_api_v1_student_payments_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PaymentRead"
+                  },
+                  "type": "array",
+                  "title": "Response Read Payments Api V1 Student Payments Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED: the student session has expired."
+          },
+          "403": {
+            "description": "The student lacks the operation's permission."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND: non-student session or no owned record."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/student/dashboard": {
       "get": {
         "tags": [
@@ -3665,14 +3744,14 @@
         ]
       }
     },
-    "/api/v1/sections": {
+    "/api/v1/faculty/sections": {
       "get": {
         "tags": [
           "sections"
         ],
         "summary": "List Sections",
         "description": "List the sections assigned to you.",
-        "operationId": "list_sections_api_v1_sections_get",
+        "operationId": "list_sections_api_v1_faculty_sections_get",
         "security": [
           {
             "HTTPBearer": []
@@ -3727,14 +3806,14 @@
         }
       }
     },
-    "/api/v1/sections/{section_id}/roster": {
+    "/api/v1/faculty/sections/{section_id}/roster": {
       "get": {
         "tags": [
           "sections"
         ],
         "summary": "Section Roster",
         "description": "Return one of your sections with its roster; 404 for anyone else's.",
-        "operationId": "section_roster_api_v1_sections__section_id__roster_get",
+        "operationId": "section_roster_api_v1_faculty_sections__section_id__roster_get",
         "security": [
           {
             "HTTPBearer": []
@@ -4541,6 +4620,112 @@
           },
           "422": {
             "description": "DECISION_REMARKS_REQUIRED for a blank rejection."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/fee-structures/{term_id}": {
+      "get": {
+        "tags": [
+          "admin-fee-structures"
+        ],
+        "summary": "Get Fee Structure",
+        "description": "Read fee structure configuration for the specified academic term.",
+        "operationId": "get_admin_fee_structure",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "term_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Term Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeeStructureRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin-fee-structures"
+        ],
+        "summary": "Save Fee Structure",
+        "description": "Save and validate fee structure configuration for the specified term.",
+        "operationId": "save_admin_fee_structure",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "term_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Term Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeeStructureSaveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeeStructureRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         }
       }
@@ -5441,14 +5626,14 @@
         }
       }
     },
-    "/api/v1/users": {
+    "/api/v1/admin/users": {
       "post": {
         "tags": [
           "users"
         ],
         "summary": "Create User",
         "description": "Create one account. Superadmin only.\n\nThe account is verified on creation and is mailed a temporary password,\nwhich it must replace at first sign-in. 409 ``USER_ALREADY_EXISTS`` for a\ntaken email or institutional id; 422 for fields the role requires, or an\nunknown program.",
-        "operationId": "create_user_api_v1_users_post",
+        "operationId": "create_user_api_v1_admin_users_post",
         "security": [
           {
             "HTTPBearer": []
@@ -5493,7 +5678,7 @@
         ],
         "summary": "List Users",
         "description": "List user accounts, newest first. Requires ``ReadAllUser``.\n\nBoth filters are tri-state: omitting one returns accounts in either state,\nwhich is what makes \"everyone\" and \"only the unverified\" the same endpoint.",
-        "operationId": "list_users_api_v1_users_get",
+        "operationId": "list_users_api_v1_admin_users_get",
         "security": [
           {
             "HTTPBearer": []
@@ -5584,14 +5769,14 @@
         }
       }
     },
-    "/api/v1/users/{user_id}/reissue-temporary-password": {
+    "/api/v1/admin/users/{user_id}/reissue-temporary-password": {
       "post": {
         "tags": [
           "users"
         ],
         "summary": "Reissue Temporary Password",
         "description": "Mail a new temporary password and end every session. Superadmin only.\n\nThe way out of an expired or lost temporary password. 404 for a missing or\ninactive account.",
-        "operationId": "reissue_temporary_password_api_v1_users__user_id__reissue_temporary_password_post",
+        "operationId": "reissue_temporary_password_api_v1_admin_users__user_id__reissue_temporary_password_post",
         "security": [
           {
             "HTTPBearer": []
@@ -5626,14 +5811,14 @@
         }
       }
     },
-    "/api/v1/users/{user_id}/deactivate": {
+    "/api/v1/admin/users/{user_id}/deactivate": {
       "post": {
         "tags": [
           "users"
         ],
         "summary": "Deactivate User",
         "description": "Suspend another user's account. Requires ``ManageUser``.\n\nReversible, and every session is revoked immediately. Deliberately not a\nDELETE: account deletion stays self-service and password-confirmed, because\nan administrator cannot supply the password that authorizes it.\n\n422 if the caller aims it at themselves \u2014 see the service for why.",
-        "operationId": "deactivate_user_api_v1_users__user_id__deactivate_post",
+        "operationId": "deactivate_user_api_v1_admin_users__user_id__deactivate_post",
         "security": [
           {
             "HTTPBearer": []
@@ -5675,14 +5860,14 @@
         }
       }
     },
-    "/api/v1/users/{user_id}/reactivate": {
+    "/api/v1/admin/users/{user_id}/reactivate": {
       "post": {
         "tags": [
           "users"
         ],
         "summary": "Reactivate User",
         "description": "Restore a suspended account. Requires ``ManageUser``.\n\n422 on a deleted account: deletion scrubs the identity, so there is nothing\nleft to restore.",
-        "operationId": "reactivate_user_api_v1_users__user_id__reactivate_post",
+        "operationId": "reactivate_user_api_v1_admin_users__user_id__reactivate_post",
         "security": [
           {
             "HTTPBearer": []
@@ -5724,14 +5909,14 @@
         }
       }
     },
-    "/api/v1/users/{user_id}": {
+    "/api/v1/admin/users/{user_id}": {
       "get": {
         "tags": [
           "users"
         ],
         "summary": "Read User",
         "description": "Return another user's profile.\n\nAllowed when the caller holds ``ReadAllUser`` or is asking about themselves.\nThis object-level check cannot be expressed by ``require_permission`` alone,\nwhich answers only \"may they read users in general?\" \u2014 see\n``cbpupsis_api_student.domains.items.service`` for the same pattern on owned\nresources.",
-        "operationId": "read_user_api_v1_users__user_id__get",
+        "operationId": "read_user_api_v1_admin_users__user_id__get",
         "security": [
           {
             "HTTPBearer": []
@@ -6217,19 +6402,19 @@
         }
       }
     },
-    "/api/v1/users/import": {
+    "/api/v1/admin/users/import": {
       "post": {
         "tags": [
           "users"
         ],
         "summary": "Import Users",
         "description": "Create accounts from a CSV file, all or none. Superadmin only.\n\n422 ``USER_IMPORT_INVALID`` lists every problem by row and column when any\nrow is invalid or collides with another row or an existing account; 413\n``USER_IMPORT_TOO_LARGE`` past ``USER_IMPORT_MAX_BYTES``. Each created\naccount is mailed its temporary password.",
-        "operationId": "import_users_api_v1_users_import_post",
+        "operationId": "import_users_api_v1_admin_users_import_post",
         "requestBody": {
           "content": {
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/Body_import_users_api_v1_users_import_post"
+                "$ref": "#/components/schemas/Body_import_users_api_v1_admin_users_import_post"
               }
             }
           },
@@ -7369,6 +7554,105 @@
         ],
         "title": "AccountCreate",
         "description": "One account a Superadmin creates: a ``POST /users`` body or a CSV row.\n\nWhich optional fields are required depends on ``role``\n(``ROLE_REQUIRED_FIELDS``). Error messages never repeat the submitted value,\nbecause the CSV import reports them back with only a row and a column."
+      },
+      "AccountLineRead": {
+        "properties": {
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Amount"
+          },
+          "coveredByFhe": {
+            "type": "boolean",
+            "title": "Coveredbyfhe"
+          }
+        },
+        "type": "object",
+        "required": [
+          "description",
+          "amount",
+          "coveredByFhe"
+        ],
+        "title": "AccountLineRead"
+      },
+      "AccountRead": {
+        "properties": {
+          "amountAssessed": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Amountassessed"
+          },
+          "subsidyApplied": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Subsidyapplied"
+          },
+          "netPayable": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Netpayable"
+          },
+          "paymentStatus": {
+            "type": "string",
+            "enum": [
+              "PAID",
+              "PARTIAL",
+              "DUE",
+              "OVERDUE"
+            ],
+            "title": "Paymentstatus"
+          },
+          "holds": {
+            "items": {
+              "$ref": "#/components/schemas/HoldRead"
+            },
+            "type": "array",
+            "title": "Holds"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/AccountLineRead"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "fheQualified": {
+            "type": "boolean",
+            "title": "Fhequalified"
+          },
+          "fheForfeited": {
+            "type": "boolean",
+            "title": "Fheforfeited"
+          },
+          "fheForfeitureReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fheforfeiturereason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "amountAssessed",
+          "subsidyApplied",
+          "netPayable",
+          "paymentStatus",
+          "holds",
+          "lines",
+          "fheQualified",
+          "fheForfeited",
+          "fheForfeitureReason"
+        ],
+        "title": "AccountRead"
       },
       "AccountRole": {
         "type": "string",
@@ -8654,7 +8938,7 @@
         "title": "AvatarUploadRead",
         "description": "Confirmation returned when a student uploads a valid profile picture."
       },
-      "Body_import_users_api_v1_users_import_post": {
+      "Body_import_users_api_v1_admin_users_import_post": {
         "properties": {
           "file": {
             "type": "string",
@@ -8667,7 +8951,7 @@
         "required": [
           "file"
         ],
-        "title": "Body_import_users_api_v1_users_import_post"
+        "title": "Body_import_users_api_v1_admin_users_import_post"
       },
       "Body_upload_student_avatar": {
         "properties": {
@@ -10710,6 +10994,182 @@
         "title": "FacultyTokenPair",
         "description": "A faculty session's tokens. The refresh token is also set as a cookie."
       },
+      "FeeStructureRead": {
+        "properties": {
+          "academicTermId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Academictermid"
+          },
+          "tuitionPerUnit": {
+            "type": "string",
+            "title": "Tuitionperunit"
+          },
+          "programTuitionRates": {
+            "items": {
+              "$ref": "#/components/schemas/ProgramTuitionRateRead"
+            },
+            "type": "array",
+            "title": "Programtuitionrates"
+          },
+          "registrationFee": {
+            "type": "string",
+            "title": "Registrationfee"
+          },
+          "labFee": {
+            "type": "string",
+            "title": "Labfee"
+          },
+          "miscFee": {
+            "type": "string",
+            "title": "Miscfee"
+          },
+          "lateFeeRate": {
+            "type": "string",
+            "title": "Latefeerate"
+          },
+          "dueDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duedate"
+          },
+          "subsidyCoveredFees": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Subsidycoveredfees"
+          },
+          "installments": {
+            "items": {
+              "$ref": "#/components/schemas/InstallmentItemRead"
+            },
+            "type": "array",
+            "title": "Installments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "academicTermId",
+          "tuitionPerUnit",
+          "registrationFee",
+          "labFee",
+          "miscFee",
+          "lateFeeRate"
+        ],
+        "title": "FeeStructureRead"
+      },
+      "FeeStructureSaveRequest": {
+        "properties": {
+          "tuitionPerUnit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Tuitionperunit",
+            "default": "0.00"
+          },
+          "programTuitionRates": {
+            "items": {
+              "$ref": "#/components/schemas/ProgramTuitionRate"
+            },
+            "type": "array",
+            "title": "Programtuitionrates"
+          },
+          "registrationFee": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Registrationfee",
+            "default": "0.00"
+          },
+          "labFee": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Labfee",
+            "default": "0.00"
+          },
+          "miscFee": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Miscfee",
+            "default": "0.00"
+          },
+          "lateFeeRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Latefeerate",
+            "default": "0.00"
+          },
+          "dueDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duedate"
+          },
+          "subsidyCoveredFees": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Subsidycoveredfees"
+          },
+          "installments": {
+            "items": {
+              "$ref": "#/components/schemas/InstallmentItem"
+            },
+            "type": "array",
+            "title": "Installments"
+          }
+        },
+        "type": "object",
+        "title": "FeeStructureSaveRequest"
+      },
       "ForgotPasswordRequest": {
         "properties": {
           "email": {
@@ -11108,6 +11568,63 @@
         ],
         "title": "HoldRead",
         "description": "A student administrative or financial hold."
+      },
+      "InstallmentItem": {
+        "properties": {
+          "installmentNumber": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Installmentnumber"
+          },
+          "percentage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Percentage"
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date",
+            "title": "Duedate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "installmentNumber",
+          "percentage",
+          "dueDate"
+        ],
+        "title": "InstallmentItem"
+      },
+      "InstallmentItemRead": {
+        "properties": {
+          "installmentNumber": {
+            "type": "integer",
+            "title": "Installmentnumber"
+          },
+          "percentage": {
+            "type": "string",
+            "title": "Percentage"
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date",
+            "title": "Duedate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "installmentNumber",
+          "percentage",
+          "dueDate"
+        ],
+        "title": "InstallmentItemRead"
       },
       "IssueCertificate": {
         "properties": {
@@ -12097,6 +12614,36 @@
         ],
         "title": "Page[WaiverRead]"
       },
+      "PaymentRead": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Amount"
+          },
+          "reference": {
+            "type": "string",
+            "title": "Reference"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "amount",
+          "reference",
+          "status"
+        ],
+        "title": "PaymentRead"
+      },
       "PermissionCreate": {
         "properties": {
           "action": {
@@ -12280,6 +12827,52 @@
         ],
         "title": "ProfileFieldEntry",
         "description": "One profile field with its value and self-service editability flag."
+      },
+      "ProgramTuitionRate": {
+        "properties": {
+          "programId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Programid"
+          },
+          "tuitionPerUnit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Tuitionperunit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "programId",
+          "tuitionPerUnit"
+        ],
+        "title": "ProgramTuitionRate"
+      },
+      "ProgramTuitionRateRead": {
+        "properties": {
+          "programId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Programid"
+          },
+          "tuitionPerUnit": {
+            "type": "string",
+            "title": "Tuitionperunit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "programId",
+          "tuitionPerUnit"
+        ],
+        "title": "ProgramTuitionRateRead"
       },
       "RecordIdentity": {
         "properties": {

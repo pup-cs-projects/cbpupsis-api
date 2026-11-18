@@ -6,7 +6,7 @@ Notes tied to Neon's quirks:
   ~5 min idle) is detected and replaced instead of erroring on first request.
 """
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy.ext.asyncio import (
@@ -84,7 +84,18 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
+#: Coroutines ``get_db`` awaits with the request's session once the endpoint is
+#: done, before the session closes. A higher package registers here because this
+#: one may not import it (the outbox nudge in ``cbpupsis_shared.outbox.nudge``).
+#: A hook must never raise: the request's work has already committed.
+REQUEST_FINISHED_HOOKS: list[Callable[[AsyncSession], Awaitable[None]]] = []
+
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency: yields a session, closes it after the request."""
     async with AsyncSessionLocal() as session:
-        yield session
+        try:
+            yield session
+        finally:
+            for hook in REQUEST_FINISHED_HOOKS:
+                await hook(session)
