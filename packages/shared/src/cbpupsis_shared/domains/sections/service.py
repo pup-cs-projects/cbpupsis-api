@@ -380,6 +380,9 @@ async def get_section_student_record(
 ) -> FacultyStudentRecordRead:
     """Return course-scoped results and persist one disclosure audit row."""
     section = await _owned_section(db, faculty_id=faculty_id, section_id=section_id)
+    current_term = await academics_client.get_current_term(db)
+    if current_term is None or section.academic_term_id != current_term.id:
+        raise ResourceNotFoundError
     memberships = await enrollment_client.section_roster_enrollments(db, section_id)
     if not any(row.student_id == student_id for row in memberships):
         raise ResourceNotFoundError
