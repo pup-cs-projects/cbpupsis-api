@@ -117,6 +117,8 @@ class Settings(BaseSettings):
     #: Short-lived and non-privileged: a challenge proves only that the password
     #: step completed, never that the holder may call a protected route.
     mfa_challenge_ttl_minutes: int = 5
+    #: Temporary local testing only; never permits Superadmin or Student skips.
+    development_mfa_skip: bool = False
     #: Failed password or MFA steps per lockout subject before a temporary lock.
     mfa_lockout_threshold: int = 5
     mfa_lockout_window_minutes: int = 15
@@ -327,6 +329,19 @@ class Settings(BaseSettings):
                 'print(secrets.token_urlsafe(48))"'
             )
         return value
+
+    def development_mfa_skip_for(self, role: str) -> bool:
+        return (
+            self.environment == "development"
+            and self.development_mfa_skip
+            and role in {"admin", "faculty"}
+        )
+
+    @model_validator(mode="after")
+    def keep_mfa_skip_in_development(self) -> Settings:
+        if self.development_mfa_skip and self.environment != "development":
+            raise ValueError("DEVELOPMENT_MFA_SKIP is for development only")
+        return self
 
     @model_validator(mode="after")
     def validate_google_calendar(self) -> Settings:

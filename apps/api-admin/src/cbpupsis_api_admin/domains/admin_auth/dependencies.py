@@ -141,7 +141,7 @@ async def _admin_session(
         raise InactiveUserError
     if (
         claims.get("role") != ROLE_ADMIN
-        or claims.get("mfa") is not True
+        or not auth_client.session_mfa_satisfied(claims)
         or not await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP)
         or await iam_service.is_user_in_group(db, user_id, SUPERADMIN_GROUP)
     ):
