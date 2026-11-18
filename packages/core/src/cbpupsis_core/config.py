@@ -138,6 +138,18 @@ class Settings(BaseSettings):
     google_calendar_encryption_key: SecretStr | None = None
     google_calendar_sync_seconds: int = Field(default=300, ge=60, le=86400)
 
+    # --- Xendit hosted payment sessions ---
+    xendit_enabled: bool = False
+    xendit_api_key: SecretStr | None = None
+    xendit_webhook_verification_token: SecretStr | None = None
+    xendit_base_url: str = "https://api.xendit.co"
+    xendit_success_return_url: str = "http://localhost:3000/payments/success"
+    xendit_cancel_return_url: str = "http://localhost:3000/payments/cancel"
+    xendit_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    xendit_webhook_tolerance_seconds: int = Field(default=300, ge=30, le=3600)
+    payment_reconciliation_pending_seconds: int = Field(default=300, ge=30)
+    payment_retry_after_seconds: int = Field(default=2, ge=1, le=60)
+
     # --- One-time tokens (email verification, password reset) ---
     #: Verification links are low-risk and mailed once, so a day is generous
     #: enough to survive a delayed inbox without leaving the link useful for long.
@@ -375,6 +387,30 @@ class Settings(BaseSettings):
                 "Google Calendar requires a 32-byte base64 key, "
                 "a secure redirect URI and DEBUG=false"
             ) from None
+        return self
+
+    @model_validator(mode="after")
+    def validate_xendit(self) -> Settings:
+        """Require complete, HTTPS Xendit configuration when payments are on."""
+        if not self.xendit_enabled:
+            return self
+        if not self.xendit_api_key or not self.xendit_webhook_verification_token:
+            raise ValueError(
+                "Xendit requires an API key and webhook verification token"
+            )
+        urls = (
+            self.xendit_base_url,
+            self.xendit_success_return_url,
+            self.xendit_cancel_return_url,
+        )
+        for value in urls:
+            parsed = urlsplit(value)
+            local = self.environment == "development" and parsed.hostname in {
+                "localhost",
+                "127.0.0.1",
+            }
+            if not parsed.netloc or (parsed.scheme != "https" and not local):
+                raise ValueError("Xendit URLs must use HTTPS outside development")
         return self
 
     @model_validator(mode="after")

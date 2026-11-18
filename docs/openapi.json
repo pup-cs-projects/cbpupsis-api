@@ -1173,16 +1173,21 @@
         "summary": "Read My Payment History",
         "description": "Read only the signed-in student's payments across terms, newest first by payment date (creation date for unpaid transactions), then creation date and identifier for stable ties. Requires ReadPayment. Each item contains date, decimal-string amount, gateway reference, and status. An empty history is []. Non-student sessions receive 404 RESOURCE_NOT_FOUND. Responses are private and must not be cached.",
         "operationId": "read_payments_api_v1_student_payments_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/PaymentRead"
                   },
-                  "type": "array",
                   "title": "Response Read Payments Api V1 Student Payments Get"
                 }
               }
@@ -1197,10 +1202,77 @@
           "404": {
             "description": "RESOURCE_NOT_FOUND: non-student session or no owned record."
           }
-        },
+        }
+      },
+      "post": {
+        "tags": [
+          "student-payments"
+        ],
+        "summary": "Create Payment",
+        "description": "Create one hosted checkout; the student/key pair is the replay identity.",
+        "operationId": "create_payment_api_v1_student_payments_post",
         "security": [
           {
             "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Hosted Xendit checkout created exactly once.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentCreated"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A live student session is required."
+          },
+          "403": {
+            "description": "The required payment permission is missing."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND"
+          },
+          "400": {
+            "description": "IDEMPOTENCY_KEY_REQUIRED"
+          },
+          "409": {
+            "description": "PAYMENT_IN_PROGRESS"
+          },
+          "422": {
+            "description": "AMOUNT_EXCEEDS_BALANCE"
+          },
+          "502": {
+            "description": "PAYMENT_GATEWAY_ERROR"
+          },
+          "504": {
+            "description": "PAYMENT_GATEWAY_TIMEOUT"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "description": "Unique retry key scoped to the signed-in student."
           }
         ]
       }
@@ -3190,6 +3262,191 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/student/payments/{payment_id}": {
+      "get": {
+        "tags": [
+          "student-payments"
+        ],
+        "summary": "Read Payment",
+        "description": "Read only the signed-in student's payment; foreign IDs are hidden as 404.",
+        "operationId": "read_payment_api_v1_student_payments__payment_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "payment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Payment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentStatusRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A live student session is required."
+          },
+          "403": {
+            "description": "The required payment permission is missing."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/student/payments/{payment_id}/receipt": {
+      "get": {
+        "tags": [
+          "student-payments"
+        ],
+        "summary": "Payment Receipt",
+        "description": "Download a settled, card-data-free payment receipt PDF.",
+        "operationId": "payment_receipt_api_v1_student_payments__payment_id__receipt_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "payment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Payment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/pdf": {}
+            }
+          },
+          "401": {
+            "description": "A live student session is required."
+          },
+          "403": {
+            "description": "The required payment permission is missing."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public/payments/webhooks/xendit": {
+      "post": {
+        "tags": [
+          "payment-webhooks"
+        ],
+        "summary": "Xendit Webhook",
+        "description": "Verify Xendit's token before parsing or touching payment state.",
+        "operationId": "xendit_webhook_api_v1_public_payments_webhooks_xendit_post",
+        "parameters": [
+          {
+            "name": "x-callback-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Callback-Token"
+            }
+          },
+          {
+            "name": "webhook-id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Webhook-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Xendit Webhook Api V1 Public Payments Webhooks Xendit Post"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "WEBHOOK_SIGNATURE_INVALID"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/student/schedule/cor": {
@@ -12614,6 +12871,53 @@
         ],
         "title": "Page[WaiverRead]"
       },
+      "PaymentCreate": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,11}0*$)\\d{0,8}\\.\\d{0,2}0*$)"
+              }
+            ],
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "title": "PaymentCreate"
+      },
+      "PaymentCreated": {
+        "properties": {
+          "paymentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Paymentid"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "checkoutUrl": {
+            "type": "string",
+            "title": "Checkouturl"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paymentId",
+          "state",
+          "checkoutUrl"
+        ],
+        "title": "PaymentCreated"
+      },
       "PaymentRead": {
         "properties": {
           "date": {
@@ -12643,6 +12947,75 @@
           "status"
         ],
         "title": "PaymentRead"
+      },
+      "PaymentStatusRead": {
+        "properties": {
+          "paymentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Paymentid"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "amount": {
+            "type": "string",
+            "title": "Amount"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "default": "PHP"
+          },
+          "gatewayReference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gatewayreference"
+          },
+          "receiptNumber": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receiptnumber"
+          },
+          "paidAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paidat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paymentId",
+          "state",
+          "amount",
+          "createdAt"
+        ],
+        "title": "PaymentStatusRead"
       },
       "PermissionCreate": {
         "properties": {
