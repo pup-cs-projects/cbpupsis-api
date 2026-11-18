@@ -124,3 +124,10 @@ Verify a printable twelve-course PDF in under three seconds and inspect rendered
 pages. Before release, import/re-import in a real calendar client and run the
 5,000-student load scenario on an isolated deployment; report either as unverified
 until actually executed. Never run migration or load tests against shared data.
+
+### Issue #156: Google Calendar and Outlook file verification
+
+The issue-only [interoperability record](STUDENT-SCHEDULE-ICS-156.md) contains
+synthetic fixture reproduction, exact expected occurrences, import/re-import
+steps, the two-client evidence matrix, and outstanding integration/client checks.
+Parser checks do not establish real-client acceptance.

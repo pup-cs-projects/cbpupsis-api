@@ -17,6 +17,11 @@ from cbpupsis_shared.domains.notifications.channels import RenderedNotification
 #: message rather than raising: a missing template must not stop a security
 #: notice from going out, and an ugly notification beats a silent one.
 MESSAGES_BY_EVENT: dict[str, tuple[str, str]] = {
+    "billing.account_overdue": (
+        "Your student account is overdue",
+        "Your student account has an overdue balance. Open your account "
+        "to review the amount due and payment details.",
+    ),
     "enrollment.waiver_decided": (
         "Your waiver request was reviewed",
         "A decision was recorded on your prerequisite waiver request.",

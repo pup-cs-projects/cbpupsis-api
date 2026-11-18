@@ -84,10 +84,25 @@ async def _password_step(db: AsyncSession, email: str, password: str):
 
 
 async def login_admin(
-    db: AsyncSession, *, email: str, password: str
-) -> AdminLoginChallenge:
-    """Verify an Admin password and return only a non-privileged challenge."""
+    db: AsyncSession,
+    *,
+    email: str,
+    password: str,
+    ip_address: str | None = None,
+    device_info: str = "",
+) -> AdminLoginChallenge | AdminTokenPair:
+    """Verify credentials; require MFA unless the development switch is on."""
     subject = await _password_step(db, email, password)
+    if settings.development_mfa_skip_for(ROLE_ADMIN):
+        current = await users_client.lock_role_subject(db, subject.user_id)
+        if not current.is_active:
+            raise InvalidCredentialsError
+        current_version = await users_client.get_session_version(db, subject.user_id)
+        if current_version is None:
+            raise InvalidAuthTokenError
+        auth_client.validate_session_version(
+            {"session_version": subject.session_version}, current_version
+        )
     if not await iam_service.is_user_in_group(
         db, subject.user_id, ADMIN_GROUP
     ) or await iam_service.is_user_in_group(db, subject.user_id, SUPERADMIN_GROUP):
@@ -97,6 +112,21 @@ async def login_admin(
     profile = await users_client.get_admin_profile(db, subject.user_id)
     if profile is None or not profile.is_active:
         raise AdminProfileRequiredError
+
+    if settings.development_mfa_skip_for(ROLE_ADMIN):
+        claims, position = _admin_session_claims(profile)
+        claims.update(mfa=False, development_mfa_skipped=True)
+        pair = await auth_client.complete_sign_in(
+            db,
+            subject.user_id,
+            role=ROLE_ADMIN,
+            attempted_id=str(subject.user_id),
+            ip_address=ip_address,
+            device_info=device_info,
+            mfa=False,
+            claims=claims,
+        )
+        return _admin_pair(pair.access_token, pair.refresh_token, position, profile)
 
     enrolled = await auth_client.enrolled_factors(db, subject.user_id)
     token, webauthn_challenge, jti = auth_client.create_challenge_token(
@@ -261,10 +291,9 @@ async def _verify_assertion(
 async def refresh_admin(db: AsyncSession, request: RefreshRequest) -> AdminTokenPair:
     """Rotate an Admin refresh token using the current role and profile scope."""
     refresh_claims = auth_client.decode_refresh_session(request.refresh_token)
-    if (
-        refresh_claims.get("role") != ROLE_ADMIN
-        or refresh_claims.get("mfa") is not True
-    ):
+    if refresh_claims.get("role") != ROLE_ADMIN:
+        raise InvalidAuthTokenError
+    if not auth_client.session_mfa_satisfied(refresh_claims):
         raise InvalidAuthTokenError
     user_id = uuid.UUID(str(refresh_claims["sub"]))
     if await iam_service.is_user_in_group(db, user_id, SUPERADMIN_GROUP):

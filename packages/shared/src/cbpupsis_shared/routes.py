@@ -20,8 +20,8 @@ from cbpupsis_shared.domains.users.router import router as users_router
 # password change for every role. Sign-in is each role's own /auth/<role> router.
 AUTH = RouterMount(auth_router, "/auth", "account")
 USERS = RouterMount(users_router, "/users", "users")
-#: Same prefix, other people's accounts; the admin app alone serves it.
-USER_MANAGEMENT = RouterMount(management_router, "/users", "users")
+#: Other people's accounts; the admin app alone serves it.
+USER_MANAGEMENT = RouterMount(management_router, "/admin/users", "users")
 NOTIFICATIONS = RouterMount(notifications_router, "/notifications", "notifications")
 IAM = RouterMount(iam_router, "/iam", "iam")
 AUDIT = RouterMount(audit_router, "/audit", "audit")

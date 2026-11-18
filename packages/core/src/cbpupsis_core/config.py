@@ -117,6 +117,8 @@ class Settings(BaseSettings):
     #: Short-lived and non-privileged: a challenge proves only that the password
     #: step completed, never that the holder may call a protected route.
     mfa_challenge_ttl_minutes: int = 5
+    #: Temporary local testing only; never permits Superadmin or Student skips.
+    development_mfa_skip: bool = False
     #: Failed password or MFA steps per lockout subject before a temporary lock.
     mfa_lockout_threshold: int = 5
     mfa_lockout_window_minutes: int = 15
@@ -170,6 +172,11 @@ class Settings(BaseSettings):
     outbox_poll_interval_seconds: float = 30.0
     #: Optional unpooled URL using the restricted runtime role, never the owner.
     outbox_listener_database_url: str | None = None
+    #: Name of the worker Lambda the API invokes right after committing an
+    #: outbox message (``cbpupsis_shared.outbox.nudge``). Unset means no nudge:
+    #: locally the worker is woken by LISTEN/NOTIFY, and deployed the EventBridge
+    #: schedule still sweeps up anything a failed nudge missed.
+    outbox_worker_function_name: str | None = None
     #: Messages claimed per tick. Larger batches amortise the query; too large
     #: and one slow message delays every other in the batch.
     outbox_batch_size: int = 50
@@ -327,6 +334,19 @@ class Settings(BaseSettings):
                 'print(secrets.token_urlsafe(48))"'
             )
         return value
+
+    def development_mfa_skip_for(self, role: str) -> bool:
+        return (
+            self.environment == "development"
+            and self.development_mfa_skip
+            and role in {"admin", "faculty"}
+        )
+
+    @model_validator(mode="after")
+    def keep_mfa_skip_in_development(self) -> Settings:
+        if self.development_mfa_skip and self.environment != "development":
+            raise ValueError("DEVELOPMENT_MFA_SKIP is for development only")
+        return self
 
     @model_validator(mode="after")
     def validate_google_calendar(self) -> Settings:
