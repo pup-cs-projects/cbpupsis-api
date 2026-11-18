@@ -27,6 +27,9 @@ from cbpupsis_api_admin.domains.admin_auth.router import (
 from cbpupsis_api_admin.domains.admin_catalog.router import (
     router as admin_catalog_router,
 )
+from cbpupsis_api_admin.domains.fee_structures.router import (
+    router as fee_structures_router,
+)
 from cbpupsis_api_admin.domains.overload_requests.router import (
     router as overload_requests_router,
 )
@@ -69,6 +72,11 @@ MOUNTS: tuple[RouterMount, ...] = (
         "/admin/add-drop",
         "admin-add-drop",
     ),
+    RouterMount(
+        fee_structures_router,
+        "/admin/fee-structures",
+        "admin-fee-structures",
+    ),
     IAM,
     AUDIT,
     # After COMMON_MOUNTS, so /users/me resolves before /users/{user_id}.
@@ -78,7 +86,7 @@ MOUNTS: tuple[RouterMount, ...] = (
     RouterMount(superadmin_ops_router, "/superadmin", "superadmin"),
     # Beside the shared users router, at the same prefix: only this app parses
     # multipart uploads.
-    RouterMount(user_import_router, "/users", "users"),
+    RouterMount(user_import_router, "/admin/users", "users"),
     RouterMount(
         build_admin_router(
             require_waiver_reviewer(READ_WAIVER_REQUEST),

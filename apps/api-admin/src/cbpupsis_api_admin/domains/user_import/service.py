@@ -1,7 +1,7 @@
 """Rules for importing accounts from a CSV file (FR19, UC-ADM-002).
 
 The file is checked whole before anything is written: its shape, every row's
-fields (through ``AccountCreate``, the schema ``POST /users`` uses), duplicates
+fields (through ``AccountCreate``, the schema ``POST /admin/users`` uses), duplicates
 within the file, and collisions with existing accounts. One problem refuses the
 whole file. A clean file is created in one transaction by the auth client.
 
