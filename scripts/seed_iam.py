@@ -104,6 +104,8 @@ PERMISSIONS: list[tuple[str, str]] = [
         "ManageFeeStructure",
         "Create and update term fee structures and payment plans",
     ),
+    ("ReadProfile", "Read your own profile"),
+    ("UpdateProfile", "Update editable fields on your own profile"),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -145,6 +147,7 @@ POLICIES: dict[str, list[str]] = {
     "AddDropRequestAdmin": ["ReadAddDropRequest", "ApproveAddDrop"],
     "GradeAuthor": ["UpdateGrade", "SubmitGrade"],
     "FeeStructureAdmin": ["ManageFeeStructure"],
+    "ProfileAuthor": ["ReadProfile", "UpdateProfile"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
@@ -181,7 +184,7 @@ GROUPS: dict[str, list[str]] = {
     # by those domains. User administration, IAM, and audit reading belong to
     # the separate Superadmin story and must not leak through this seed.
     ADMIN_GROUP: ["WaiverRequestAdmin"],
-    FACULTY_GROUP: ["CourseSectionReader", "GradeAuthor"],
+    FACULTY_GROUP: ["CourseSectionReader", "GradeAuthor", "ProfileAuthor"],
     # Superadmin-created student accounts join this group.
     STUDENT_GROUP: [
         "GradeReader",

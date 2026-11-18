@@ -3789,6 +3789,91 @@
         ]
       }
     },
+    "/api/v1/faculty/profile": {
+      "get": {
+        "tags": [
+          "faculty-profile"
+        ],
+        "summary": "Get Faculty Profile",
+        "description": "Return the signed-in faculty member's profile and field editability flags.",
+        "operationId": "get_faculty_profile",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacultyProfileRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE), missing permission, or locked field (PROFILE_FIELD_LOCKED)."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "faculty-profile"
+        ],
+        "summary": "Update Faculty Profile",
+        "description": "Update editable faculty profile fields (title, office location, hours, qualifications).",
+        "operationId": "update_faculty_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacultyProfileRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE), missing permission, or locked field (PROFILE_FIELD_LOCKED)."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/faculty/sections": {
       "get": {
         "tags": [
@@ -11662,6 +11747,39 @@
         "title": "FacultyPrerequisiteRecordRead",
         "description": "Published outcomes for one prerequisite of the taught course."
       },
+      "FacultyProfileRead": {
+        "properties": {
+          "petitionRoute": {
+            "type": "string",
+            "title": "Petitionroute"
+          },
+          "fields": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/cbpupsis_api_faculty__domains__faculty_profile__schemas__ProfileFieldEntry"
+            },
+            "type": "object",
+            "title": "Fields"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "petitionRoute",
+          "fields"
+        ],
+        "title": "FacultyProfileRead",
+        "description": "Faculty profile response with per-field editability flags."
+      },
       "FacultySessionRead": {
         "properties": {
           "id": {
@@ -13974,35 +14092,6 @@
         "title": "PolicyRead",
         "description": "Policy as returned by the API, including its resolved permissions."
       },
-      "ProfileFieldEntry": {
-        "properties": {
-          "value": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Value"
-          },
-          "editable": {
-            "type": "boolean",
-            "title": "Editable"
-          }
-        },
-        "type": "object",
-        "required": [
-          "value",
-          "editable"
-        ],
-        "title": "ProfileFieldEntry",
-        "description": "One profile field with its value and self-service editability flag."
-      },
       "ProgramTuitionRate": {
         "properties": {
           "programId": {
@@ -15329,7 +15418,7 @@
           },
           "fields": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/ProfileFieldEntry"
+              "$ref": "#/components/schemas/cbpupsis_api_student__domains__student_profile__schemas__ProfileFieldEntry"
             },
             "type": "object",
             "title": "Fields"
@@ -16636,6 +16725,61 @@
         ],
         "title": "TotpEnrollmentRead",
         "description": "A pending seed: the secret for manual entry and the URI to scan."
+      },
+      "cbpupsis_api_faculty__domains__faculty_profile__schemas__ProfileFieldEntry": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "editable": {
+            "type": "boolean",
+            "title": "Editable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "editable"
+        ],
+        "title": "ProfileFieldEntry",
+        "description": "One faculty profile field with its value and self-service editability flag."
+      },
+      "cbpupsis_api_student__domains__student_profile__schemas__ProfileFieldEntry": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "editable": {
+            "type": "boolean",
+            "title": "Editable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "editable"
+        ],
+        "title": "ProfileFieldEntry",
+        "description": "One profile field with its value and self-service editability flag."
       }
     },
     "securitySchemes": {

@@ -708,6 +708,18 @@ async def get_faculty_profile(
     return None if profile is None else FacultyProfileRead.model_validate(profile)
 
 
+async def stage_update_faculty_profile(
+    db: AsyncSession, user_id: uuid.UUID, **fields: object
+) -> FacultyProfileRead:
+    """Stage changes onto ``user_id``'s faculty profile without committing."""
+    profile = await repository.get_faculty_profile(db, user_id)
+    if profile is None:
+        raise UserNotFoundError(user_id)
+    repository.update_faculty_profile(profile, **fields)
+    await db.flush()
+    return FacultyProfileRead.model_validate(profile)
+
+
 async def get_user_profile(
     db: AsyncSession, user_id: uuid.UUID
 ) -> UserProfileRead | None:

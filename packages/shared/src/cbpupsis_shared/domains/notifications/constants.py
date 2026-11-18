@@ -97,6 +97,15 @@ NOTIFICATION_TYPES: dict[str, NotificationTypeSpec] = {
     "grading.grades_finalized": NotificationTypeSpec(
         default_channels=(Channel.EMAIL, Channel.IN_APP), optional=False
     ),
+    "faculty.roster_updated": NotificationTypeSpec(
+        default_channels=(Channel.EMAIL, Channel.IN_APP)
+    ),
+    "faculty.deadline_reminder": NotificationTypeSpec(
+        default_channels=(Channel.EMAIL, Channel.IN_APP)
+    ),
+    "faculty.system_announcement": NotificationTypeSpec(
+        default_channels=(Channel.EMAIL, Channel.IN_APP)
+    ),
 }
 
 #: The outbox event names this domain handles. Registered by subscribers.py, and

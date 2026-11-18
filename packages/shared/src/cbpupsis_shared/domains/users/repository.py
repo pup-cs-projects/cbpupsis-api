@@ -774,6 +774,19 @@ def update_user_profile(profile: UserProfile, **fields: object) -> UserProfile:
     return profile
 
 
+def update_faculty_profile(profile: FacultyProfile, **fields: object) -> FacultyProfile:
+    """Stage changes onto a loaded ``FacultyProfile`` row.
+
+    On commit, using the supplied fields::
+
+        UPDATE faculty_profiles SET academic_rank = :academic_rank, ...
+        WHERE user_id = :user_id
+    """
+    for name, value in fields.items():
+        setattr(profile, name, value)
+    return profile
+
+
 async def get_student_profile(
     db: AsyncSession, user_id: uuid.UUID
 ) -> StudentProfile | None:

@@ -78,6 +78,7 @@ __all__ = [
     "stage_delete_emergency_contact",
     "stage_replace_avatar",
     "stage_update_emergency_contact",
+    "stage_update_faculty_profile",
     "stage_update_user_profile",
     "user_exists",
 ]
@@ -169,6 +170,12 @@ async def get_faculty_profile(
     db: AsyncSession, user_id: uuid.UUID
 ) -> FacultyProfileRead | None:
     return await service.get_faculty_profile(db, user_id)
+
+
+async def stage_update_faculty_profile(
+    db: AsyncSession, user_id: uuid.UUID, **fields: object
+) -> FacultyProfileRead:
+    return await service.stage_update_faculty_profile(db, user_id, **fields)
 
 
 async def get_user_profile(
