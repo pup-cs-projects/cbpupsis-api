@@ -4443,6 +4443,268 @@
         }
       }
     },
+    "/api/v1/faculty/sections/{section_id}/incompletes": {
+      "get": {
+        "tags": [
+          "faculty-grades"
+        ],
+        "summary": "List Section Incompletes",
+        "description": "List finalized Incomplete (INC) grades and deadlines for one assigned section.",
+        "operationId": "list_faculty_section_incompletes",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Course section UUID assigned to the faculty member.",
+              "title": "Section Id"
+            },
+            "description": "Course section UUID assigned to the faculty member."
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "PENDING_COMPLETION",
+                    "COMPLETED",
+                    "EXPIRED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_IncompleteGradeRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE), missing permission, or grade deadline passed (GRADE_DEADLINE_PASSED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the section does not exist or is not assigned to the caller."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/incompletes": {
+      "get": {
+        "tags": [
+          "faculty-incompletes"
+        ],
+        "summary": "List Faculty Incompletes",
+        "description": "List finalized Incomplete (INC) grades across all assigned sections.",
+        "operationId": "list_faculty_incompletes",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "PENDING_COMPLETION",
+                    "COMPLETED",
+                    "EXPIRED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_IncompleteGradeRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE) or missing permission."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the Inc record does not exist or belongs to another faculty member's section."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/incompletes/{inc_id}/completion": {
+      "post": {
+        "tags": [
+          "faculty-incompletes"
+        ],
+        "summary": "File Incomplete Completion",
+        "description": "File a passing completion mark (1.00 to 3.00) for Dean endorsement.",
+        "operationId": "file_faculty_incomplete_completion",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "inc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identifier of the finalized Incomplete grade row.",
+              "title": "Inc Id"
+            },
+            "description": "Identifier of the finalized Incomplete grade row."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIncompleteCompletionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncompleteCompletionRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE) or missing permission."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the Inc record does not exist or belongs to another faculty member's section."
+          },
+          "409": {
+            "description": "INC_COMPLETION_WINDOW_CLOSED if already expired to 5.00, INC_ALREADY_COMPLETED, or INC_COMPLETION_PENDING."
+          },
+          "422": {
+            "description": "VALIDATION_ERROR when proposed mark is outside 1.00 to 3.00 or completion form is missing."
+          }
+        }
+      }
+    },
     "/api/v1/auth/admin/login": {
       "post": {
         "tags": [
@@ -5322,6 +5584,160 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/incomplete-completions": {
+      "get": {
+        "tags": [
+          "admin-incomplete-completions"
+        ],
+        "summary": "List Incomplete Completions",
+        "description": "List incomplete completion filings within the Dean's own college.",
+        "operationId": "list_admin_incomplete_completions",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "PENDING_DEAN",
+                    "ENDORSED",
+                    "REJECTED",
+                    "EXPIRED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_IncompleteCompletionRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED when the Admin session is missing or unverified."
+          },
+          "403": {
+            "description": "ApproveIncompleteCompletion permission is required (College Dean only)."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/incomplete-completions/{completion_id}": {
+      "patch": {
+        "tags": [
+          "admin-incomplete-completions"
+        ],
+        "summary": "Decide Incomplete Completion",
+        "description": "Endorse or reject an Incomplete completion within the Dean's own college.",
+        "operationId": "decide_admin_incomplete_completion",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "completion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Completion Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncompleteCompletionDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncompleteCompletionRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED when the Admin session is missing or unverified."
+          },
+          "403": {
+            "description": "ApproveIncompleteCompletion permission is required (College Dean only)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the completion does not exist or belongs to another college."
+          },
+          "409": {
+            "description": "INC_COMPLETION_WINDOW_CLOSED if already expired to 5.00, REQUEST_ALREADY_DECIDED, or VERSION_CONFLICT."
+          },
+          "422": {
+            "description": "DECISION_REMARKS_REQUIRED when rejecting without remarks."
           }
         }
       }
@@ -10517,6 +10933,72 @@
         "title": "CourseSectionRosterRead",
         "description": "A filtered page of students in a section owned by the caller."
       },
+      "CreateIncompleteCompletionRequest": {
+        "properties": {
+          "proposedMark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposedmark",
+            "description": "Passing completion grade mark from 1.00 to 3.00.",
+            "examples": [
+              "1.50"
+            ]
+          },
+          "completionFormFileId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completionformfileid",
+            "description": "Reference identifier of the uploaded completion form.",
+            "examples": [
+              "form-inc-0001"
+            ]
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks",
+            "description": "Optional remarks accompanying the completion filing."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CreateIncompleteCompletionRequest",
+        "description": "Faculty filing of an Incomplete completion grade; validated in the service.",
+        "example": {
+          "completionFormFileId": "form-inc-0001",
+          "proposedMark": "1.50",
+          "remarks": "Completed final project"
+        }
+      },
       "CurrentEnrollmentRead": {
         "properties": {
           "enrollmentId": {
@@ -12586,6 +13068,492 @@
         "title": "HoldRead",
         "description": "A student administrative or financial hold."
       },
+      "IncompleteCompletionDecisionRequest": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "ENDORSE",
+              "REJECT"
+            ],
+            "title": "Decision"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "title": "IncompleteCompletionDecisionRequest",
+        "description": "College Dean endorsement or rejection of an Incomplete completion."
+      },
+      "IncompleteCompletionRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "completionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Completionid"
+          },
+          "incId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Incid"
+          },
+          "gradeId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Gradeid"
+          },
+          "enrollmentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Enrollmentid"
+          },
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "sectionName": {
+            "type": "string",
+            "title": "Sectionname"
+          },
+          "courseId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Courseid"
+          },
+          "courseCode": {
+            "type": "string",
+            "title": "Coursecode"
+          },
+          "courseTitle": {
+            "type": "string",
+            "title": "Coursetitle"
+          },
+          "academicTermId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Academictermid"
+          },
+          "academicYear": {
+            "type": "string",
+            "title": "Academicyear"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "studentName": {
+            "type": "string",
+            "title": "Studentname"
+          },
+          "college": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "College"
+          },
+          "proposedMark": {
+            "type": "string",
+            "title": "Proposedmark"
+          },
+          "completionFormFileId": {
+            "type": "string",
+            "title": "Completionformfileid"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING_DEAN",
+              "ENDORSED",
+              "REJECTED",
+              "EXPIRED"
+            ],
+            "title": "State"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "reviewedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedby"
+          },
+          "reviewRemarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewremarks"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "completionDeadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completiondeadline"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "completionId",
+          "incId",
+          "gradeId",
+          "enrollmentId",
+          "sectionId",
+          "sectionName",
+          "courseId",
+          "courseCode",
+          "courseTitle",
+          "academicTermId",
+          "academicYear",
+          "semester",
+          "studentId",
+          "studentNumber",
+          "studentName",
+          "proposedMark",
+          "completionFormFileId",
+          "state",
+          "version",
+          "createdAt"
+        ],
+        "title": "IncompleteCompletionRead",
+        "description": "Full Incomplete completion record returned to faculty and College Deans."
+      },
+      "IncompleteCompletionSummaryRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "gradeId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Gradeid"
+          },
+          "proposedMark": {
+            "type": "string",
+            "title": "Proposedmark"
+          },
+          "completionFormFileId": {
+            "type": "string",
+            "title": "Completionformfileid"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING_DEAN",
+              "ENDORSED",
+              "REJECTED",
+              "EXPIRED"
+            ],
+            "title": "State"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "reviewedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedby"
+          },
+          "reviewRemarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewremarks"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "gradeId",
+          "proposedMark",
+          "completionFormFileId",
+          "state",
+          "version",
+          "createdAt"
+        ],
+        "title": "IncompleteCompletionSummaryRead",
+        "description": "Compact summary of an Incomplete completion filing attached to an Inc row."
+      },
+      "IncompleteGradeRead": {
+        "properties": {
+          "incId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Incid"
+          },
+          "gradeId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Gradeid"
+          },
+          "enrollmentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Enrollmentid"
+          },
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "sectionName": {
+            "type": "string",
+            "title": "Sectionname"
+          },
+          "courseId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Courseid"
+          },
+          "courseCode": {
+            "type": "string",
+            "title": "Coursecode"
+          },
+          "courseTitle": {
+            "type": "string",
+            "title": "Coursetitle"
+          },
+          "academicTermId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Academictermid"
+          },
+          "academicYear": {
+            "type": "string",
+            "title": "Academicyear"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "studentName": {
+            "type": "string",
+            "title": "Studentname"
+          },
+          "finalGrade": {
+            "type": "string",
+            "title": "Finalgrade"
+          },
+          "submittedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submittedat"
+          },
+          "completionDeadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completiondeadline"
+          },
+          "daysLeft": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daysleft"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING_COMPLETION",
+              "COMPLETED",
+              "EXPIRED"
+            ],
+            "title": "State"
+          },
+          "latestCompletion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IncompleteCompletionSummaryRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "incId",
+          "gradeId",
+          "enrollmentId",
+          "sectionId",
+          "sectionName",
+          "courseId",
+          "courseCode",
+          "courseTitle",
+          "academicTermId",
+          "academicYear",
+          "semester",
+          "studentId",
+          "studentNumber",
+          "studentName",
+          "finalGrade",
+          "state"
+        ],
+        "title": "IncompleteGradeRead",
+        "description": "One student's Incomplete grade record with deadline, days left, and state."
+      },
       "InstallmentItem": {
         "properties": {
           "installmentNumber": {
@@ -13413,6 +14381,68 @@
           "offset"
         ],
         "title": "Page[GroupRead]"
+      },
+      "Page_IncompleteCompletionRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IncompleteCompletionRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[IncompleteCompletionRead]"
+      },
+      "Page_IncompleteGradeRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IncompleteGradeRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[IncompleteGradeRead]"
       },
       "Page_ItemRead_": {
         "properties": {
@@ -14665,6 +15695,18 @@
               }
             ],
             "title": "Incexpiresat"
+          },
+          "completionDeadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completiondeadline"
           },
           "isDraft": {
             "type": "boolean",

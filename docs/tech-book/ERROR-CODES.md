@@ -88,8 +88,13 @@ the standard 403 missing-permission response.
 | 409 | `GRADES_LOCKED` | The section's grades have already been finalized and locked. Any later draft save or finalize is refused. |
 | 409 | `VERSION_CONFLICT` | The supplied draft or finalize `version` does not match the current section version (`currentVersion` is returned). Nothing is saved. |
 | 403 | `GRADE_DEADLINE_PASSED` | Final submission was attempted after the term's grade submission deadline (`deadline` is returned). Contact a Department Chair or the Registrar's Office for an administrative override. |
-| 422 | `VALIDATION_ERROR` | One or more marks are outside the valid grading scale (1.00 to 5.00 in 0.25 steps excluding invalid increments, or `INC`), missing on finalize, or target a non-enrolled row. `errors` and `details.rows` identify the offending student row(s); nothing is saved. |
-| 404 | `RESOURCE_NOT_FOUND` | The section does not exist or is not assigned to the signed-in faculty member (byte-identical apart from `request_id`). |
+| 422 | `VALIDATION_ERROR` | One or more marks are outside the valid grading scale (1.00 to 5.00 in 0.25 steps excluding invalid increments, or `INC`), missing on finalize, or target a non-enrolled row; or on Incomplete completion filing when the proposed mark is outside 1.00 to 3.00 or the completion form file id is missing. |
+| 409 | `INC_COMPLETION_WINDOW_CLOSED` | Filing or deciding a completion for an Incomplete grade that has already expired to `5.00` or passed its 365-day completion window. The mark remains `5.00`. |
+| 409 | `INC_COMPLETION_PENDING` | A completion request for this Incomplete grade is already pending College Dean review. |
+| 409 | `INC_ALREADY_COMPLETED` | This Incomplete grade has already been completed and endorsed. |
+| 409 | `REQUEST_ALREADY_DECIDED` | An Incomplete completion request has already been endorsed or rejected. |
+| 422 | `DECISION_REMARKS_REQUIRED` | A College Dean rejected an Incomplete completion without non-blank remarks. |
+| 404 | `RESOURCE_NOT_FOUND` | The section or Incomplete record does not exist or is outside the signed-in faculty member's sections or the College Dean's own college (byte-identical apart from `request_id`). |
 
 ## Student account and payments (US-FIN-001)
 

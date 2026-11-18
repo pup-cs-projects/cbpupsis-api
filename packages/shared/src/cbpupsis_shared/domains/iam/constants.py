@@ -45,6 +45,7 @@ ADMIN_POSITION_POLICIES: dict[str, tuple[str, ...]] = {
         "AddDropRequestAdmin",
         "CatalogReader",
         "EnrollmentReportReader",
+        "IncompleteCompletionAdmin",
         "OverloadRequestAdmin",
     ),
     "registrar": (
