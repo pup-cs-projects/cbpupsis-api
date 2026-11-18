@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 from cbpupsis_shared.domains.academics.schemas import TermRead
 from cbpupsis_shared.domains.grading.constants import AcademicStanding
@@ -229,3 +230,178 @@ class TranscriptRead(BaseModel):
         default="No finalized marks are available.",
         description="Explanation when no posted marks exist anywhere in the record.",
     )
+
+
+class SectionGradeEntryRead(BaseModel):
+    """One enrolled student's grade row for a section."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        from_attributes=True,
+    )
+
+    enrollment_id: uuid.UUID
+    student_id: uuid.UUID
+    student_number: str
+    student_name: str
+    raw_score: Decimal | None = None
+    midterm_grade: str | None = None
+    final_grade: str | None = None
+    remarks: str | None = None
+    inc_expires_at: datetime | None = None
+    is_draft: bool = True
+    is_locked: bool = False
+    status: Literal["MISSING", "DRAFT", "FINAL"]
+    submitted_at: datetime | None = None
+
+
+class SectionGradesRead(BaseModel):
+    """Section grade sheet with enrolled marks, workflow state, version, deadline."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+    section_id: uuid.UUID
+    section_name: str
+    course_code: str | None = None
+    course_title: str | None = None
+    state: Literal["DRAFT", "FINAL"]
+    version: int
+    deadline: datetime
+    deadline_passed: bool
+    submitted_at: datetime | None = None
+    grades: list[SectionGradeEntryRead] = Field(default_factory=list)
+
+
+class GradeDeadlineRead(BaseModel):
+    """Grade submission deadline and whether it has passed."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+    section_id: uuid.UUID
+    academic_term_id: uuid.UUID
+    deadline: datetime
+    passed: bool
+
+
+class GradeDraftItemInput(BaseModel):
+    """One student's draft mark input; validated in the service layer."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "enrollmentId": "00000000-0000-0000-0000-000000000001",
+                "finalGrade": "1.25",
+                "midtermGrade": "1.50",
+                "remarks": "Draft mark",
+            }
+        },
+    )
+
+    enrollment_id: uuid.UUID | None = Field(
+        default=None,
+        description="Enrolled student's course enrollment ID.",
+        examples=["00000000-0000-0000-0000-000000000001"],
+    )
+    student_id: uuid.UUID | None = Field(
+        default=None,
+        description="Optional student user ID (omit when enrollmentId is provided).",
+    )
+    final_grade: str | int | float | Decimal | None = Field(
+        default=None,
+        description="Final grade mark (1.00 to 5.00 or INC).",
+        examples=["1.25"],
+    )
+    raw_score: Decimal | int | float | str | None = Field(
+        default=None,
+        description="Optional numeric raw score.",
+        examples=["88.5"],
+    )
+    midterm_grade: str | None = Field(
+        default=None,
+        max_length=10,
+        description="Optional midterm grade.",
+        examples=["1.50"],
+    )
+    remarks: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Optional remarks for this grade entry.",
+        examples=["Draft mark"],
+    )
+
+
+class SaveGradeDraftRequest(BaseModel):
+    """Versioned draft save payload for a section's grade sheet."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "version": 0,
+                "grades": [
+                    {
+                        "enrollmentId": "00000000-0000-0000-0000-000000000001",
+                        "finalGrade": "1.25",
+                        "midtermGrade": "1.50",
+                        "remarks": "Draft mark",
+                    }
+                ],
+            }
+        },
+    )
+
+    version: int = Field(
+        ...,
+        description="Expected version of draft submission for optimistic locking.",
+        examples=[0],
+    )
+    grades: list[GradeDraftItemInput]
+
+
+class FinalizeGradesRequest(BaseModel):
+    """Optional optimistic-lock version check when finalizing a section."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "version": 0,
+            }
+        },
+    )
+
+    version: int | None = Field(
+        default=None,
+        description="Optional expected version of the grade sheet before finalizing.",
+        examples=[0],
+    )
+
+
+class FinalizeGradesRead(BaseModel):
+    """Summary returned after finalizing and locking a section's grades."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+    section_id: uuid.UUID
+    state: Literal["FINAL"]
+    version: int
+    records_committed: int
+    notifications_queued: int
+    submitted_at: datetime

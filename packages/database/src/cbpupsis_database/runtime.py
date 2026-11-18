@@ -15,7 +15,7 @@ from cbpupsis_database.session import to_asyncpg_url
 #: from the migrations folder, because the student and faculty images do not
 #: ship it. ``tests/core/test_runtime_head.py`` fails when a new revision lands
 #: without updating this.
-EXPECTED_HEAD = "c193_exactly_once_payments"
+EXPECTED_HEAD = "f177_section_grade_submissions"
 
 
 async def inspect_runtime(

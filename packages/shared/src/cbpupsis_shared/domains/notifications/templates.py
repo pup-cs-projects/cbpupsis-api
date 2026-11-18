@@ -66,6 +66,10 @@ MESSAGES_BY_EVENT: dict[str, tuple[str, str]] = {
         "Add and drop request decided",
         "Your add and drop request has been decided.",
     ),
+    "grading.grades_finalized": (
+        "Grades available",
+        "Your finalized grade for this course is now available.",
+    ),
 }
 
 
@@ -82,6 +86,15 @@ def render(event: Event) -> RenderedNotification:
         body = f"Your {entity} request was {state.lower()}."
         if remarks:
             body += f" Remarks: {remarks}"
+    elif event.name == "grading.grades_finalized":
+        course_code = event.payload.get("course_code")
+        section_name = event.payload.get("section_name")
+        if course_code and section_name:
+            title = f"Grades available for {course_code}"
+            body = (
+                f"Your finalized grade for {course_code} ({section_name}) "
+                "is now available."
+            )
     return RenderedNotification(
         notification_type=event.name,
         title=title,

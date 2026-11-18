@@ -43,6 +43,7 @@ from cbpupsis_shared.domains.sections.schemas import (
     FacultyStudentRecordRead,
     GradeStatus,
     MeetingSlot,
+    OwnedSectionRead,
     RecordSection,
     RosterEntryRead,
     ScheduleSection,
@@ -189,6 +190,14 @@ async def get_section_roster(
         limit=limit,
         offset=offset,
     )
+
+
+async def get_owned_section(
+    db: AsyncSession, *, faculty_id: uuid.UUID, section_id: uuid.UUID
+) -> OwnedSectionRead:
+    """Return section metadata if assigned to ``faculty_id``, else opaque 404."""
+    section = await _owned_section(db, faculty_id=faculty_id, section_id=section_id)
+    return OwnedSectionRead.model_validate(section)
 
 
 async def _owned_section(

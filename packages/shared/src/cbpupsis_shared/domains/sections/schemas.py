@@ -81,6 +81,20 @@ class CourseSectionRead(BaseModel):
     status: str
 
 
+class OwnedSectionRead(BaseModel):
+    """Section metadata for an owned section returned across domain boundaries."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    academic_term_id: uuid.UUID
+    course_id: uuid.UUID
+    faculty_id: uuid.UUID | None
+    section_name: str
+    capacity: int
+    status: str
+
+
 class EnrollmentStatus(StrEnum):
     ENROLLED = "ENROLLED"
     DROPPED = "DROPPED"

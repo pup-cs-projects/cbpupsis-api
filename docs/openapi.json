@@ -4136,6 +4136,313 @@
         }
       }
     },
+    "/api/v1/faculty/sections/{section_id}/grades": {
+      "get": {
+        "tags": [
+          "faculty-grades"
+        ],
+        "summary": "Get Section Grades",
+        "description": "Return enrolled students' marks, state, version, and submission deadline.",
+        "operationId": "get_faculty_section_grades",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Course section UUID assigned to the faculty member.",
+              "title": "Section Id"
+            },
+            "description": "Course section UUID assigned to the faculty member.",
+            "examples": {
+              "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectionGradesRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE), missing permission, or grade deadline passed (GRADE_DEADLINE_PASSED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the section does not exist or is not assigned to the caller."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/sections/{section_id}/grade-deadline": {
+      "get": {
+        "tags": [
+          "faculty-grades"
+        ],
+        "summary": "Get Section Grade Deadline",
+        "description": "Return the section's grade submission deadline and whether it has passed.",
+        "operationId": "get_faculty_section_grade_deadline",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Course section UUID assigned to the faculty member.",
+              "title": "Section Id"
+            },
+            "description": "Course section UUID assigned to the faculty member.",
+            "examples": {
+              "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GradeDeadlineRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE), missing permission, or grade deadline passed (GRADE_DEADLINE_PASSED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the section does not exist or is not assigned to the caller."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/sections/{section_id}/grades/draft": {
+      "put": {
+        "tags": [
+          "faculty-grades"
+        ],
+        "summary": "Save Section Grade Draft",
+        "description": "Save draft marks for a section assigned to the caller.",
+        "operationId": "save_faculty_section_grade_draft",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Course section UUID assigned to the faculty member.",
+              "title": "Section Id"
+            },
+            "description": "Course section UUID assigned to the faculty member.",
+            "examples": {
+              "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000"
+              }
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveGradeDraftRequest"
+              },
+              "examples": {
+                "default": {
+                  "summary": "Sample draft payload",
+                  "value": {
+                    "version": 0,
+                    "grades": [
+                      {
+                        "enrollmentId": "00000000-0000-0000-0000-000000000001",
+                        "finalGrade": "1.25",
+                        "midtermGrade": "1.50",
+                        "remarks": "Draft mark"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectionGradesRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE), missing permission, or grade deadline passed (GRADE_DEADLINE_PASSED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the section does not exist or is not assigned to the caller."
+          },
+          "409": {
+            "description": "GRADES_LOCKED if already finalized, or VERSION_CONFLICT if the draft version is stale."
+          },
+          "422": {
+            "description": "VALIDATION_ERROR naming offending student row(s) when marks are outside 1.00 to 5.00 and not INC."
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/sections/{section_id}/grades/finalize": {
+      "post": {
+        "tags": [
+          "faculty-grades"
+        ],
+        "summary": "Finalize Section Grades",
+        "description": "Finalize and lock section grades once, notifying each enrolled student.",
+        "operationId": "finalize_faculty_section_grades",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Course section UUID assigned to the faculty member.",
+              "title": "Section Id"
+            },
+            "description": "Course section UUID assigned to the faculty member.",
+            "examples": {
+              "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000"
+              }
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/FinalizeGradesRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              },
+              "examples": {
+                "default": {
+                  "summary": "Sample finalize payload",
+                  "value": {
+                    "version": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalizeGradesRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "GRADE_DEADLINE_PASSED with deadline when the submission deadline has passed."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the section does not exist or is not assigned to the caller."
+          },
+          "409": {
+            "description": "GRADES_LOCKED if already finalized, or VERSION_CONFLICT if a supplied version is stale."
+          },
+          "422": {
+            "description": "VALIDATION_ERROR naming student row(s) with missing or invalid marks; the section remains in DRAFT."
+          }
+        }
+      }
+    },
     "/api/v1/auth/admin/login": {
       "post": {
         "tags": [
@@ -11645,6 +11952,74 @@
         "type": "object",
         "title": "FeeStructureSaveRequest"
       },
+      "FinalizeGradesRead": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "state": {
+            "type": "string",
+            "const": "FINAL",
+            "title": "State"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "recordsCommitted": {
+            "type": "integer",
+            "title": "Recordscommitted"
+          },
+          "notificationsQueued": {
+            "type": "integer",
+            "title": "Notificationsqueued"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Submittedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectionId",
+          "state",
+          "version",
+          "recordsCommitted",
+          "notificationsQueued",
+          "submittedAt"
+        ],
+        "title": "FinalizeGradesRead",
+        "description": "Summary returned after finalizing and locking a section's grades."
+      },
+      "FinalizeGradesRequest": {
+        "properties": {
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version",
+            "description": "Optional expected version of the grade sheet before finalizing.",
+            "examples": [
+              0
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "FinalizeGradesRequest",
+        "description": "Optional optimistic-lock version check when finalizing a section.",
+        "example": {
+          "version": 0
+        }
+      },
       "ForgotPasswordRequest": {
         "properties": {
           "email": {
@@ -11777,6 +12152,163 @@
         ],
         "title": "GradeCourse",
         "description": "One posted course attempt; draft marks are excluded."
+      },
+      "GradeDeadlineRead": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "academicTermId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Academictermid"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Deadline"
+          },
+          "passed": {
+            "type": "boolean",
+            "title": "Passed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectionId",
+          "academicTermId",
+          "deadline",
+          "passed"
+        ],
+        "title": "GradeDeadlineRead",
+        "description": "Grade submission deadline and whether it has passed."
+      },
+      "GradeDraftItemInput": {
+        "properties": {
+          "enrollmentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enrollmentid",
+            "description": "Enrolled student's course enrollment ID.",
+            "examples": [
+              "00000000-0000-0000-0000-000000000001"
+            ]
+          },
+          "studentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Studentid",
+            "description": "Optional student user ID (omit when enrollmentId is provided)."
+          },
+          "finalGrade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalgrade",
+            "description": "Final grade mark (1.00 to 5.00 or INC).",
+            "examples": [
+              "1.25"
+            ]
+          },
+          "rawScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rawscore",
+            "description": "Optional numeric raw score.",
+            "examples": [
+              "88.5"
+            ]
+          },
+          "midtermGrade": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Midtermgrade",
+            "description": "Optional midterm grade.",
+            "examples": [
+              "1.50"
+            ]
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks",
+            "description": "Optional remarks for this grade entry.",
+            "examples": [
+              "Draft mark"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "GradeDraftItemInput",
+        "description": "One student's draft mark input; validated in the service layer.",
+        "example": {
+          "enrollmentId": "00000000-0000-0000-0000-000000000001",
+          "finalGrade": "1.25",
+          "midtermGrade": "1.50",
+          "remarks": "Draft mark"
+        }
       },
       "GradeStatus": {
         "type": "string",
@@ -13669,6 +14201,44 @@
         "title": "RosterEntryRead",
         "description": "One enrolled student on a roster."
       },
+      "SaveGradeDraftRequest": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "description": "Expected version of draft submission for optimistic locking.",
+            "examples": [
+              0
+            ]
+          },
+          "grades": {
+            "items": {
+              "$ref": "#/components/schemas/GradeDraftItemInput"
+            },
+            "type": "array",
+            "title": "Grades"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "grades"
+        ],
+        "title": "SaveGradeDraftRequest",
+        "description": "Versioned draft save payload for a section's grade sheet.",
+        "example": {
+          "grades": [
+            {
+              "enrollmentId": "00000000-0000-0000-0000-000000000001",
+              "finalGrade": "1.25",
+              "midtermGrade": "1.50",
+              "remarks": "Draft mark"
+            }
+          ],
+          "version": 0
+        }
+      },
       "ScheduleCourse": {
         "properties": {
           "code": {
@@ -14018,6 +14588,212 @@
         ],
         "title": "ScholasticStandingRead",
         "description": "Scholastic standing evaluation and load impact."
+      },
+      "SectionGradeEntryRead": {
+        "properties": {
+          "enrollmentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Enrollmentid"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "studentName": {
+            "type": "string",
+            "title": "Studentname"
+          },
+          "rawScore": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rawscore"
+          },
+          "midtermGrade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Midtermgrade"
+          },
+          "finalGrade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalgrade"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "incExpiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incexpiresat"
+          },
+          "isDraft": {
+            "type": "boolean",
+            "title": "Isdraft",
+            "default": true
+          },
+          "isLocked": {
+            "type": "boolean",
+            "title": "Islocked",
+            "default": false
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "MISSING",
+              "DRAFT",
+              "FINAL"
+            ],
+            "title": "Status"
+          },
+          "submittedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submittedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enrollmentId",
+          "studentId",
+          "studentNumber",
+          "studentName",
+          "status"
+        ],
+        "title": "SectionGradeEntryRead",
+        "description": "One enrolled student's grade row for a section."
+      },
+      "SectionGradesRead": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "sectionName": {
+            "type": "string",
+            "title": "Sectionname"
+          },
+          "courseCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coursecode"
+          },
+          "courseTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coursetitle"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "FINAL"
+            ],
+            "title": "State"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Deadline"
+          },
+          "deadlinePassed": {
+            "type": "boolean",
+            "title": "Deadlinepassed"
+          },
+          "submittedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submittedat"
+          },
+          "grades": {
+            "items": {
+              "$ref": "#/components/schemas/SectionGradeEntryRead"
+            },
+            "type": "array",
+            "title": "Grades"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectionId",
+          "sectionName",
+          "state",
+          "version",
+          "deadline",
+          "deadlinePassed"
+        ],
+        "title": "SectionGradesRead",
+        "description": "Section grade sheet with enrolled marks, workflow state, version, deadline."
       },
       "SectionMeetingInput": {
         "properties": {
