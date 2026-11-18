@@ -390,7 +390,14 @@ class AddDropCourseRead(BaseModel):
     course_code: str = Field(alias="courseCode")
     course_title: str = Field(alias="courseTitle")
     units: Decimal
-    tag: Literal["PENDING_ADD", "PENDING_DROP"]
+    tag: Literal[
+        "PENDING_ADD",
+        "PENDING_DROP",
+        "ADDED",
+        "DROPPED",
+        "REJECTED_ADD",
+        "REJECTED_DROP",
+    ]
     reason: str | None = None
 
 
