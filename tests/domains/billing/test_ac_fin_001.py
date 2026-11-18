@@ -189,6 +189,9 @@ async def test_ac_fin_001_8_payment_history_ordering_and_ownership(client, db, a
             Payment(
                 id=ident,
                 billing_account_id=account["row"].id,
+                student_id=account["student"].id,
+                idempotency_key=f"history-{ident}",
+                merchant_reference=f"history-{ident}",
                 amount=Decimal("0.01"),
                 payment_method="SYNTHETIC",
                 payment_status="PENDING" if paid is None else "PAID",
@@ -215,6 +218,9 @@ async def test_ac_fin_001_8_payment_history_ordering_and_ownership(client, db, a
     db.add(
         Payment(
             billing_account_id=foreign_account.id,
+            student_id=other.id,
+            idempotency_key="foreign-history",
+            merchant_reference="foreign-history",
             amount=Decimal("100"),
             payment_method="SYNTHETIC",
             payment_status="PAID",

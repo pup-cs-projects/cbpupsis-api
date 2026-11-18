@@ -1173,16 +1173,21 @@
         "summary": "Read My Payment History",
         "description": "Read only the signed-in student's payments across terms, newest first by payment date (creation date for unpaid transactions), then creation date and identifier for stable ties. Requires ReadPayment. Each item contains date, decimal-string amount, gateway reference, and status. An empty history is []. Non-student sessions receive 404 RESOURCE_NOT_FOUND. Responses are private and must not be cached.",
         "operationId": "read_payments_api_v1_student_payments_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/PaymentRead"
                   },
-                  "type": "array",
                   "title": "Response Read Payments Api V1 Student Payments Get"
                 }
               }
@@ -1197,10 +1202,77 @@
           "404": {
             "description": "RESOURCE_NOT_FOUND: non-student session or no owned record."
           }
-        },
+        }
+      },
+      "post": {
+        "tags": [
+          "student-payments"
+        ],
+        "summary": "Create Payment",
+        "description": "Create one hosted checkout; the student/key pair is the replay identity.",
+        "operationId": "create_payment_api_v1_student_payments_post",
         "security": [
           {
             "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Hosted Xendit checkout created exactly once.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentCreated"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A live student session is required."
+          },
+          "403": {
+            "description": "The required payment permission is missing."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND"
+          },
+          "400": {
+            "description": "IDEMPOTENCY_KEY_REQUIRED"
+          },
+          "409": {
+            "description": "PAYMENT_IN_PROGRESS"
+          },
+          "422": {
+            "description": "AMOUNT_EXCEEDS_BALANCE"
+          },
+          "502": {
+            "description": "PAYMENT_GATEWAY_ERROR"
+          },
+          "504": {
+            "description": "PAYMENT_GATEWAY_TIMEOUT"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "description": "Unique retry key scoped to the signed-in student."
           }
         ]
       }
@@ -3192,80 +3264,6 @@
         ]
       }
     },
-    "/api/v1/student/payments": {
-      "post": {
-        "tags": [
-          "student-payments"
-        ],
-        "summary": "Create Payment",
-        "description": "Create one hosted checkout; the student/key pair is the replay identity.",
-        "operationId": "create_payment_api_v1_student_payments_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PaymentCreate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Hosted Xendit checkout created exactly once.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaymentCreated"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "A live student session is required."
-          },
-          "403": {
-            "description": "The required payment permission is missing."
-          },
-          "404": {
-            "description": "RESOURCE_NOT_FOUND"
-          },
-          "400": {
-            "description": "IDEMPOTENCY_KEY_REQUIRED"
-          },
-          "409": {
-            "description": "PAYMENT_IN_PROGRESS"
-          },
-          "422": {
-            "description": "AMOUNT_EXCEEDS_BALANCE"
-          },
-          "502": {
-            "description": "PAYMENT_GATEWAY_ERROR"
-          },
-          "504": {
-            "description": "PAYMENT_GATEWAY_TIMEOUT"
-          }
-        },
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 255
-            },
-            "description": "Unique retry key scoped to the signed-in student."
-          }
-        ]
-      }
-    },
     "/api/v1/student/payments/{payment_id}": {
       "get": {
         "tags": [
@@ -3297,7 +3295,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaymentRead"
+                  "$ref": "#/components/schemas/PaymentDetailRead"
                 }
               }
             }
@@ -3401,22 +3399,6 @@
                 }
               ],
               "title": "X-Callback-Token"
-            }
-          },
-          {
-            "name": "webhook-id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Webhook-Id"
             }
           }
         ],
@@ -12920,7 +12902,7 @@
         ],
         "title": "PaymentCreated"
       },
-      "PaymentRead": {
+      "PaymentDetailRead": {
         "properties": {
           "paymentId": {
             "type": "string",
@@ -12986,6 +12968,36 @@
           "state",
           "amount",
           "createdAt"
+        ],
+        "title": "PaymentDetailRead"
+      },
+      "PaymentRead": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Amount"
+          },
+          "reference": {
+            "type": "string",
+            "title": "Reference"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "amount",
+          "reference",
+          "status"
         ],
         "title": "PaymentRead"
       },
