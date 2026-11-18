@@ -30,7 +30,10 @@ from cbpupsis_shared.domains.auth.exceptions import (
 from cbpupsis_shared.domains.enrollment.constants import REVIEW_STEPS
 from cbpupsis_shared.domains.enrollment.schemas import WaiverReviewer
 from cbpupsis_shared.domains.iam import service as iam_service
-from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
+from cbpupsis_shared.domains.iam.constants import (
+    ADMIN_GROUPS,
+    SUPERADMIN_GROUP,
+)
 from cbpupsis_shared.domains.users import client as users_client
 from cbpupsis_shared.domains.users.constants import (
     INSTITUTION_WIDE_POSITIONS,
@@ -39,6 +42,52 @@ from cbpupsis_shared.domains.users.constants import (
 
 logger = logging.getLogger(__name__)
 _bearer = HTTPBearer(auto_error=False)
+
+
+@dataclass(frozen=True)
+class AdminDataScope:
+    """The caller's data scope: department, college, advisor, or all."""
+
+    position: str
+    department_id: str | None = None
+    college_id: str | None = None
+    advisor_id: uuid.UUID | None = None
+    is_all: bool = False
+
+    def can_access(
+        self,
+        *,
+        department_id: str | None = None,
+        college_id: str | None = None,
+        advisor_id: uuid.UUID | None = None,
+    ) -> bool:
+        """Return whether this scope permits accessing the specified entity."""
+        if self.is_all:
+            return True
+        if self.position == "dean":
+            return self.college_id is not None and self.college_id == college_id
+        if self.position in {"chairperson", "chair"}:
+            return (
+                self.department_id is not None and self.department_id == department_id
+            )
+        if self.position == "advisor":
+            return self.advisor_id is not None and self.advisor_id == advisor_id
+        return False
+
+    def require_access(
+        self,
+        *,
+        department_id: str | None = None,
+        college_id: str | None = None,
+        advisor_id: uuid.UUID | None = None,
+    ) -> None:
+        """Raise ResourceNotFoundError (404) if the entity is outside scope."""
+        if not self.can_access(
+            department_id=department_id,
+            college_id=college_id,
+            advisor_id=advisor_id,
+        ):
+            raise ResourceNotFoundError
 
 
 @dataclass(frozen=True)
@@ -52,26 +101,27 @@ class AdminSession:
     college_id: str | None
     role: str = ROLE_ADMIN
 
+    @property
+    def data_scope(self) -> AdminDataScope:
+        """The caller's data scope from this authenticated session."""
+        is_all = (
+            self.role == ROLE_SUPERADMIN or self.position in INSTITUTION_WIDE_POSITIONS
+        )
+        return AdminDataScope(
+            position=self.position,
+            department_id=self.department_id,
+            college_id=self.college_id,
+            advisor_id=self.id if self.position == "advisor" else None,
+            is_all=is_all,
+        )
+
     def require_resource_scope(
         self, *, department_id: str | None, college_id: str | None
     ) -> None:
         """Hide records outside the position's department or college reach."""
-        allowed = (
-            self.role == ROLE_SUPERADMIN
-            or self.position in INSTITUTION_WIDE_POSITIONS
-            or (
-                self.position == "dean"
-                and self.college_id is not None
-                and self.college_id == college_id
-            )
-            or (
-                self.position == "chairperson"
-                and self.department_id is not None
-                and self.department_id == department_id
-            )
+        self.data_scope.require_access(
+            department_id=department_id, college_id=college_id
         )
-        if not allowed:
-            raise ResourceNotFoundError
 
 
 async def require_admin_session(
@@ -86,6 +136,21 @@ async def require_admin_session(
         # Logged with status and code only, never the token or identity.
         _log_refusal(request, error)
         raise
+
+
+async def require_admin_data_scope(
+    admin: AdminSession = Depends(require_admin_session),
+) -> AdminDataScope:
+    """Shared dependency returning caller data scope (department, college, all).
+
+    Every admin endpoint then filters with one call.
+    """
+    return admin.data_scope
+
+
+get_admin_data_scope = require_admin_data_scope
+require_data_scope = require_admin_data_scope
+get_data_scope = require_admin_data_scope
 
 
 def require_admin_permission(
@@ -104,6 +169,30 @@ def require_admin_permission(
     ) -> AdminSession:
         granted = await iam_service.get_effective_permissions(db, admin.id)
         if not set(required).issubset(granted):
+            error = InsufficientRoleError()
+            _log_refusal(request, error)
+            raise error
+        return admin
+
+    return checker
+
+
+def require_admin_group(
+    *allowed_groups: str,
+) -> Callable[..., Awaitable[AdminSession]]:
+    """Require an MFA-completed Admin session belonging to one of allowed_groups.
+
+    Raises InsufficientRoleError (403 AUTH_INSUFFICIENT_ROLE) if the caller is not
+    in any of the allowed groups.
+    """
+
+    async def checker(
+        request: Request,
+        admin: AdminSession = Depends(require_admin_session),
+        db: AsyncSession = Depends(get_db),
+    ) -> AdminSession:
+        groups = await iam_service.get_user_group_names(db, admin.id)
+        if not set(allowed_groups).intersection(groups):
             error = InsufficientRoleError()
             _log_refusal(request, error)
             raise error
@@ -142,7 +231,7 @@ async def _admin_session(
     if (
         claims.get("role") != ROLE_ADMIN
         or not auth_client.session_mfa_satisfied(claims)
-        or not await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP)
+        or not await iam_service.is_user_in_any_group(db, user_id, ADMIN_GROUPS)
         or await iam_service.is_user_in_group(db, user_id, SUPERADMIN_GROUP)
     ):
         raise InsufficientRoleError

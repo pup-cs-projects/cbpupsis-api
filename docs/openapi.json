@@ -75,13 +75,35 @@
         }
       }
     },
+    "/api/v1/auth/password-policy": {
+      "get": {
+        "tags": [
+          "account"
+        ],
+        "summary": "Get Password Policy",
+        "description": "Return password length and character-class rules for reset and change.",
+        "operationId": "get_password_policy_api_v1_auth_password_policy_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordPolicyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/forgot-password": {
       "post": {
         "tags": [
           "account"
         ],
         "summary": "Forgot Password",
-        "description": "Request a password-reset email.\n\nAlways 202 Accepted. Returning 404 for an unknown address would make this endpoint a\nmembership oracle for any email list.\n\nA shared per-address allowance prevents inbox flooding; an outer IP limit\nalso guards abusive request volume. Earlier usable links remain valid.",
+        "description": "Request a password-reset email by email address or institutional ID.\n\nAlways 202 Accepted. Returning 404 for an unknown identifier would make this\nendpoint a membership oracle.\n\nA shared per-account allowance prevents inbox flooding; an outer IP limit\nalso guards abusive request volume. Earlier usable links remain valid.",
         "operationId": "forgot_password_api_v1_auth_forgot_password_post",
         "requestBody": {
           "content": {
@@ -228,7 +250,7 @@
           "users"
         ],
         "summary": "Read Me",
-        "description": "Return the authenticated user's own profile.",
+        "description": "Return the authenticated user's own profile, group, and permissions.",
         "operationId": "read_me_api_v1_users_me_get",
         "responses": {
           "200": {
@@ -8258,7 +8280,8 @@
           "admin_registrar",
           "admin_finance",
           "admin_chairperson",
-          "admin_dean"
+          "admin_dean",
+          "admin_advisor"
         ],
         "title": "AccountRole",
         "description": "The ``role`` a Superadmin gives a new account, one per CSV row."
@@ -8759,6 +8782,7 @@
       "AdminPosition": {
         "type": "string",
         "enum": [
+          "advisor",
           "chairperson",
           "dean",
           "finance",
@@ -10339,7 +10363,6 @@
           "new_password": {
             "type": "string",
             "maxLength": 128,
-            "minLength": 12,
             "title": "New Password"
           }
         },
@@ -12022,16 +12045,16 @@
       },
       "ForgotPasswordRequest": {
         "properties": {
-          "email": {
+          "identifier": {
             "type": "string",
-            "format": "email",
-            "title": "Email"
+            "title": "Identifier",
+            "description": "Email address, student number, or employee ID."
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "email"
+          "identifier"
         ],
         "title": "ForgotPasswordRequest",
         "description": "Payload for requesting a password-reset email."
@@ -13631,6 +13654,25 @@
         ],
         "title": "Page[WaiverRead]"
       },
+      "PasswordPolicyResponse": {
+        "properties": {
+          "minimumLength": {
+            "type": "integer",
+            "title": "Minimumlength",
+            "default": 8
+          },
+          "requiredRules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Requiredrules"
+          }
+        },
+        "type": "object",
+        "title": "PasswordPolicyResponse",
+        "description": "Password complexity requirements enforced by reset and password change."
+      },
       "PaymentCreate": {
         "properties": {
           "amount": {
@@ -14093,11 +14135,6 @@
       },
       "ResetTokenVerificationResponse": {
         "properties": {
-          "valid": {
-            "type": "boolean",
-            "title": "Valid",
-            "default": true
-          },
           "minimumLength": {
             "type": "integer",
             "title": "Minimumlength",
@@ -14109,6 +14146,11 @@
             },
             "type": "array",
             "title": "Requiredrules"
+          },
+          "valid": {
+            "type": "boolean",
+            "title": "Valid",
+            "default": true
           }
         },
         "type": "object",
@@ -16069,6 +16111,31 @@
               }
             ],
             "title": "Phone Number"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Permissions"
+          },
+          "page_permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Page Permissions"
           }
         },
         "type": "object",

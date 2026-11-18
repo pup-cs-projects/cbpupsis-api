@@ -205,7 +205,7 @@ class TestLimitsAreEnforced:
         limit = min(
             _amount("rate_limit_forgot_password"), settings.password_reset_request_limit
         )
-        payload = {"email": "someone@example.com"}
+        payload = {"identifier": "someone@example.com"}
 
         for _ in range(limit):
             assert (
@@ -342,7 +342,8 @@ class TestDisabledByDefault:
         assert response.status_code == 401
         assert (
             await client.post(
-                "/api/v1/auth/forgot-password", json={"email": "normal@example.com"}
+                "/api/v1/auth/forgot-password",
+                json={"identifier": "normal@example.com"},
             )
         ).status_code == 202
 
@@ -367,7 +368,7 @@ def _amount(setting_name: str) -> int:
 
 async def _exhaust_forgot_password(client: AsyncClient):
     """Spend the forgot-password allowance and return the refused response."""
-    payload = {"email": "someone@example.com"}
+    payload = {"identifier": "someone@example.com"}
     for _ in range(
         min(
             _amount("rate_limit_forgot_password"), settings.password_reset_request_limit

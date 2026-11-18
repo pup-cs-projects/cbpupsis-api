@@ -6,6 +6,7 @@ READ_GRADE = "ReadGrade"
 READ_TRANSCRIPT = "ReadTranscript"
 UPDATE_GRADE = "UpdateGrade"
 SUBMIT_GRADE = "SubmitGrade"
+MODERATE_GRADE = "ModerateGrade"
 
 GRADE_STATE_DRAFT = "DRAFT"
 GRADE_STATE_FINAL = "FINAL"
