@@ -704,6 +704,7 @@ class TestResetPassword:
             },
         )
         assert response.status_code == 401
+        assert response.json()["code"] == "AUTH_RESET_TOKEN_INVALID"
 
     async def test_short_new_password_rejected(
         self,
@@ -843,7 +844,8 @@ class TestChangePassword:
                 "new_password": COMPLEX_NEW_PASSWORD,
             },
         )
-        assert response.status_code == 401
+        assert response.status_code == 400
+        assert response.json()["code"] == "AUTH_CURRENT_PASSWORD_INCORRECT"
 
     async def test_change_returns_a_working_new_pair(
         self,

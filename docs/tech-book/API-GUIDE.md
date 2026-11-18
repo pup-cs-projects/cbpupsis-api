@@ -554,7 +554,8 @@ Before displaying its form, the frontend can call `POST /reset-password` with
 endpoint accepts `{"token":"...","new_password":"..."}` to complete the reset.
 Success returns 200 `{"sessionsRevoked":2}` (the count varies by account).
 Expired and spent links return 410 `AUTH_RESET_TOKEN_EXPIRED` and
-`AUTH_RESET_TOKEN_USED`; the frontend should offer another reset request.
+`AUTH_RESET_TOKEN_USED`, and unknown links (including `verify_only`) return
+401 `AUTH_RESET_TOKEN_INVALID`; the frontend should offer another reset request.
 Password failures return 422 `AUTH_PASSWORD_TOO_WEAK` with `unmet_rules`.
 The reset policy accepts eight characters with uppercase, lowercase, a number,
 and a symbol. Inputs exceeding bcrypt's 72 UTF-8 byte limit are refused rather
@@ -577,8 +578,8 @@ limited token) and accepts `{"current_password":"...","new_password":"..."}`
 pair carrying the same role, MFA, and Admin scope claims. Every other session
 and refresh token of the account is revoked, outstanding reset links are spent,
 and a password-changed notice is mailed, so the client must replace both
-tokens with the returned ones. A wrong current password returns 401 with
-`Current password is incorrect` (no `code`); reusing the temporary password
+tokens with the returned ones. A wrong current password returns 400
+`AUTH_CURRENT_PASSWORD_INCORRECT`; reusing the temporary password
 returns 422 `AUTH_PASSWORD_TOO_WEAK`; an expired temporary password returns
 401 `AUTH_TEMPORARY_PASSWORD_EXPIRED`; an ended session returns 401
 `AUTH_SESSION_EXPIRED`.
