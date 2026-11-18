@@ -405,6 +405,7 @@ async def faculty_roster_setup(db: AsyncSession, grant):
         "own": own,
         "foreign": foreign,
         "empty": empty,
+        "prior_target": prior_target,
         "program": program,
         "current_term": current_term,
         "alice": alice,
@@ -586,6 +587,13 @@ async def test_ac_fac_004_8_record_requires_membership_and_audits_disclosure(
     base = f"/api/v1/faculty/sections/{setup['own'].id}/roster"
     missing = await client.get(f"{base}/{setup['outsider'].id}/record", headers=headers)
     assert missing.status_code == 404
+    prior_term = await client.get(
+        f"/api/v1/faculty/sections/{setup['prior_target'].id}"
+        f"/roster/{setup['alice'].id}/record",
+        headers=headers,
+    )
+    assert prior_term.status_code == 404
+    assert prior_term.json()["code"] == "RESOURCE_NOT_FOUND"
     response = await client.get(f"{base}/{setup['alice'].id}/record", headers=headers)
     assert response.status_code == 200, response.text
     body = response.json()
@@ -602,6 +610,8 @@ async def test_ac_fac_004_8_record_requires_membership_and_audits_disclosure(
     assert audits[0].actor_id == setup["faculty"].id
     assert audits[0].target_id == str(setup["alice"].id)
     assert audits[0].payload["sectionId"] == str(setup["own"].id)
+    assert audits[0].occurred_at is not None
+    assert audits[0].payload["disclosedAt"]
 
 
 async def test_ac_fac_004_9_empty_section_is_not_an_error(
