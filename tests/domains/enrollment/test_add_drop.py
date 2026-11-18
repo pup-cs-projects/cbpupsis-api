@@ -51,8 +51,12 @@ from cbpupsis_shared.domains.enrollment.constants import (
     APPROVE_ADD_DROP,
     CREATE_ADD_DROP_REQUEST,
     READ_ADD_DROP_REQUEST,
+    TAG_ADDED,
+    TAG_DROPPED,
     TAG_PENDING_ADD,
     TAG_PENDING_DROP,
+    TAG_REJECTED_ADD,
+    TAG_REJECTED_DROP,
 )
 from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP
@@ -562,6 +566,15 @@ async def test_ac_enrl_004_2_chair_or_dean_approves_updates_enrollment_and_asses
     decide_data = decide_resp.json()
     assert decide_data["state"] == ADD_DROP_APPROVED
     assert decide_data["remarks"] == "Approved as requested."
+    approved_courses = {c["sectionId"]: c for c in decide_data["courses"]}
+    assert approved_courses[str(s["s6"].id)]["tag"] == TAG_ADDED
+    assert approved_courses[str(s["sections"][4].id)]["tag"] == TAG_DROPPED
+
+    student_get = await client.get(f"{STUDENT_URL}/{request_id}", headers=headers)
+    assert student_get.status_code == 200
+    student_courses = {c["sectionId"]: c for c in student_get.json()["courses"]}
+    assert student_courses[str(s["s6"].id)]["tag"] == TAG_ADDED
+    assert student_courses[str(s["sections"][4].id)]["tag"] == TAG_DROPPED
 
     # Verify database updates
     dropped_sec = await repository.get_student_course_enrollment(
@@ -646,6 +659,7 @@ async def test_ac_enrl_004_3_reject_leaves_enrollment_identical_with_remarks(
     dean, dean_headers = await _admin(
         db, position="dean", department="Computer Science", college="CCIS"
     )
+    dean_id = dean.id
     await _grant_action(db, action=APPROVE_ADD_DROP, users=[dean])
     await _grant_action(db, action=READ_ADD_DROP_REQUEST, users=[dean])
 
@@ -659,14 +673,44 @@ async def test_ac_enrl_004_3_reject_leaves_enrollment_identical_with_remarks(
         },
     )
     assert decide_resp.status_code == 200, decide_resp.text
-    assert decide_resp.json()["state"] == ADD_DROP_REJECTED
-    assert decide_resp.json()["remarks"] == "Not justified at this time."
+    decide_data = decide_resp.json()
+    assert decide_data["state"] == ADD_DROP_REJECTED
+    assert decide_data["remarks"] == "Not justified at this time."
+    rejected_courses = {c["sectionId"]: c for c in decide_data["courses"]}
+    assert rejected_courses[str(s["s6"].id)]["tag"] == TAG_REJECTED_ADD
+    assert rejected_courses[str(s["sections"][4].id)]["tag"] == TAG_REJECTED_DROP
+
+    student_get = await client.get(f"{STUDENT_URL}/{request_id}", headers=headers)
+    assert student_get.status_code == 200
+    student_courses = {c["sectionId"]: c for c in student_get.json()["courses"]}
+    assert student_courses[str(s["s6"].id)]["tag"] == TAG_REJECTED_ADD
+    assert student_courses[str(s["sections"][4].id)]["tag"] == TAG_REJECTED_DROP
+
+    requests = list(
+        await db.scalars(
+            select(AddDropRequest).execution_options(populate_existing=True)
+        )
+    )
+    assert len(requests) == 1
+    req = requests[0]
+    assert req.id == uuid.UUID(request_id)
+    assert req.state == ADD_DROP_REJECTED
+    assert req.version == 2
+    assert req.reviewed_by == dean_id
+    assert req.reviewed_at is not None
+    assert req.remarks == "Not justified at this time."
 
     # Enrollment untouched
     dropped_sec = await repository.get_student_course_enrollment(
         db, s["te"].id, s["sections"][4].id
     )
+    assert dropped_sec is not None
     assert dropped_sec.status == "enrolled"
+
+    added_sec = await repository.get_student_course_enrollment(
+        db, s["te"].id, s["s6"].id
+    )
+    assert added_sec is None
 
 
 async def test_ac_enrl_004_4_decision_queues_notification(

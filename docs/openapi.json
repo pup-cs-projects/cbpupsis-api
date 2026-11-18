@@ -7948,7 +7948,11 @@
             "type": "string",
             "enum": [
               "PENDING_ADD",
-              "PENDING_DROP"
+              "PENDING_DROP",
+              "ADDED",
+              "DROPPED",
+              "REJECTED_ADD",
+              "REJECTED_DROP"
             ],
             "title": "Tag"
           },

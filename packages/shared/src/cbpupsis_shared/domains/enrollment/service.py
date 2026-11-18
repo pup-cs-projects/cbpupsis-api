@@ -23,6 +23,7 @@ from cbpupsis_shared.domains.enrollment.certificate import stage_reissue
 from cbpupsis_shared.domains.enrollment.constants import (
     ACTIVE_COURSE_ENROLLMENT_STATUSES,
     ADD_DROP_APPROVED,
+    ADD_DROP_COURSE_TAGS,
     ADD_DROP_DECISION_ATTEMPTS,
     ADD_DROP_PENDING,
     ADD_DROP_REJECTED,
@@ -44,8 +45,6 @@ from cbpupsis_shared.domains.enrollment.constants import (
     OVERLOAD_REQUIRED_GWA,
     SUMMER_RESTRICTED_ADMISSION_STATUSES,
     SUMMER_SUBJECT_CAP,
-    TAG_PENDING_ADD,
-    TAG_PENDING_DROP,
 )
 from cbpupsis_shared.domains.enrollment.exceptions import (
     AddDropPeriodClosedError,
@@ -1030,7 +1029,9 @@ async def decide_overload_request(
     return result
 
 
-async def _add_drop_course_reads(db: AsyncSession, items) -> list[AddDropCourseRead]:
+async def _add_drop_course_reads(
+    db: AsyncSession, items, *, request_state: str
+) -> list[AddDropCourseRead]:
     if not items:
         return []
     section_ids = [item.section_id for item in items]
@@ -1049,7 +1050,7 @@ async def _add_drop_course_reads(db: AsyncSession, items) -> list[AddDropCourseR
         course = courses_by_id.get(section.course_id)
         if course is None:
             continue
-        tag = TAG_PENDING_ADD if item.action == "ADD" else TAG_PENDING_DROP
+        tag = ADD_DROP_COURSE_TAGS[(request_state, item.action)]
         reads.append(
             AddDropCourseRead(
                 section_id=item.section_id,
@@ -1068,7 +1069,9 @@ async def _student_add_drop_request_reads(
 ) -> list[AddDropRequestRead]:
     reads: list[AddDropRequestRead] = []
     for request_row in requests:
-        course_reads = await _add_drop_course_reads(db, request_row.items)
+        course_reads = await _add_drop_course_reads(
+            db, request_row.items, request_state=request_row.state
+        )
         reads.append(
             AddDropRequestRead(
                 request_id=request_row.id,
@@ -1118,7 +1121,9 @@ async def _admin_add_drop_request_reads(
         program = programs.get(identity.program_id) if identity is not None else None
         if identity is None or term is None or program is None:
             continue
-        course_reads = await _add_drop_course_reads(db, request_row.items)
+        course_reads = await _add_drop_course_reads(
+            db, request_row.items, request_state=request_row.state
+        )
         reads.append(
             AdminAddDropRequestRead(
                 request_id=request_row.id,
