@@ -11,6 +11,9 @@ from cbpupsis_api_faculty.domains.faculty_auth.router import (
     router as faculty_auth_router,
 )
 from cbpupsis_api_faculty.domains.faculty_grades.router import (
+    incompletes_router,
+)
+from cbpupsis_api_faculty.domains.faculty_grades.router import (
     router as grades_router,
 )
 from cbpupsis_api_faculty.domains.faculty_profile.router import (
@@ -26,6 +29,9 @@ FACULTY_AUTH = RouterMount(faculty_auth_router, "/auth/faculty", "faculty-auth")
 FACULTY_PROFILE = RouterMount(profile_router, "/faculty/profile", "faculty-profile")
 SECTIONS = RouterMount(sections_router, "/faculty/sections", "faculty-sections")
 GRADES = RouterMount(grades_router, "/faculty/sections", "faculty-grades")
+INCOMPLETES = RouterMount(
+    incompletes_router, "/faculty/incompletes", "faculty-incompletes"
+)
 
 MOUNTS: tuple[RouterMount, ...] = (
     *COMMON_MOUNTS,
@@ -33,4 +39,5 @@ MOUNTS: tuple[RouterMount, ...] = (
     FACULTY_PROFILE,
     SECTIONS,
     GRADES,
+    INCOMPLETES,
 )

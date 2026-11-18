@@ -7,7 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from cbpupsis_shared.domains.academics.schemas import TermRead
@@ -250,6 +250,7 @@ class SectionGradeEntryRead(BaseModel):
     final_grade: str | None = None
     remarks: str | None = None
     inc_expires_at: datetime | None = None
+    completion_deadline: datetime | None = None
     is_draft: bool = True
     is_locked: bool = False
     status: Literal["MISSING", "DRAFT", "FINAL"]
@@ -318,6 +319,7 @@ class GradeDraftItemInput(BaseModel):
     )
     final_grade: str | int | float | Decimal | None = Field(
         default=None,
+        validation_alias=AliasChoices("finalGrade", "final_grade", "mark"),
         description="Final grade mark (1.00 to 5.00 or INC).",
         examples=["1.25"],
     )
@@ -405,3 +407,161 @@ class FinalizeGradesRead(BaseModel):
     records_committed: int
     notifications_queued: int
     submitted_at: datetime
+
+
+class IncompleteCompletionSummaryRead(BaseModel):
+    """Compact summary of an Incomplete completion filing attached to an Inc row."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        from_attributes=True,
+    )
+
+    id: uuid.UUID
+    grade_id: uuid.UUID
+    proposed_mark: str
+    completion_form_file_id: str
+    remarks: str | None = None
+    state: Literal["PENDING_DEAN", "ENDORSED", "REJECTED", "EXPIRED"]
+    version: int
+    reviewed_by: uuid.UUID | None = None
+    review_remarks: str | None = None
+    resolved_at: datetime | None = None
+    created_at: datetime
+
+
+class IncompleteGradeRead(BaseModel):
+    """One student's Incomplete grade record with deadline, days left, and state."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+    inc_id: uuid.UUID
+    grade_id: uuid.UUID
+    enrollment_id: uuid.UUID
+    section_id: uuid.UUID
+    section_name: str
+    course_id: uuid.UUID
+    course_code: str
+    course_title: str
+    academic_term_id: uuid.UUID
+    academic_year: str
+    semester: str
+    student_id: uuid.UUID
+    student_number: str
+    student_name: str
+    final_grade: str
+    submitted_at: datetime | None = None
+    completion_deadline: datetime | None = None
+    days_left: int | None = None
+    state: Literal["PENDING_COMPLETION", "COMPLETED", "EXPIRED"]
+    latest_completion: IncompleteCompletionSummaryRead | None = None
+
+
+class CreateIncompleteCompletionRequest(BaseModel):
+    """Faculty filing of an Incomplete completion grade; validated in the service."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "proposedMark": "1.50",
+                "completionFormFileId": "form-inc-0001",
+                "remarks": "Completed final project",
+            }
+        },
+    )
+
+    proposed_mark: str | int | float | Decimal | None = Field(
+        default=None,
+        validation_alias=AliasChoices("proposedMark", "proposed_mark", "mark"),
+        description="Passing completion grade mark from 1.00 to 3.00.",
+        examples=["1.50"],
+    )
+    completion_form_file_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "completionFormFileId", "completion_form_file_id", "formFileId"
+        ),
+        description="Reference identifier of the uploaded completion form.",
+        examples=["form-inc-0001"],
+    )
+    remarks: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="Optional remarks accompanying the completion filing.",
+    )
+
+
+class IncompleteCompletionRead(BaseModel):
+    """Full Incomplete completion record returned to faculty and College Deans."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+    id: uuid.UUID
+    completion_id: uuid.UUID
+    inc_id: uuid.UUID
+    grade_id: uuid.UUID
+    enrollment_id: uuid.UUID
+    section_id: uuid.UUID
+    section_name: str
+    course_id: uuid.UUID
+    course_code: str
+    course_title: str
+    academic_term_id: uuid.UUID
+    academic_year: str
+    semester: str
+    student_id: uuid.UUID
+    student_number: str
+    student_name: str
+    college: str | None = None
+    proposed_mark: str
+    completion_form_file_id: str
+    remarks: str | None = None
+    state: Literal["PENDING_DEAN", "ENDORSED", "REJECTED", "EXPIRED"]
+    version: int
+    reviewed_by: uuid.UUID | None = None
+    review_remarks: str | None = None
+    resolved_at: datetime | None = None
+    completion_deadline: datetime | None = None
+    created_at: datetime
+
+
+class IncompleteCompletionDecisionRequest(BaseModel):
+    """College Dean endorsement or rejection of an Incomplete completion."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+    )
+
+    decision: Literal["ENDORSE", "REJECT"]
+    remarks: str | None = Field(
+        default=None,
+        max_length=2000,
+        validation_alias=AliasChoices("remarks", "reviewRemarks", "review_remarks"),
+    )
+    version: int | None = None
+
+
+class IncExpiryRunResult(BaseModel):
+    """Summary returned by one idempotent daily INC expiry sweep."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+    run_key: str
+    processed: int
+    converted: int
+    skipped_duplicate_run: bool = False

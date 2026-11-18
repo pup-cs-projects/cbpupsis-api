@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import Collection
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, time
 from decimal import Decimal
@@ -81,6 +82,7 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     ConflictTerm,
     CurrentEnrollmentRead,
     EnrolledSection,
+    EnrollmentAttemptOwner,
     EnrollmentSubmitRead,
     EnrollmentSubmitSectionRead,
     EnrollmentSummaryRead,
@@ -400,6 +402,22 @@ async def section_roster_enrollments(
 ) -> list[SectionRosterEnrollment]:
     rows = await repository.list_section_roster_enrollments(db, section_id)
     return [SectionRosterEnrollment.model_validate(row) for row in rows]
+
+
+async def get_enrollment_owners(
+    db: AsyncSession, enrollment_ids: Collection[uuid.UUID]
+) -> dict[uuid.UUID, EnrollmentAttemptOwner]:
+    rows = await repository.list_enrollment_owners_by_ids(db, enrollment_ids)
+    return {
+        row["enrollment_id"]: EnrollmentAttemptOwner.model_validate(row) for row in rows
+    }
+
+
+async def list_sections_enrollments(
+    db: AsyncSession, section_ids: Collection[uuid.UUID]
+) -> list[EnrollmentAttemptOwner]:
+    rows = await repository.list_section_enrollments_batch(db, section_ids)
+    return [EnrollmentAttemptOwner.model_validate(row) for row in rows]
 
 
 async def section_roster_add_drop(
