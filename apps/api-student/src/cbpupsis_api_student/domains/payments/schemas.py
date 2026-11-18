@@ -3,8 +3,8 @@
 from cbpupsis_shared.domains.billing.client import (
     PaymentCreate,
     PaymentCreated,
-    PaymentRead,
+    PaymentStatusRead,
     XenditWebhook,
 )
 
-__all__ = ["PaymentCreate", "PaymentCreated", "PaymentRead", "XenditWebhook"]
+__all__ = ["PaymentCreate", "PaymentCreated", "PaymentStatusRead", "XenditWebhook"]

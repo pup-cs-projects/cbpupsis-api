@@ -16,7 +16,7 @@ from cbpupsis_api_student.domains.payments import service
 from cbpupsis_api_student.domains.payments.schemas import (
     PaymentCreate,
     PaymentCreated,
-    PaymentRead,
+    PaymentStatusRead,
     XenditWebhook,
 )
 from cbpupsis_api_student.domains.student_auth.dependencies import (
@@ -106,12 +106,12 @@ async def create_payment(
 
 @router.get(
     "/{payment_id}",
-    response_model=PaymentRead,
+    response_model=PaymentStatusRead,
     dependencies=[Depends(require_permission(READ_PAYMENT))],
 )
 async def read_payment(
     payment_id: uuid.UUID, user: Student, db: Database
-) -> PaymentRead:
+) -> PaymentStatusRead:
     """Read only the signed-in student's payment; foreign IDs are hidden as 404."""
     return await service.read_payment(db, student_id=user.id, payment_id=payment_id)
 

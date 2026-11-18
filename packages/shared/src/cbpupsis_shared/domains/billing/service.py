@@ -48,7 +48,7 @@ from cbpupsis_shared.domains.billing.schemas import (
     FeeStructureSaveRequest,
     HoldRead,
     InstallmentItemRead,
-    PaymentRead,
+    PaymentStatusRead,
     ProgramTuitionRateRead,
     ReconciliationResult,
     StudentBillingAccountRead,
@@ -489,11 +489,11 @@ async def create_payment(
 
 async def read_payment(
     db: AsyncSession, *, student_id: uuid.UUID, payment_id: uuid.UUID
-) -> PaymentRead:
+) -> PaymentStatusRead:
     payment = await repository.get_student_payment(db, student_id, payment_id)
     if payment is None:
         raise ResourceNotFoundError
-    return PaymentRead(
+    return PaymentStatusRead(
         paymentId=payment.id,
         state=payment.payment_status,
         amount=f"{payment.amount:.2f}",

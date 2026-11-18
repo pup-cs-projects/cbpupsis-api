@@ -20,7 +20,9 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     func,
+    select,
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
@@ -304,3 +306,29 @@ class PaymentReconciliationRun(UUIDMixin, Base):
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
+
+
+@event.listens_for(Payment, "before_insert")
+def _fill_non_gateway_payment(mapper, connection, target: Payment) -> None:
+    """Complete a payment written outside the Xendit flow (seeds, history).
+
+    Mirrors c193's backfill of pre-gateway rows: the owner comes from the
+    billing account, and both keys are ``legacy-<id>``. A gateway payment sets
+    all three itself, so this leaves it untouched.
+    """
+    if target.student_id is None:
+        target.student_id = connection.scalar(
+            select(StudentBillingAccount.student_id).where(
+                StudentBillingAccount.id == target.billing_account_id
+            )
+        )
+    if target.idempotency_key is None or target.merchant_reference is None:
+        if target.id is None:
+            target.id = uuid.uuid4()
+        legacy = f"legacy-{target.id}"
+        if target.idempotency_key is None:
+            target.idempotency_key = legacy
+            if target.idempotency_status is None:
+                target.idempotency_status = "COMPLETED"
+        if target.merchant_reference is None:
+            target.merchant_reference = legacy

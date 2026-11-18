@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -236,7 +236,7 @@ class PaymentCreated(BaseModel):
     checkoutUrl: str
 
 
-class PaymentRead(BaseModel):
+class PaymentStatusRead(BaseModel):
     paymentId: uuid.UUID
     state: str
     amount: str

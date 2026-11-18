@@ -1,7 +1,8 @@
-"""Permissions and stable payment state values owned by billing."""
+"""Permissions, payment states, and vocabulary owned by student billing."""
+
+from decimal import Decimal
 
 CREATE_PAYMENT = "CreatePayment"
-READ_PAYMENT = "ReadPayment"
 
 PAYMENT_PENDING = "PENDING"
 PAYMENT_PAID = "PAID"
@@ -9,10 +10,6 @@ PAYMENT_FAILED = "FAILED"
 
 IDEMPOTENCY_PROCESSING = "PROCESSING"
 IDEMPOTENCY_COMPLETED = "COMPLETED"
-"""Permissions and vocabulary owned by student billing."""
-
-from decimal import Decimal
-
 READ_ASSESSMENT = "ReadAssessment"
 READ_PAYMENT = "ReadPayment"
 
