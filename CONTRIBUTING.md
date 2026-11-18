@@ -93,7 +93,9 @@ make setup
 Without make:
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d --build
+docker compose -f docker/docker-compose.yml build
+docker compose -f docker/docker-compose.yml run --rm migrate
+docker compose -f docker/docker-compose.yml up -d
 docker compose -f docker/docker-compose.yml run --rm api-admin python -m scripts.seed_iam
 docker compose -f docker/docker-compose.yml run --rm api-admin python -m scripts.seed_programs
 ```
@@ -102,8 +104,9 @@ docker compose -f docker/docker-compose.yml run --rm api-admin python -m scripts
 BSIT degree programs a student account must name; `make setup` runs both. `make seed-e2e`
 seeds the accounts the HTTP suite logs in as.
 
-Compose runs the three apps as separate services. A one-shot `migrate` service applies
-migrations once before any app starts. Each app has its own API reference:
+Compose runs the three apps as separate services. `make up` never applies migrations: the
+dev env files point at a shared Neon database, so migrating is always a deliberate
+`make migrate`. An app whose database is not at the code's head refuses to start and says so. Each app has its own API reference:
 
 | App | API reference | Serves |
 |---|---|---|

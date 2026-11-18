@@ -99,8 +99,8 @@ class TestPasswordStep:
         headers = {"Authorization": f"Bearer {challenge}"}
         for path in (
             f"{AUTH}/me",
-            "/api/v1/sections",
-            f"/api/v1/sections/{uuid.uuid4()}/roster",
+            "/api/v1/faculty/sections",
+            f"/api/v1/faculty/sections/{uuid.uuid4()}/roster",
             "/api/v1/users/me",
         ):
             assert (await client.get(path, headers=headers)).status_code == 403

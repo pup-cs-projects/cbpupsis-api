@@ -182,6 +182,11 @@ class Settings(BaseSettings):
     outbox_poll_interval_seconds: float = 30.0
     #: Optional unpooled URL using the restricted runtime role, never the owner.
     outbox_listener_database_url: str | None = None
+    #: Name of the worker Lambda the API invokes right after committing an
+    #: outbox message (``cbpupsis_shared.outbox.nudge``). Unset means no nudge:
+    #: locally the worker is woken by LISTEN/NOTIFY, and deployed the EventBridge
+    #: schedule still sweeps up anything a failed nudge missed.
+    outbox_worker_function_name: str | None = None
     #: Messages claimed per tick. Larger batches amortise the query; too large
     #: and one slow message delays every other in the batch.
     outbox_batch_size: int = 50

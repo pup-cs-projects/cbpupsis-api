@@ -47,7 +47,7 @@ EXPECTED_PREFIXES: dict[str, set[str]] = {
         "students",
         "public",
     },
-    "faculty": {"auth", "users", "notifications", "sections"},
+    "faculty": {"auth", "users", "notifications", "faculty"},
     "admin": {"auth", "users", "notifications", "admin", "superadmin", "iam", "audit"},
 }
 
@@ -318,10 +318,10 @@ def test_the_guard_finds_the_admin_apps_superadmin_routes() -> None:
     """Proves the detector works: the admin app does serve these, by design."""
     found = superadmin_routes(ADMIN_MOUNTS)
     for expected in (
-        "POST /users",
-        "GET /users",
-        "POST /users/{user_id}/deactivate",
-        "POST /users/{user_id}/reissue-temporary-password",
-        "POST /users/import",
+        "POST /admin/users",
+        "GET /admin/users",
+        "POST /admin/users/{user_id}/deactivate",
+        "POST /admin/users/{user_id}/reissue-temporary-password",
+        "POST /admin/users/import",
     ):
         assert expected in found, expected

@@ -75,10 +75,15 @@ jobs:
           cp env/admin/env.dev env/student/env.dev
           cp env/admin/env.dev env/faculty/env.dev
 
+      - name: Migrate the database
+        # `up` never migrates (the migrate service sits behind a profile), so the
+        # suite applies migrations explicitly before any app starts.
+        run: |
+          $COMPOSE build
+          $COMPOSE run --rm migrate
+
       - name: Start the stack
-        # The one-shot migrate service runs `alembic upgrade head` before any of
-        # the three apps starts.
-        run: $COMPOSE up -d --build
+        run: $COMPOSE up -d
 
       - name: Wait for the three apps
         # student :8001, faculty :8002, admin :8003. Each must answer before the
