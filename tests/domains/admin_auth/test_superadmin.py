@@ -195,7 +195,7 @@ async def test_ac_104_5_admin_cannot_manage_even_with_grants(
     assert response.status_code == 200, response.text
     auth_headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
     await grant(uuid.UUID(registered_user["id"]), "ManageIAM")
-    for path in ("/api/v1/superadmin/me", "/api/v1/iam/groups", "/api/v1/users"):
+    for path in ("/api/v1/superadmin/me", "/api/v1/iam/groups", "/api/v1/admin/users"):
         assert (await client.get(path, headers=auth_headers)).status_code == 403
     assert (
         await client.patch(
@@ -284,15 +284,17 @@ async def test_user_creation_is_superadmin_only_and_signup_is_gone(
         "email": "new@example.com",
         "role": "admin_registrar",
     }
-    assert (await client.post("/api/v1/users", json=data)).status_code == 401
-    response = await client.post("/api/v1/users", headers=superadmin_headers, json=data)
+    assert (await client.post("/api/v1/admin/users", json=data)).status_code == 401
+    response = await client.post(
+        "/api/v1/admin/users", headers=superadmin_headers, json=data
+    )
     assert response.status_code == 201, response.text
     assert (
         response.json()["email_verified_at"] is not None
         and "password" not in response.text
     )
     duplicate = await client.post(
-        "/api/v1/users", headers=superadmin_headers, json=data
+        "/api/v1/admin/users", headers=superadmin_headers, json=data
     )
     assert duplicate.status_code == 409
     assert duplicate.json()["code"] == "USER_ALREADY_EXISTS"
