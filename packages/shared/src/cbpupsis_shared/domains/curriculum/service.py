@@ -1242,16 +1242,50 @@ async def active_curriculum_courses(
     *,
     curriculum_id: uuid.UUID | None,
     program_id: uuid.UUID,
+    year_level: int,
+    semester: str,
 ) -> list[EnrollmentCourse]:
     """Return active curriculum courses that may have sections in this term."""
-    return [
-        EnrollmentCourse.model_validate(row)
-        for row in await repository.list_active_curriculum_courses(
-            db,
-            curriculum_id=curriculum_id,
-            program_id=program_id,
+    current_rank = _semester_rank(semester)
+    courses = []
+    for row, placement in await repository.list_active_curriculum_courses(
+        db,
+        curriculum_id=curriculum_id,
+        program_id=program_id,
+    ):
+        placement_rank = _semester_rank(placement.semester)
+        if placement.year_level > year_level or (
+            placement.year_level == year_level
+            and placement.semester.strip().casefold() != semester.strip().casefold()
+            and (
+                current_rank is None
+                or placement_rank is None
+                or placement_rank > current_rank
+            )
+        ):
+            continue
+        is_back_subject = placement.year_level < year_level or (
+            placement.year_level == year_level
+            and placement.semester.strip().casefold() != semester.strip().casefold()
         )
-    ]
+        courses.append(
+            EnrollmentCourse.model_validate(row).model_copy(
+                update={"is_back_subject": is_back_subject}
+            )
+        )
+    return courses
+
+
+def _semester_rank(semester: str) -> int | None:
+    """Order regular terms and summer within one curriculum year."""
+    normalized = semester.strip().casefold()
+    if normalized.startswith(("first", "1st")):
+        return 1
+    if normalized.startswith(("second", "2nd")):
+        return 2
+    if "summer" in normalized:
+        return 3
+    return None
 
 
 async def list_curriculum_course_ids(

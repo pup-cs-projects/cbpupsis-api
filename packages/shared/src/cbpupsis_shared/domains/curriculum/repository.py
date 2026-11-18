@@ -533,12 +533,12 @@ async def list_active_curriculum_courses(
     *,
     curriculum_id: uuid.UUID | None,
     program_id: uuid.UUID,
-) -> list[Course]:
+) -> list[tuple[Course, CurriculumCourse]]:
     """Return every active course in the student's curriculum and program.
 
     SQL::
 
-        SELECT courses.* FROM courses
+        SELECT courses.*, curriculum_courses.* FROM courses
         JOIN curriculum_courses ON curriculum_courses.course_id = courses.id
         JOIN curricula ON curricula.id = curriculum_courses.curriculum_id
         WHERE curricula.id = :curriculum_id
@@ -548,8 +548,8 @@ async def list_active_curriculum_courses(
     """
     if curriculum_id is None:
         return []
-    result = await db.scalars(
-        select(Course)
+    result = await db.execute(
+        select(Course, CurriculumCourse)
         .join(CurriculumCourse, CurriculumCourse.course_id == Course.id)
         .join(Curriculum, Curriculum.id == CurriculumCourse.curriculum_id)
         .where(
@@ -559,7 +559,7 @@ async def list_active_curriculum_courses(
         )
         .order_by(Course.course_code, Course.id)
     )
-    return list(result)
+    return list(result.all())
 
 
 async def lock_prerequisite_graph(db: AsyncSession) -> None:

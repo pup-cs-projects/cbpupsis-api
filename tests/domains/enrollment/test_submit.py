@@ -582,6 +582,111 @@ async def test_ac_enrl_001_3_approved_9_allows_actual_35_unit_submit(
     )
 
 
+async def test_ac_enrl_001_8_back_subject_third_summer_course_is_refused(
+    client: AsyncClient, db: AsyncSession, grant
+) -> None:
+    code = f"U{uuid.uuid4().hex[:6].upper()}"
+    program, curriculum, summer_courses = await _program_curriculum(
+        db,
+        code=code,
+        semester="Summer",
+        course_count=3,
+    )
+    back_course = Course(
+        course_code=f"{code}BACK",
+        title="Earlier curriculum course",
+        lecture_units=Decimal("3"),
+        lab_units=Decimal("0"),
+        is_nstp=False,
+        is_active=True,
+    )
+    db.add(back_course)
+    await db.flush()
+    db.add(
+        CurriculumCourse(
+            curriculum_id=curriculum.id,
+            course_id=back_course.id,
+            year_level=1,
+            semester="First Semester",
+        )
+    )
+    future_course = Course(
+        course_code=f"{code}FUT",
+        title="Future curriculum course",
+        lecture_units=Decimal("3"),
+        lab_units=Decimal("0"),
+        is_nstp=False,
+        is_active=True,
+    )
+    db.add(future_course)
+    await db.flush()
+    db.add(
+        CurriculumCourse(
+            curriculum_id=curriculum.id,
+            course_id=future_course.id,
+            year_level=3,
+            semester="Summer",
+        )
+    )
+    term = await _term(db, semester="Summer")
+    student_number = "2026-00268-MN-0"
+    student = await _student(
+        db,
+        program=program,
+        curriculum=curriculum,
+        number=student_number,
+    )
+    selected = [
+        await _section(
+            db,
+            term=term,
+            course=course,
+            name=f"Summer {index}",
+            day=index,
+            start=time(9),
+            end=time(10),
+        )
+        for index, course in enumerate([*summer_courses[:2], back_course])
+    ]
+    future_section = await _section(
+        db,
+        term=term,
+        course=future_course,
+        name="Future Summer",
+        day=3,
+        start=time(9),
+        end=time(10),
+    )
+    term_id = term.id
+    section_ids = [str(section.id) for section in selected]
+    await db.commit()
+    await grant(student.id, CREATE_ENROLLMENT)
+    await grant(student.id, READ_ENROLLMENT)
+
+    available = await client.get(
+        AVAILABLE_URL,
+        headers=await _headers(client, student_number),
+        params={"academicTermId": str(term_id)},
+    )
+    assert available.status_code == 200, available.text
+    assert set(section_ids).issubset({row["sectionId"] for row in available.json()})
+    assert str(future_section.id) not in {row["sectionId"] for row in available.json()}
+
+    response = await client.post(
+        URL,
+        headers=await _headers(client, student_number),
+        json={
+            "academicTermId": str(term_id),
+            "sectionIds": section_ids,
+            "confirmation": True,
+        },
+    )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "ENROLL_SUMMER_SUBJECT_LIMIT"
+    assert await db.scalar(select(func.count()).select_from(TermEnrollment)) == 0
+
+
 async def test_ac_enrl_001_10_ordered_refusals_write_nothing(
     client: AsyncClient, db: AsyncSession, submission
 ) -> None:
@@ -701,6 +806,40 @@ async def test_ac_enrl_001_13_administrative_and_disciplinary_holds_name_office(
     assert (
         await db.scalar(select(func.count()).select_from(StudentCourseEnrollment)) == 0
     )
+
+
+async def test_ac_enrl_001_13_nonblocking_and_resolved_holds_allow_submission(
+    client: AsyncClient, db: AsyncSession, submission
+) -> None:
+    db.add_all(
+        [
+            StudentHold(
+                student_id=submission["student"].id,
+                hold_type="ADMINISTRATIVE",
+                office="Office of the University Registrar",
+                description="Document reminder",
+                blocks_enrollment=False,
+            ),
+            StudentHold(
+                student_id=submission["student"].id,
+                hold_type="DISCIPLINARY",
+                office="Office of Student Services",
+                description="Resolved disciplinary action",
+                blocks_enrollment=True,
+                resolved_at=datetime.now(UTC),
+            ),
+        ]
+    )
+    await db.commit()
+
+    response = await client.post(
+        URL,
+        headers=await _headers(client, "2026-00169-MN-0"),
+        json=_body(submission),
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["status"] == ENROLLED_PENDING
 
 
 async def test_ac_enrl_001_10_conflict_refusal_rolls_back_all_rows(

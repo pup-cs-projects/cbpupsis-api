@@ -442,6 +442,8 @@ async def list_available_courses(
         db,
         curriculum_id=profile.curriculum_id,
         program_id=profile.program_id,
+        year_level=profile.year_level,
+        semester=term.semester,
     )
     courses_by_id = {course.id: course for course in course_rows}
     section_rows = await sections.available_sections(
@@ -548,6 +550,8 @@ async def submit_enrollment(
                 db,
                 curriculum_id=profile.curriculum_id,
                 program_id=profile.program_id,
+                year_level=profile.year_level,
+                semester=term.semester,
             )
             courses_by_id = {course.id: course for course in course_rows}
             selected = await sections.schedule_sections(db, section_ids)
@@ -625,7 +629,10 @@ async def submit_enrollment(
                         units=(
                             courses_by_id[section.course_id].lecture_units
                             + courses_by_id[section.course_id].lab_units
-                        )
+                        ),
+                        is_back_subject=courses_by_id[
+                            section.course_id
+                        ].is_back_subject,
                     )
                     for section in selected
                 ],
