@@ -56,8 +56,10 @@ from cbpupsis_shared.domains.users.exceptions import (
 from cbpupsis_shared.domains.users.schemas import (
     AccountCreate,
     AdminProfileRead,
+    AvatarRead,
     EmergencyContactRead,
     FacultyProfileRead,
+    OverloadStudentIdentity,
     RecordIdentity,
     ScheduleIdentity,
     StudentProfileRead,
@@ -72,6 +74,21 @@ async def record_identity(db: AsyncSession, student_id: uuid.UUID):
         return None
     name = row.full_name or " ".join(filter(None, [row.first_name, row.last_name]))
     return RecordIdentity(student_number=row.student_number, full_name=name)
+
+
+async def overload_student_identities(
+    db: AsyncSession, student_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, OverloadStudentIdentity]:
+    return {
+        row.user_id: OverloadStudentIdentity(
+            user_id=row.user_id,
+            student_number=row.student_number,
+            full_name=row.full_name
+            or " ".join(part for part in (row.first_name, row.last_name) if part),
+            program_id=row.program_id,
+        )
+        for row in await repository.list_overload_student_identities(db, student_ids)
+    }
 
 
 async def schedule_identity(
@@ -696,6 +713,23 @@ async def stage_update_user_profile(
     return UserProfileRead.model_validate(profile)
 
 
+async def stage_replace_avatar(
+    db: AsyncSession, user_id: uuid.UUID, *, content: bytes, content_type: str
+) -> AvatarRead:
+    """Stage ``user_id``'s profile picture, replacing any earlier one."""
+    avatar = await repository.replace_avatar(
+        db, user_id=user_id, content=content, content_type=content_type
+    )
+    await db.flush()
+    return AvatarRead.model_validate(avatar)
+
+
+async def get_avatar(db: AsyncSession, avatar_id: uuid.UUID) -> AvatarRead | None:
+    """Return one stored profile picture as a DTO, or ``None``."""
+    row = await repository.get_avatar(db, avatar_id)
+    return None if row is None else AvatarRead.model_validate(row)
+
+
 async def list_emergency_contacts(
     db: AsyncSession, user_id: uuid.UUID
 ) -> list[EmergencyContactRead]:
@@ -1079,3 +1113,48 @@ async def get_student_by_number(
     if profile is None:
         return None
     return StudentProfileRead.model_validate(profile)
+
+
+async def student_ids_in_programs(db: AsyncSession, program_ids):
+    return await repository.student_ids_in_programs(db, program_ids)
+
+
+async def count_students_by_curriculum(
+    db: AsyncSession, curriculum_id: uuid.UUID
+) -> int:
+    """Return the number of students bound to a curriculum version."""
+    return await repository.count_students_by_curriculum(db, curriculum_id)
+
+
+async def list_student_profiles(
+    db: AsyncSession, user_ids: Sequence[uuid.UUID]
+) -> list[StudentProfileRead]:
+    """Return student profiles for the requested user ids."""
+    rows = await repository.list_student_profiles_by_ids(db, user_ids)
+    return [StudentProfileRead.model_validate(row) for row in rows]
+
+
+def _student_admission_year(student_number: str) -> int | None:
+    prefix = student_number.strip()[:4]
+    return int(prefix) if len(prefix) == 4 and prefix.isdigit() else None
+
+
+async def bind_students_for_curriculum_version(
+    db: AsyncSession,
+    *,
+    program_id: uuid.UUID,
+    curriculum_id: uuid.UUID,
+    effective_admission_year: int,
+) -> list[uuid.UUID]:
+    """Bind students in ``program_id`` admitted on/after ``effective_admission_year``.
+
+    Students admitted earlier retain their existing curriculum version.
+    """
+    profiles = await repository.list_students_by_program(db, program_id)
+    bound_ids: list[uuid.UUID] = []
+    for profile in profiles:
+        admission_year = _student_admission_year(profile.student_number)
+        if admission_year is not None and admission_year >= effective_admission_year:
+            repository.update_student_curriculum(profile, curriculum_id)
+            bound_ids.append(profile.user_id)
+    return bound_ids

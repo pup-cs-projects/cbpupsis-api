@@ -21,8 +21,10 @@ from cbpupsis_shared.domains.users import service
 from cbpupsis_shared.domains.users.schemas import (
     AccountCreate,
     AdminProfileRead,
+    AvatarRead,
     EmergencyContactRead,
     FacultyProfileRead,
+    OverloadStudentIdentity,
     ScheduleIdentity,
     StudentProfileRead,
     UserProfileRead,
@@ -36,14 +38,18 @@ from cbpupsis_shared.domains.users.service import (
 
 __all__ = [
     "AccountProblem",
+    "AvatarRead",
     "EmergencyContactRead",
     "SignInSubject",
     "StudentProfileRead",
     "UserProfileRead",
     "admin_scope",
+    "bind_students_for_curriculum_version",
+    "count_students_by_curriculum",
     "find_account_problems",
     "get_active_user",
     "get_admin_profile",
+    "get_avatar",
     "get_email_sign_in",
     "get_emergency_contact",
     "get_faculty_profile",
@@ -56,8 +62,10 @@ __all__ = [
     "get_user_profile",
     "invalidate_role_sessions",
     "list_emergency_contacts",
+    "list_student_profiles",
     "lock_active_user",
     "lock_role_subject",
+    "overload_student_identities",
     "record_identity",
     "save_admin_profile",
     "schedule_identity",
@@ -65,10 +73,17 @@ __all__ = [
     "stage_admin_deactivation_override",
     "stage_create_emergency_contact",
     "stage_delete_emergency_contact",
+    "stage_replace_avatar",
     "stage_update_emergency_contact",
     "stage_update_user_profile",
     "user_exists",
 ]
+
+
+async def overload_student_identities(
+    db: AsyncSession, student_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, OverloadStudentIdentity]:
+    return await service.overload_student_identities(db, student_ids)
 
 
 async def schedule_identity(
@@ -163,6 +178,18 @@ async def stage_update_user_profile(
     db: AsyncSession, user_id: uuid.UUID, **fields: object
 ) -> UserProfileRead:
     return await service.stage_update_user_profile(db, user_id, **fields)
+
+
+async def stage_replace_avatar(
+    db: AsyncSession, user_id: uuid.UUID, *, content: bytes, content_type: str
+) -> AvatarRead:
+    return await service.stage_replace_avatar(
+        db, user_id, content=content, content_type=content_type
+    )
+
+
+async def get_avatar(db: AsyncSession, avatar_id: uuid.UUID) -> AvatarRead | None:
+    return await service.get_avatar(db, avatar_id)
 
 
 async def list_emergency_contacts(
@@ -266,3 +293,34 @@ async def get_student_by_number(
 ) -> StudentProfileRead | None:
     """Return a student profile by student number, or None."""
     return await service.get_student_by_number(db, student_number)
+
+
+async def student_ids_in_programs(db: AsyncSession, program_ids):
+    return await service.student_ids_in_programs(db, program_ids)
+
+
+async def count_students_by_curriculum(
+    db: AsyncSession, curriculum_id: uuid.UUID
+) -> int:
+    return await service.count_students_by_curriculum(db, curriculum_id)
+
+
+async def list_student_profiles(
+    db: AsyncSession, user_ids: Sequence[uuid.UUID]
+) -> list[StudentProfileRead]:
+    return await service.list_student_profiles(db, user_ids)
+
+
+async def bind_students_for_curriculum_version(
+    db: AsyncSession,
+    *,
+    program_id: uuid.UUID,
+    curriculum_id: uuid.UUID,
+    effective_admission_year: int,
+) -> list[uuid.UUID]:
+    return await service.bind_students_for_curriculum_version(
+        db,
+        program_id=program_id,
+        curriculum_id=curriculum_id,
+        effective_admission_year=effective_admission_year,
+    )

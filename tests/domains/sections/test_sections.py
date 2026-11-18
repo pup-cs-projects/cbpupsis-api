@@ -77,7 +77,7 @@ async def setup(db: AsyncSession, grant):
 
 async def test_ac_102_6_lists_only_own_sections(client: AsyncClient, setup) -> None:
     headers = await _session(client, "2021-00456-MN-0")
-    response = await client.get("/api/v1/sections", headers=headers)
+    response = await client.get("/api/v1/faculty/sections", headers=headers)
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["total"] == 1
@@ -89,14 +89,14 @@ async def test_ac_102_7_someone_elses_section_answers_404(
 ) -> None:
     headers = await _session(client, "2021-00456-MN-0")
     own = await client.get(
-        f"/api/v1/sections/{setup['own'].id}/roster", headers=headers
+        f"/api/v1/faculty/sections/{setup['own'].id}/roster", headers=headers
     )
     assert own.status_code == 200 and own.json()["roster"] == []
     foreign = await client.get(
-        f"/api/v1/sections/{setup['foreign'].id}/roster", headers=headers
+        f"/api/v1/faculty/sections/{setup['foreign'].id}/roster", headers=headers
     )
     missing = await client.get(
-        f"/api/v1/sections/{uuid.uuid4()}/roster", headers=headers
+        f"/api/v1/faculty/sections/{uuid.uuid4()}/roster", headers=headers
     )
     assert foreign.status_code == missing.status_code == 404
     body_foreign, body_missing = foreign.json(), missing.json()
@@ -109,4 +109,16 @@ async def test_ac_102_7_someone_elses_section_answers_404(
 async def test_sections_need_the_permission(client: AsyncClient, setup) -> None:
     """The coarse check: a faculty session without ReadCourseSection is 403."""
     headers = await _session(client, "2021-00457-MN-0")
-    assert (await client.get("/api/v1/sections", headers=headers)).status_code == 403
+    assert (
+        await client.get("/api/v1/faculty/sections", headers=headers)
+    ).status_code == 403
+
+
+async def test_old_sections_paths_return_404(client: AsyncClient, setup) -> None:
+    """The old un-prefixed sections routes return 404 after being moved to /faculty."""
+    headers = await _session(client, "2021-00456-MN-0")
+    old_base = "/api/v1" + "/sections"
+    assert (await client.get(old_base, headers=headers)).status_code == 404
+    assert (
+        await client.get(f"{old_base}/{setup['own'].id}/roster", headers=headers)
+    ).status_code == 404

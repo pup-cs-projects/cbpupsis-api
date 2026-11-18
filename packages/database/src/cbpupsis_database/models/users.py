@@ -26,6 +26,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     SmallInteger,
     String,
     Text,
@@ -320,6 +321,9 @@ class StudentProfile(Base):
     enrollment_status: Mapped[str] = mapped_column(
         String(30), default="pending", server_default="pending"
     )
+    admission_status: Mapped[str] = mapped_column(
+        String(30), default="REGULAR", server_default="REGULAR"
+    )
     fhe_qualified: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true"
     )
@@ -329,6 +333,9 @@ class StudentProfile(Base):
     fhe_forfeiture_reason: Mapped[str | None] = mapped_column(String(255), default=None)
     is_graduating_senior: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
+    )
+    graduating_final_term_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("academic_terms.id", ondelete="SET NULL"), default=None
     )
     has_financial_hold: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
@@ -366,3 +373,20 @@ class EmergencyContact(UUIDMixin, Base):
     )
 
     __table_args__ = (Index("idx_fk_emergency_contacts_user_id", "user_id"),)
+
+
+class UserAvatar(UUIDMixin, TimestampMixin, Base):
+    """A user's current profile picture, stored after content inspection.
+
+    Kept in the database rather than in process memory or on local disk: the
+    apps run as several short-lived instances, so bytes held by one instance
+    are gone for the next request. One row per user; an upload replaces it.
+    """
+
+    __tablename__ = "user_avatars"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True
+    )
+    content_type: Mapped[str] = mapped_column(String(32))
+    content: Mapped[bytes] = mapped_column(LargeBinary)

@@ -1,4 +1,4 @@
-"""HTTP layer for the CSV account import; mounted beneath /api/v1/users.
+"""HTTP layer for the CSV account import; mounted beneath /api/v1/admin/users.
 
 Served only by the admin app: it is the one image that parses multipart
 uploads, and the only one a Superadmin signs in to.

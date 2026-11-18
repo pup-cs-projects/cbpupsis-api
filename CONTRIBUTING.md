@@ -10,7 +10,7 @@ pull request. The frontend team has its own guide in
 | Frontend developers (2) | The web client, in `cbpupsis-client` |
 | Product owner (@JpCurada) | Backlog, priorities, final review, merges to `main` |
 
-Work is tracked on the [CBPUPSIS API board](https://github.com/orgs/pup-cs-projects/projects/2).
+Work in both repositories is tracked on one board, [CBPUPSIS](https://github.com/orgs/pup-cs-projects/projects/4).
 
 ## Contents
 
@@ -93,7 +93,9 @@ make setup
 Without make:
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d --build
+docker compose -f docker/docker-compose.yml build
+docker compose -f docker/docker-compose.yml run --rm migrate
+docker compose -f docker/docker-compose.yml up -d
 docker compose -f docker/docker-compose.yml run --rm api-admin python -m scripts.seed_iam
 docker compose -f docker/docker-compose.yml run --rm api-admin python -m scripts.seed_programs
 ```
@@ -102,8 +104,9 @@ docker compose -f docker/docker-compose.yml run --rm api-admin python -m scripts
 BSIT degree programs a student account must name; `make setup` runs both. `make seed-e2e`
 seeds the accounts the HTTP suite logs in as.
 
-Compose runs the three apps as separate services. A one-shot `migrate` service applies
-migrations once before any app starts. Each app has its own API reference:
+Compose runs the three apps as separate services. `make up` never applies migrations: the
+dev env files point at a shared Neon database, so migrating is always a deliberate
+`make migrate`. An app whose database is not at the code's head refuses to start and says so. Each app has its own API reference:
 
 | App | API reference | Serves |
 |---|---|---|
@@ -127,45 +130,100 @@ run `make create-admin EMAIL=you@example.com` (or
 
 ## 3. Daily workflow
 
+Work flows through one branch per functional requirement (FR) and one branch per user story:
+
+```
+dev
+ └── fr003                      (FR-003 Enrollment)
+      ├── api-us-enrl-001       (US-ENRL-001, backend)
+      └── api-us-enrl-002       (US-ENRL-002, backend)
+```
+
+Every issue says its branch and where to merge it, in the **In short** box at the top.
+
 1. **Pick an issue** from the **Ready** column of the board. Assign yourself and move it to **In Progress**.
-2. **Branch from an up-to-date `dev`:**
+2. **Branch from an up-to-date FR branch.** The issue tells you which one. For US-ENRL-001 under FR-003:
 
    ```bash
-   git checkout dev
-   git pull origin dev
-   git checkout -b feature/account-lockout
+   git fetch origin
+   git checkout fr003
+   git pull origin fr003
+   git checkout -b api-us-enrl-001
    ```
 
+   If the FR branch does not exist yet, the product owner creates it from `dev` first.
+   All `[API]` tasks of one story are built on the same story branch.
 3. **Build it in small commits.** Run the tests covering your change as you go:
-   `uv run pytest tests/domains/auth -q`.
-4. **Before pushing,** pull `dev` again and fix any conflicts on your branch:
+   `uv run pytest tests/domains/enrollment -q`.
+4. **Before pushing,** pull the FR branch again and fix any conflicts on your branch:
 
    ```bash
-   git pull origin dev
+   git pull origin fr003
    uv run pytest -q
-   git push -u origin feature/account-lockout
+   git push -u origin api-us-enrl-001
    ```
 
-5. **Open a pull request against `dev`.** Fill in every section of the template. Link the issue
-   with `Closes #N`, and move the issue to **In Review**.
+5. **Open a pull request against the FR branch** (`fr003`), not `dev`. Fill in every section of
+   the template. List every task it finishes with `Closes #N`, and move the issues to **In Review**.
 6. **Review.** Request review from at least one other backend developer. Reply to every comment,
    push fixes as new commits, and re-request review.
 7. **Merge.** When CI is green and one reviewer has approved, a maintainer **squashes and
-   merges**. The PR title becomes the commit on `dev`. Delete the branch afterwards.
+   merges** into the FR branch. Close the issues by hand (GitHub only closes them automatically on
+   the default branch). Delete the story branch afterwards.
+8. **Finish the FR.** When every story of the FR is merged and tested on its FR branch, the product
+   owner opens a PR from `fr003` to `dev` and merges it with a **merge commit**.
 
-`dev` is released to `main` by the product owner through a PR from `dev` to `main`.
+**Fixes after testing.** A problem found while testing an FR branch or `dev` gets a short-lived
+branch named by what it changes: `bugfix/<name>`, `style/<name>`, or `docs/<name>`. Branch from the
+branch you tested (the FR branch or `dev`) and open the PR back into it.
+
+### Releasing
+
+Releases move `dev` -> `staging` -> `main`, each step a pull request merged by the product owner.
+A merge into `staging` deploys the staging environment, and a merge into `main` deploys
+production (see `deploy.yml` below).
+
+1. Open a PR from `dev` to `staging`. Merging it deploys staging.
+2. Check the release on the staging portals.
+3. Open a PR from `staging` to `main`. Merging it deploys production.
+
+Use a **merge commit**, not a squash, for `dev` -> `staging` and `staging` -> `main`, so the
+three branches keep the same history and the next release PR shows only what is new.
+
+An urgent fix may go `hotfix/<name>` -> `main` directly. Afterwards open a PR from `main` back
+into `staging` and from `staging` into `dev`, so the fix is not lost by the next release.
+
+Every migration must be **expand then contract**: a deploy that fails its smoke test rolls the
+code back, but not the database, so the previous code must still work against the new schema.
+Add a column in one release and drop the old one in a later release, never in the same one.
 
 ## 4. Branches and commits
 
 | Branch | Purpose | Example |
 |---|---|---|
-| `main` | Released code. Never commit to it directly. | |
-| `dev` | Integration branch. Every PR targets it. Never commit to it directly. | |
-| `feature/<name>` | New work | `feature/account-lockout` |
-| `bugfix/<name>` | A fix for something on `dev` | `bugfix/gpa-excludes-nstp` |
+| `main` | Production. A merge deploys it. Never commit to it directly. | |
+| `staging` | The release candidate. A merge deploys staging. Never commit to it directly. | |
+| `dev` | Integration branch. Receives finished FR branches and fixes. Never commit to it directly. | |
+| `fr00N` | One per functional requirement, from `dev`. Story branches merge into it. Never commit to it directly. | `fr003` |
+| `api-us-<module>-<nnn>` | One per user story (all its `[API]` tasks), from its FR branch, merged back into it | `api-us-enrl-001` |
+| `api-fr00N-<name>` | An `[API]` task that belongs to an FR but to no story, from that FR branch | `api-fr001-password-policy` |
+| `bugfix/<name>` | A fix found while testing, into the branch it was found on | `bugfix/gpa-excludes-nstp` |
+| `style/<name>` | A formatting or lint fix found while testing | `style/enrollment-imports` |
+| `docs/<name>` | A documentation change | `docs/branch-workflow` |
 | `hotfix/<name>` | An urgent fix for `main` | `hotfix/login-crash` |
 
-Names are lowercase and hyphen-separated. One issue per branch.
+The FR number is the story's parent FR issue: FR-001 is `fr001`, FR-003 is `fr003`. The story
+part is the story id in lowercase: US-ENRL-001 is `us-enrl-001`. The frontend repository uses the
+same names with `web-` instead of `api-`, so both halves of a story are easy to match.
+
+| Branch | Branch from | PR into | Merge |
+|---|---|---|---|
+| `fr00N` | `dev` | `dev` | merge commit, by the product owner |
+| `api-us-...`, `api-fr00N-...` | its FR branch | the same FR branch | squash |
+| `bugfix/`, `style/`, `docs/` | the FR branch or `dev` | the branch it came from | squash |
+| `hotfix/` | `main` | `main` | see Releasing |
+
+Names are lowercase and hyphen-separated. Do not use `feature/` or `refactor/` branches.
 
 Commit messages and PR titles use **Conventional Commits**:
 
@@ -198,7 +256,7 @@ Installed by `uv run pre-commit install`, configured in `.pre-commit-config.yaml
 |---|---|---|
 | File hygiene | commit | valid YAML, JSON, TOML; trailing whitespace; final newline; merge markers; large files; mixed line endings; stray debugger calls |
 | `detect-private-key` | commit | no private keys in the diff |
-| `no-commit-to-branch` | commit | refuses commits on `main` and `dev` |
+| `no-commit-to-branch` | commit | refuses commits on `main`, `staging`, and `dev` |
 | `ruff-check --fix` | commit | lint (PEP 8, imports, bugbear, pyupgrade) and fixes what it can |
 | `ruff-format` | commit | formatting |
 | `bandit` | commit | security lint over `packages/`, `apps/`, `scripts/`, and `main.py` |
@@ -213,9 +271,13 @@ moves the failure to your PR.
 
 | Workflow | When | What |
 |---|---|---|
-| `ci.yml` | every push to `main` or `dev`, and every PR | pre-commit hooks; `pytest` with coverage; `pip-audit` for vulnerable dependencies |
+| `ci.yml` | every push to `dev`, every PR, and as the first stage of every deploy | pre-commit hooks; `pytest` with coverage; `pip-audit` for vulnerable dependencies |
+| `deploy.yml` | every push to `staging` (deploys staging) or `main` (deploys production) | CI; database migrations; builds the student, faculty, admin, and worker images; updates each Lambda function; smoke-tests each one and rolls it back to its previous image if the test fails |
 | `e2e.yml` | manual only (Actions tab), paused until the Bruno collection stops using the removed `/auth/register` | starts Docker, Postgres, and the API, seeds accounts, runs the Bruno suite |
-| `pr-conventions.yml` | every PR | Conventional Commits title; branch name; PR targets `dev` |
+| `pr-conventions.yml` | every PR | Conventional Commits title; branch name; base branch (story -> FR branch -> `dev`, fixes back into the branch they came from, `dev` -> `staging` -> `main` for releases) |
+
+A deploy that fails shows as a red run on the `staging` or `main` branch. The infrastructure it
+deploys to is defined in `cbpupsis-infra`.
 
 The org is on the GitHub Free plan, so these checks cannot be made required. **The team rule is
 that nobody merges a PR with a red check.** To read a failure: `gh run view <id> --log-failed`.
@@ -250,19 +312,28 @@ frontend team hears about it from you, not from a broken screen.
 Use the issue forms: **User story**, **Task**, **Bug report**, **Decision**. The full guide is
 [docs/tech-book/WRITING-ISSUES.md](docs/tech-book/WRITING-ISSUES.md). In short:
 
-- Titles: `EP-NN: <module>` for epics, `US-N: <capability>` for stories, `Decide: <question>` for
-  decisions, and a plain imperative sentence for tasks.
-- Labels: one `type:`, one `area:`, one `priority:`.
+- Titles: `FR-00N: <module>` for functional requirements, `US-<MODULE>-<NNN>: <capability>` for
+  stories, `[API] US-...` and `[WEB] US-...` for the backend and frontend halves of a story,
+  `Chore: <verb> <thing>` for setup and cleanup work. There are no decision issues: pick the
+  answer and write it into the task.
+- Every issue starts with an **In short** box: one sentence, who builds it, the sprint, what to
+  finish first, and the branch with where it merges, for example
+  `` **Branch:** `api-us-enrl-001` from `fr003` · **Merge into:** `fr003` ``.
+- Labels: one `type:`, one `module:`, and one MoSCoW label (`must-have`, `should-have`,
+  `could-have`, `wont-have`).
 - Stories describe what a user can observe and carry Given, When, Then acceptance criteria with
-  ids (`AC-4.1`) that tests reference.
-- Attach every story and task to its epic as a **sub-issue**.
+  ids (`AC-STU-001.1`) that tests reference.
+- Every `[API]` task names the permission each endpoint requires. Sample JSON in an issue is an
+  illustration, never a default.
+- Attach every story and task to its parent as a **sub-issue**, and add it to the
+  [CBPUPSIS board](https://github.com/orgs/pup-cs-projects/projects/4).
 - Write plainly. Do not use em dashes.
 
 ## 9. Definition of ready and done
 
 **Ready to start** when the issue has:
 
-- [ ] A parent epic, and `type:`, `area:`, and `priority:` labels
+- [ ] A parent issue, and `type:`, `module:`, and MoSCoW labels
 - [ ] Acceptance criteria that can fail, with ids for stories
 - [ ] An SRS reference
 - [ ] No open blocker (no `status: blocked`)
@@ -272,15 +343,16 @@ Use the issue forms: **User story**, **Task**, **Bug report**, **Decision**. The
 - [ ] Each acceptance criterion is covered by a test that names its AC id
 - [ ] CI is green on the PR
 - [ ] Error codes, migrations, and docs are updated where the change needs them
-- [ ] One reviewer approved and the PR is squash-merged into `dev`
-- [ ] The issue is closed by the merge
+- [ ] One reviewer approved and the PR is squash-merged into its FR branch
+- [ ] The issue is closed after the merge
 
 ## 10. Troubleshooting
 
 | Symptom | Fix |
 |---|---|
 | `Permission denied` on push | Accept the org invitation and confirm you have write access to the repo |
-| Commit refused: "Don't commit to branch" | You are on `dev` or `main`. `git checkout -b feature/<name>`, then commit |
+| Commit refused: "Don't commit to branch" | You are on `dev`, `staging`, `main`, or an FR branch. `git checkout -b api-us-<module>-<nnn>`, then commit |
+| PR check "Branch name and base" is red | The branch name or the PR's base is wrong. A story branch targets its FR branch, an FR branch targets `dev`. Rename the branch or change the base in the PR |
 | Commit refused by `conventional-pre-commit` | Rewrite the message as `type(scope): description` |
 | Hook changed files and the commit stopped | `git add` those files and commit again |
 | `make: command not found` on Windows | Use the plain commands shown next to each make target |

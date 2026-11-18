@@ -20,6 +20,7 @@ from cbpupsis_database.models.users import (
     EmergencyContact,
     StudentProfile,
     User,
+    UserAvatar,
     UserProfile,
 )
 from cbpupsis_shared.domains.auth.security import hash_password
@@ -533,6 +534,58 @@ class TestAvatarUploadAndContentInspection:
         )
         assert polyglot_res.status_code == 415
         assert polyglot_res.json()["code"] == "UNSUPPORTED_MEDIA_TYPE"
+
+
+class TestAvatarStorage:
+    async def test_avatar_is_stored_in_the_database_and_replaced_on_upload(
+        self, client: AsyncClient, student_one: dict[str, object], db: AsyncSession
+    ) -> None:
+        """The picture outlives the process that received it, and a second upload
+        replaces the first instead of leaving it behind."""
+        headers = await _student_headers(client, student_one)
+        first = await client.post(
+            AVATAR,
+            headers=headers,
+            files={"file": ("a.png", VALID_PNG_BYTES, "image/png")},
+        )
+        assert first.status_code == 201, first.text
+        second = await client.post(
+            AVATAR,
+            headers=headers,
+            files={"file": ("b.png", VALID_PNG_BYTES, "image/png")},
+        )
+        assert second.status_code == 201, second.text
+
+        rows = (
+            await db.scalars(
+                select(UserAvatar).where(UserAvatar.user_id == student_one["user_id"])
+            )
+        ).all()
+        assert len(rows) == 1
+        assert second.json()["avatarUrl"].endswith(str(rows[0].id))
+        assert rows[0].content == VALID_PNG_BYTES
+
+        stale = await client.get(first.json()["avatarUrl"], headers=headers)
+        assert stale.status_code == 404
+
+    async def test_another_students_avatar_answers_404(
+        self,
+        client: AsyncClient,
+        student_one: dict[str, object],
+        student_two: dict[str, object],
+    ) -> None:
+        """A student cannot read another student's picture by its id."""
+        owner_headers = await _student_headers(client, student_one)
+        uploaded = await client.post(
+            AVATAR,
+            headers=owner_headers,
+            files={"file": ("a.png", VALID_PNG_BYTES, "image/png")},
+        )
+        assert uploaded.status_code == 201, uploaded.text
+
+        other_headers = await _student_headers(client, student_two)
+        res = await client.get(uploaded.json()["avatarUrl"], headers=other_headers)
+        assert res.status_code == 404
 
 
 class TestAuditAndSecurity:

@@ -22,6 +22,8 @@ from cbpupsis_database.models.iam import (
 )
 
 MANAGE_IAM = "ManageIAM"
+MANAGE_FEE_STRUCTURE = "ManageFeeStructure"
+FEE_STRUCTURE_ADMIN = "FeeStructureAdmin"
 
 #: The group bootstrap_admin promotes into. Must exist in seed_iam's GROUPS.
 ADMIN_GROUP = "Admins"
@@ -31,6 +33,28 @@ FACULTY_GROUP = "Faculty"
 #: Student accounts join this group. It carries no policy yet: the student
 #: domains attach theirs as they are built.
 STUDENT_GROUP = "Students"
+
+ADMIN_POSITION_POLICIES: dict[str, tuple[str, ...]] = {
+    "chairperson": (
+        "AddDropRequestAdmin",
+        "CatalogAdmin",
+        "EnrollmentReportReader",
+        "OverloadRequestReader",
+    ),
+    "dean": (
+        "AddDropRequestAdmin",
+        "CatalogReader",
+        "EnrollmentReportReader",
+        "OverloadRequestAdmin",
+    ),
+    "registrar": (
+        "AddDropRequestReader",
+        "CatalogReader",
+        "EnrollmentReportReader",
+        "OverloadRequestReader",
+    ),
+    "finance": (FEE_STRUCTURE_ADMIN,),
+}
 
 SUPERADMIN_ACTIONS = frozenset(
     {

@@ -8,7 +8,7 @@ administration and reporting.
 | | |
 |---|---|
 | Requirements | [docs/project-specs/SRS.md](docs/project-specs/SRS.md) |
-| Board | [CBPUPSIS API](https://github.com/orgs/pup-cs-projects/projects/2) |
+| Board | [CBPUPSIS](https://github.com/orgs/pup-cs-projects/projects/4) |
 | Web client | [cbpupsis-client](https://github.com/pup-cs-projects/cbpupsis-client) |
 | How to contribute | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
@@ -38,7 +38,7 @@ for app in student faculty admin; do cp env.example env/$app/env.dev; done
 # fill in JWT_SECRET and the two database URLs, the same in all three (see CONTRIBUTING.md)
 
 uv run pytest -q                   # should pass before you change anything
-make setup                         # build, start, migrate, and seed with Docker
+make setup                         # build, migrate, start, and seed with Docker
 ```
 
 Compose runs the three apps as separate services. Each has its own API reference, in
@@ -63,7 +63,7 @@ paths. No `make` on Windows? `CONTRIBUTING.md` lists the plain commands.
 | Lint and format everything | `uv run pre-commit run --all-files` |
 | Start or stop the stack | `make up` / `make down` |
 | Follow logs | `make logs` |
-| Apply migrations | `make migrate` |
+| Apply migrations (never done by `make up`) | `make migrate` |
 | Create a migration | `make migrate-create MSG="add enrollments table"` |
 | Seed permissions and groups | `make seed` |
 | Seed degree programs (needed to create students) | `make seed-programs` |
@@ -112,5 +112,5 @@ docs/                      specifications and the tech book
 
 ## Contributing
 
-Branch from `dev`, follow Conventional Commits, and open a PR against `dev`. The full process,
+Branch each user story from its FR branch (for example `api-us-enrl-001` from `fr003`), follow Conventional Commits, and open the PR against that FR branch. The full process,
 including the definition of done, is in [CONTRIBUTING.md](CONTRIBUTING.md).

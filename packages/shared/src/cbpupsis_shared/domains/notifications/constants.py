@@ -62,6 +62,12 @@ class NotificationTypeSpec:
 #: type is opt-outable — the same "declare it as data" approach the IAM seed
 #: takes with permissions.
 NOTIFICATION_TYPES: dict[str, NotificationTypeSpec] = {
+    "billing.account_overdue": NotificationTypeSpec(
+        default_channels=(Channel.EMAIL, Channel.IN_APP)
+    ),
+    "enrollment.waiver_decided": NotificationTypeSpec(
+        default_channels=(Channel.IN_APP,), optional=False
+    ),
     "item.created": NotificationTypeSpec(default_channels=(Channel.IN_APP,)),
     "user.deactivated": NotificationTypeSpec(
         default_channels=(Channel.EMAIL, Channel.IN_APP), optional=False
@@ -81,6 +87,13 @@ NOTIFICATION_TYPES: dict[str, NotificationTypeSpec] = {
     #: is a convenience, and a user who does not want one should be able to say
     #: so.
     "notifications.digest": NotificationTypeSpec(default_channels=(Channel.EMAIL,)),
+    "enrollment.confirmed": NotificationTypeSpec(default_channels=(Channel.IN_APP,)),
+    "enrollment.overload_decided": NotificationTypeSpec(
+        default_channels=(Channel.IN_APP,)
+    ),
+    "enrollment.add_drop_decided": NotificationTypeSpec(
+        default_channels=(Channel.IN_APP,)
+    ),
 }
 
 #: The outbox event names this domain handles. Registered by subscribers.py, and

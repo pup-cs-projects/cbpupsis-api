@@ -1,5 +1,19 @@
 # FastAPI Modular-Monolith Template
 
+## Role route prefixes
+
+Put every route under the prefix of the role that uses it. Then the path alone tells you who calls it:
+
+| Prefix | Who calls it | App |
+| :-- | :-- | :-- |
+| `/api/v1/student/...` | Student | api-student |
+| `/api/v1/faculty/...` | Faculty (including section work) | api-faculty |
+| `/api/v1/admin/...` | Chair, Dean, Registrar, Finance (one shared admin app, data filtered by role) | api-admin |
+| `/api/v1/superadmin/...` | Superadmin | api-admin |
+| `/api/v1/auth/...` | Every role (sign-in, password, keep-alive) | all apps |
+| `/api/v1/public/...` | Nobody signed in (certificate and records verification, payment webhook) | the app that owns the data |
+| `/api/v1/users/me`, `/api/v1/notifications`, `/api/v1/academic-calendar` | Any signed-in user (own data or read only) | all apps |
+
 ## Student grades and transcript (US-STU-004)
 
 The student app serves private grade reads and a paginated cumulative transcript
@@ -46,9 +60,9 @@ in the outbox job is encrypted like a reset link.
 
 | Endpoint | Notes |
 |---|---|
-| `POST /users` | One account, JSON body with the CSV fields below. `201 UserRead`. `409 USER_ALREADY_EXISTS` (`field`: `email` or `institutional_id`), `422` for a field the role requires or an invalid value, `422 ACCOUNT_PROGRAM_UNKNOWN`. |
-| `POST /users/import` | Admin app only (the image that parses multipart). Multipart field `file`. All rows or none: `201 {"created": n, "user_ids": [...]}`, or `422 USER_IMPORT_INVALID` with `errors: [{row, column, rule}]` listing every problem, or `413 USER_IMPORT_TOO_LARGE`. |
-| `POST /users/{id}/reissue-temporary-password` | New temporary password and expiry, a new email, every session revoked, lockout cleared. `204`; `404` for a missing or inactive account. |
+| `POST /admin/users` | One account, JSON body with the CSV fields below. `201 UserRead`. `409 USER_ALREADY_EXISTS` (`field`: `email` or `institutional_id`), `422` for a field the role requires or an invalid value, `422 ACCOUNT_PROGRAM_UNKNOWN`. |
+| `POST /admin/users/import` | Admin app only (the image that parses multipart). Multipart field `file`. All rows or none: `201 {"created": n, "user_ids": [...]}`, or `422 USER_IMPORT_INVALID` with `errors: [{row, column, rule}]` listing every problem, or `413 USER_IMPORT_TOO_LARGE`. |
+| `POST /admin/users/{id}/reissue-temporary-password` | New temporary password and expiry, a new email, every session revoked, lockout cleared. `204`; `404` for a missing or inactive account. |
 
 **The temporary password is forced and expiring.** The user signs in with it
 through their role's normal sign-in (student, faculty, Admin, or
@@ -138,6 +152,39 @@ password `app_runtime_local_only` (override `APP_RUNTIME_PASSWORD`). Existing
 volumes never rerun initialization or repair themselves automatically. CI uses a
 random masked runtime password. Regenerate the client contract with
 `python -m scripts.export_openapi`; the result is `docs/openapi.json`.
+
+## Faculty and admin paths
+
+`docs/openapi.json` is the one faculty contract; nobody builds from the old prose contracts.
+
+### The faculty path rule
+
+The full prefix table is in #207.
+
+| Kind of work | Path prefix |
+| :-- | :-- |
+| Work on one section | `/api/v1/faculty/sections/{section_id}/...` |
+| Work of the signed-in faculty member across sections (profile, incompletes, grade corrections) | `/api/v1/faculty/...` |
+| Approvals by Chair, Dean, and Registrar | `/api/v1/admin/...` |
+
+Notes on the table:
+- Section work ships today at `/api/v1/sections`.
+- #207 moves it to `/api/v1/faculty/sections`.
+- Admin approvals use one endpoint per feature.
+- The role decides data scope and allowed actions.
+- Admin approvals are used from one shared admin page.
+
+### Error codes
+
+Error codes come only from `docs/tech-book/ERROR-CODES.md`.
+
+| Situation | Status | Code |
+| :-- | :-- | :-- |
+| A section not assigned to the caller | 404 | `RESOURCE_NOT_FOUND` |
+| Session problem | 401 | `AUTH_SESSION_EXPIRED` |
+| Session problem | 401 | `AUTH_MFA_REQUIRED` |
+
+Generic error codes (such as bare unauthorized or forbidden names, un-namespaced MFA codes, or course-not-assigned variants) do not exist. Do not use them.
 
 A production-ready FastAPI starter, organized by business domain, with
 boundaries clean enough that any domain can be extracted into its own service
@@ -322,7 +369,7 @@ packages/                    # the shared kernel; every app depends on it
     exceptions.py            #     AppError hierarchy + handlers
     logging.py               #     JSON logs, request-id correlation
     pagination.py            #     Page[T] envelope
-    emails/                  #     EmailSender protocol, SES, console, and mail-catcher backends, bodies
+    emails/                  #     EmailSender protocol, Resend, console, and mail-catcher backends, bodies
     middleware/              #     correlation-id, request logging, CORS; @rate_limit
 
   database/src/cbpupsis_database/
@@ -478,11 +525,11 @@ column. The authorization half is untouched either way.
 | `POST /users/me/complete-onboarding` | 422 listing whatever is still missing. |
 | `POST /users/me/deactivate` | Reversible; revokes all refresh tokens. |
 | `DELETE /users/me` | Needs the password; soft-deletes and scrubs PII. |
-| `POST /users`, `POST /users/import` | Superadmin only; see Account creation above. |
-| `POST /users/{id}/reissue-temporary-password` | Superadmin only; new temporary password, every session revoked. |
-| `GET /users` | Admin app only. Paginated, `ReadAllUser`. Tri-state `is_active` / `is_verified` filters. |
-| `POST /users/{id}/deactivate` | `ManageUser`. Revokes their sessions. 422 on yourself. |
-| `POST /users/{id}/reactivate` | `ManageUser`. 422 on a deleted (scrubbed) account. |
+| `POST /admin/users`, `POST /admin/users/import` | Superadmin only; see Account creation above. |
+| `POST /admin/users/{id}/reissue-temporary-password` | Superadmin only; new temporary password, every session revoked. |
+| `GET /admin/users` | Admin app only. Paginated, `ReadAllUser`. Tri-state `is_active` / `is_verified` filters. |
+| `POST /admin/users/{id}/deactivate` | `ManageUser`. Revokes their sessions. 422 on yourself. |
+| `POST /admin/users/{id}/reactivate` | `ManageUser`. 422 on a deleted (scrubbed) account. |
 | `GET /audit` | `ReadAllAuditEntry`. The administrative trail, newest first. |
 | `GET /ready` | Readiness probe: queries the database, 503 when it cannot. |
 
@@ -730,15 +777,19 @@ and uniquely indexed, so several deletions would otherwise collide, and
 | Setting | Backend | Where the message goes |
 |---|---|---|
 | `DEV_SMTP_HOST` (development only) | `MailCatcherSender` | The compose stack's Mailpit; read it whole at <http://localhost:8025> |
-| `SES_FROM_EMAIL` | `SESEmailSender` | Real inboxes, through AWS SES |
+| `EMAIL_FROM` and `RESEND_API_KEY` | `ResendEmailSender` | Real inboxes, through Resend |
 | neither | `ConsoleEmailSender` | Nowhere: logs the recipient and subject only, never the body |
 
-Development and tests therefore need no AWS credentials and cannot mail a real
+Development and tests therefore need no provider key and cannot mail a real
 person by accident. The console backend never prints a body, because bodies carry
 reset links and temporary passwords; Mailpit is how you read them locally. Settings
-refuse `DEV_SMTP_HOST` unless `ENVIRONMENT=development`, because it wins over SES and
-would swallow real mail anywhere else. SMTP and boto3 are synchronous, so every send
-goes through `asyncio.to_thread`; calling them directly would block the event loop.
+refuse `DEV_SMTP_HOST` unless `ENVIRONMENT=development`, because it wins over Resend and
+would swallow real mail anywhere else. Resend is called with an async HTTP client;
+SMTP is synchronous, so the mail catcher sends through `asyncio.to_thread`. A Resend
+refusal raises `EmailDeliveryError` with only the status and Resend's error name,
+never its message, which can echo the reset link. Settings refuse `EMAIL_FROM`
+without `RESEND_API_KEY` (or the reverse), because half a configuration would quietly
+fall back to the console backend.
 
 **Sending never fails a request.** A user who registered but whose email bounced
 must still exist, so `send_email` logs the failure and returns `False`.
@@ -840,8 +891,8 @@ turn the endpoint into an enumeration oracle.
 already see everything, rather than the only thing standing between one user's
 data and another's.
 
-The same shape appears in `users`: `GET /users/{id}` allows a self-read or
-`ReadAllUser`, and `GET /users` requires `ReadAllUser` outright because a listing
+The same shape appears in `users`: `GET /admin/users/{id}` allows a self-read or
+`ReadAllUser`, and `GET /admin/users` requires `ReadAllUser` outright because a listing
 is inherently a cross-ownership read with no self-service branch to fall back on.
 
 The lesson generalizes: an ownership check on write paths only is half a model.
@@ -928,6 +979,11 @@ build-and-run cycle. The image never copies it; `.dockerignore` excludes it and
 each build creates its own.
 
 ## Conventions worth keeping
+
+Academic enrollment checks and prerequisite waivers follow the
+[#99 contract](ENROLLMENT-ACADEMIC-CHECKS.md). Available-courses reports
+per-candidate academic blockers; submit recomputes them before locking seats.
+Review, manual acceptance and approved data readiness are separate delivery gates.
 
 Student schedule reads and exports follow the
 [US-STU-003 contract](STUDENT-SCHEDULE.md), including weekly contact-hour totals,

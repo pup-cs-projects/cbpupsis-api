@@ -13,9 +13,25 @@ from cbpupsis_api_student.domains.google_calendar.router import (
     router as google_calendar_router,
 )
 from cbpupsis_api_student.domains.items.router import router as items_router
+from cbpupsis_api_student.domains.payments.router import (
+    public_router as payments_public_router,
+)
+from cbpupsis_api_student.domains.payments.router import router as payments_router
+from cbpupsis_api_student.domains.schedule.cor_router import (
+    public_router as cor_public_router,
+)
+from cbpupsis_api_student.domains.schedule.cor_router import (
+    router as cor_router,
+)
 from cbpupsis_api_student.domains.schedule.router import router as schedule_router
+from cbpupsis_api_student.domains.student_account.router import (
+    router as student_account_router,
+)
 from cbpupsis_api_student.domains.student_auth.router import (
     router as student_auth_router,
+)
+from cbpupsis_api_student.domains.student_enrollment.router import (
+    router as enrollment_router,
 )
 from cbpupsis_api_student.domains.student_grades.router import router as grades_router
 from cbpupsis_api_student.domains.student_profile.router import (
@@ -31,20 +47,31 @@ STUDENT_PROFILE = RouterMount(
 STUDENT_DASHBOARD = RouterMount(dashboard_router, "/student", "student-dashboard")
 ITEMS = RouterMount(items_router, "/items", "items")
 GRADES = RouterMount(grades_router, "", "student-grades")
+ENROLLMENT = RouterMount(enrollment_router, "/student/enrollment", "student-enrollment")
 
 SCHEDULE = RouterMount(schedule_router, "", "student-schedule")
 
 GOOGLE_CALENDAR = RouterMount(
     google_calendar_router, "/students/me/schedule/google-calendar", "google-calendar"
 )
+PAYMENTS = RouterMount(payments_router, "/student/payments", "student-payments")
+PAYMENT_WEBHOOKS = RouterMount(
+    payments_public_router, "/public/payments", "payment-webhooks"
+)
 
 MOUNTS: tuple[RouterMount, ...] = (
     *COMMON_MOUNTS,
     STUDENT_AUTH,
     STUDENT_PROFILE,
+    RouterMount(student_account_router, "/student", "student-account"),
     STUDENT_DASHBOARD,
     ITEMS,
     GRADES,
+    ENROLLMENT,
     SCHEDULE,
     GOOGLE_CALENDAR,
+    PAYMENTS,
+    PAYMENT_WEBHOOKS,
+    RouterMount(cor_router, "", "student-certificate"),
+    RouterMount(cor_public_router, "", "public-certificate"),
 )

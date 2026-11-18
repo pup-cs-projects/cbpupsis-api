@@ -27,7 +27,7 @@ import uuid
 from collections.abc import Collection
 from datetime import date, datetime
 
-from sqlalchemy import func, select, union_all
+from sqlalchemy import delete, func, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.models.users import (
@@ -36,6 +36,7 @@ from cbpupsis_database.models.users import (
     FacultyProfile,
     StudentProfile,
     User,
+    UserAvatar,
     UserProfile,
 )
 
@@ -68,6 +69,38 @@ async def get_record_identity(db: AsyncSession, student_id: uuid.UUID):
         )
     )
     return result.one_or_none()
+
+
+async def list_overload_student_identities(
+    db: AsyncSession, student_ids: set[uuid.UUID]
+):
+    """Read student identity and program keys for overload review.
+
+    SQL::
+
+        SELECT users.id, student_profiles.student_number, users.full_name,
+               user_profiles.first_name, user_profiles.last_name,
+               student_profiles.program_id
+        FROM users JOIN student_profiles ON student_profiles.user_id = users.id
+        LEFT JOIN user_profiles ON user_profiles.user_id = users.id
+        WHERE users.id IN (:student_ids);
+    """
+    if not student_ids:
+        return []
+    result = await db.execute(
+        select(
+            User.id.label("user_id"),
+            StudentProfile.student_number,
+            User.full_name,
+            UserProfile.first_name,
+            UserProfile.last_name,
+            StudentProfile.program_id,
+        )
+        .join(StudentProfile, StudentProfile.user_id == User.id)
+        .outerjoin(UserProfile, UserProfile.user_id == User.id)
+        .where(User.id.in_(student_ids))
+    )
+    return list(result.all())
 
 
 async def schedule_identity(db: AsyncSession, user_id: uuid.UUID):
@@ -767,6 +800,33 @@ async def delete_emergency_contact(db: AsyncSession, contact: EmergencyContact) 
     await db.delete(contact)
 
 
+async def replace_avatar(
+    db: AsyncSession, *, user_id: uuid.UUID, content: bytes, content_type: str
+) -> UserAvatar:
+    """Stage ``user_id``'s profile picture, replacing any earlier one.
+
+    On commit::
+
+        DELETE FROM user_avatars WHERE user_id = :user_id
+        INSERT INTO user_avatars (id, user_id, content_type, content)
+        VALUES (:id, :user_id, :content_type, :content)
+    """
+    await db.execute(delete(UserAvatar).where(UserAvatar.user_id == user_id))
+    avatar = UserAvatar(user_id=user_id, content=content, content_type=content_type)
+    db.add(avatar)
+    return avatar
+
+
+async def get_avatar(db: AsyncSession, avatar_id: uuid.UUID) -> UserAvatar | None:
+    """Return one stored profile picture by id, or ``None``.
+
+    SQL::
+
+        SELECT * FROM user_avatars WHERE id = :avatar_id
+    """
+    return await db.get(UserAvatar, avatar_id)
+
+
 async def get_student_by_student_number(
     db: AsyncSession, student_number: str
 ) -> StudentProfile | None:
@@ -788,3 +848,85 @@ async def get_student_by_student_number(
     return await db.scalar(
         select(StudentProfile).where(StudentProfile.student_number == student_number)
     )
+
+
+async def student_ids_in_programs(db: AsyncSession, program_ids):
+    """Resolve scoped enrollment identities without exposing profiles.
+
+    SQL::
+
+        SELECT user_id FROM student_profiles WHERE program_id IN (:program_ids);
+    """
+    return list(
+        await db.scalars(
+            select(StudentProfile.user_id).where(
+                StudentProfile.program_id.in_(program_ids)
+            )
+        )
+    )
+
+
+async def count_students_by_curriculum(
+    db: AsyncSession, curriculum_id: uuid.UUID
+) -> int:
+    """Count student profiles bound to a curriculum version.
+
+    SQL::
+
+        SELECT count(*) FROM student_profiles
+        WHERE curriculum_id = :curriculum_id
+    """
+    count = await db.scalar(
+        select(func.count())
+        .select_from(StudentProfile)
+        .where(StudentProfile.curriculum_id == curriculum_id)
+    )
+    return count or 0
+
+
+async def list_students_by_program(
+    db: AsyncSession, program_id: uuid.UUID
+) -> list[StudentProfile]:
+    """List student profiles in a degree program.
+
+    SQL::
+
+        SELECT * FROM student_profiles WHERE program_id = :program_id
+    """
+    return list(
+        await db.scalars(
+            select(StudentProfile).where(StudentProfile.program_id == program_id)
+        )
+    )
+
+
+async def list_student_profiles_by_ids(
+    db: AsyncSession, user_ids: Collection[uuid.UUID]
+) -> list[StudentProfile]:
+    """List student profiles for a bounded set of user ids.
+
+    SQL::
+
+        SELECT * FROM student_profiles WHERE user_id IN (:user_ids)
+    """
+    if not user_ids:
+        return []
+    return list(
+        await db.scalars(
+            select(StudentProfile).where(StudentProfile.user_id.in_(list(user_ids)))
+        )
+    )
+
+
+def update_student_curriculum(
+    profile: StudentProfile, curriculum_id: uuid.UUID
+) -> StudentProfile:
+    """Stage a curriculum binding change onto a student profile.
+
+    SQL::
+
+        UPDATE student_profiles SET curriculum_id = :curriculum_id
+        WHERE user_id = :user_id
+    """
+    profile.curriculum_id = curriculum_id
+    return profile

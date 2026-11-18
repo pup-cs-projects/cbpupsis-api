@@ -7,7 +7,6 @@ an internal module inside it.
 from __future__ import annotations
 
 from cbpupsis_api_student.domains.student_profile.service.avatar import (
-    _AVATAR_STORE,
     get_avatar_bytes,
     inspect_image_content_type,
     scan_avatar_bytes,
@@ -26,7 +25,6 @@ from cbpupsis_api_student.domains.student_profile.service.profile import (
 )
 
 __all__ = [
-    "_AVATAR_STORE",
     "_apply_profile_field",
     "create_emergency_contact",
     "delete_emergency_contact",

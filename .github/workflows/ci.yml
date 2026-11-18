@@ -1,15 +1,20 @@
 # Fast checks on every push and PR: the pre-commit hooks, the test suite with
 # coverage, and a dependency audit. The end-to-end HTTP suite is separate
 # (e2e.yml) because it needs Docker, Postgres, and seeded accounts.
+#
+# Pushes to staging and main run these same jobs as the first stage of
+# deploy.yml (workflow_call), so a release is never deployed untested and never
+# tested twice.
 
 name: ci
 
 on:
   push:
-    branches: [main, dev]
+    branches: [dev]
   pull_request:
-    branches: [main, dev]
+    branches: [main, staging, dev]
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -25,6 +30,13 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
+      # The hooks pin python3.12 (.pre-commit-config.yaml), and pre-commit looks
+      # for it on PATH when it builds a hook environment. The runner image no
+      # longer ships it, so install it rather than rely on the image.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - uses: astral-sh/setup-uv@v5
         with:

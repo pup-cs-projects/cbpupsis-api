@@ -14,9 +14,12 @@ dependencies = [
     # client is absent, so a multi-worker deployment pointed at Redis without
     # this fails to boot rather than falling back.
     "redis>=5.0",
-    # AWS SDK, used only for SES email delivery. Imported lazily in
-    # cbpupsis_core/emails/sender.py so nothing loads it unless SES is configured.
+    # AWS SDK, used only to read the deployed secret from Secrets Manager.
+    # Imported lazily in cbpupsis_core/config.py so local runs and tests never
+    # load it.
     "boto3",
+    # Async HTTP client for Resend email delivery (cbpupsis_core/emails/sender.py).
+    "httpx",
 ]
 
 [build-system]

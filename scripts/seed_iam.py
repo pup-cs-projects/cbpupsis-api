@@ -1,17 +1,8 @@
-"""Seed the IAM tables with a baseline set of permissions, policies, and groups.
+"""Seed baseline IAM permissions, policies, and groups idempotently.
 
-This script encodes the *initial* authorization model as reproducible data. It
-is idempotent: it inserts rows only when they are missing, so it is safe to run
-repeatedly (e.g. on deploy, or after adding a new permission below).
-
-Because permissions and policies are data, evolving "who can do what" is often
-just an edit here plus a re-run—no application code changes. The permission set
-is application-specific; the ``*Item`` actions below match this template's
-reference domain—replace them with the actions your application authorizes.
-
-Run with::
-
-    uv run python -m scripts.seed_iam
+Run on clean databases, during system bootstrap, and before tests that assert on
+the authorization structure. Existing records are left intact: running this
+twice produces the exact same database state.
 """
 
 from __future__ import annotations
@@ -26,54 +17,30 @@ from cbpupsis_database.models.iam import (
     Permission,
     Policy,
     PolicyPermission,
+    UserPolicy,
 )
+from cbpupsis_database.models.users import AdminProfile
 from cbpupsis_database.session import AsyncSessionLocal
 from cbpupsis_shared.domains.iam.constants import (
     ADMIN_GROUP,
+    ADMIN_POSITION_POLICIES,
     FACULTY_GROUP,
     STUDENT_GROUP,
     SUPERADMIN_GROUP,
 )
 
-# --------------------------------------------------------------------------- #
-# Declarative seed data. Edit these three structures to change the baseline.
-#
-# Permissions and policies follow a FIXED vocabulary, so two developers naming
-# the same capability land on the same string. Only GROUPS carries this
-# project's own words.
-#
-#   Permission   Create<X> Read<X> Update<X> Delete<X>   -- own records only
-#                ReadAll<X> Moderate<X> Manage<X>        -- crosses ownership
-#   Policy       <X>Reader <X>Author <X>Moderator <X>Admin
-#
-# Never invent a synonym (View/Get/List/Edit/Modify/Remove) -- a codebase with
-# both ReadItem and ViewItem has a 403 in it that no test will catch. Real state
-# transitions (ApproveRefund, PublishListing) keep their business verb.
-# See docs/tech-book/API-GUIDE.md (Authorization) for how this set is derived.
-#
-# The actions below stay LITERAL strings even though every one of them also has
-# a constant in its domain's constants.py. That duplication is the point: this
-# file is the independent declaration of what exists in the database, and
-# tests/domains/iam/test_permission_constants.py checks the constants against
-# it. Importing the constants here would make that test compare a value with
-# itself, so a misspelled constant would seed its own typo and the check would
-# pass while every guard using it denied all callers.
-# ADMIN_GROUP is the deliberate exception: bootstrap_admin LOOKS UP the group
-# this file CREATES, so there the two must be the same object, not two copies.
-# --------------------------------------------------------------------------- #
-
-#: All actions the application understands. (action, description)
+#: VerbNoun permissions the application enforces. (action, description)
 PERMISSIONS: list[tuple[str, str]] = [
-    ("CreateUser", "Create a user account as Superadmin"),
-    # Ordinary verbs: always paired with an ownership check in the service.
-    ("CreateItem", "Create an item"),
-    ("ReadItem", "View your own items"),
-    ("UpdateItem", "Update an item you own"),
-    ("DeleteItem", "Delete an item you own"),
-    # Elevated verbs: each one IS the grant that crosses ownership.
-    ("ReadAllItem", "View items belonging to anyone"),
-    ("ModerateItem", "Update or delete ANY item, regardless of owner"),
-    ("ReadAllUser", "View any user's profile, not just your own"),
+    # Resources: items (a simple user-authored resource used for CRUD tests).
+    ("CreateItem", "Create new items belonging to you"),
+    ("ReadItem", "Read items you created"),
+    ("UpdateItem", "Update items you created"),
+    ("DeleteItem", "Delete items you created"),
+    ("ReadAllItem", "Read items created by any user"),
+    ("ModerateItem", "Update or delete items created by any user"),
+    # Resources: users.
+    ("CreateUser", "Provision new user accounts"),
+    ("ReadAllUser", "List and read any user account"),
     ("ManageUser", "Deactivate or reactivate any user account"),
     ("ReadAllAuditEntry", "Read the administrative audit trail"),
     ("ReadAllNotification", "Read notifications belonging to anyone"),
@@ -90,6 +57,35 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ReadGrade", "Read your own finalized grades"),
     ("ReadTranscript", "Read and export your own transcript"),
     ("ReadSchedule", "Read and export your own student course schedule"),
+    ("CreateWaiverRequest", "File your own prerequisite waiver request"),
+    ("ReadWaiverRequest", "Read position-scoped prerequisite waiver requests"),
+    ("ApproveWaiverRequest", "Record the assigned prerequisite waiver decision"),
+    ("IssueCertificate", "Issue your own Certificate of Registration"),
+    ("ReadAssessment", "Read your own stored term assessment"),
+    ("CreatePayment", "Create an exactly-once payment for your own account"),
+    ("ReadPayment", "Read and download receipts for your own payments"),
+    ("ReadEnrollmentReport", "Read enrollment counts and statistics report"),
+    ("ReadEnrollment", "Read your own enrollment eligibility and unit ceiling"),
+    ("ReadCatalog", "Read courses, curricula, and sections within your Admin scope"),
+    (
+        "ManageCatalog",
+        "Create and update department courses, curriculum versions, and sections",
+    ),
+    (
+        "ApproveSubstitution",
+        "Approve course substitutions for students in your department",
+    ),
+    ("CreateEnrollment", "Submit your own enrollment section selections"),
+    ("CreateOverloadRequest", "File your own enrollment overload request"),
+    ("ReadOverloadRequest", "Read overload requests within your Admin scope"),
+    ("ApproveOverloadRequest", "Approve or reject an in-scope overload request"),
+    ("CreateAddDropRequest", "File your own add and drop request"),
+    ("ReadAddDropRequest", "Read add and drop requests within your scope"),
+    ("ApproveAddDrop", "Approve or reject an in-scope add and drop request"),
+    (
+        "ManageFeeStructure",
+        "Create and update term fee structures and payment plans",
+    ),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -108,6 +104,23 @@ POLICIES: dict[str, list[str]] = {
     "GradeReader": ["ReadGrade"],
     "TranscriptReader": ["ReadTranscript"],
     "ScheduleReader": ["ReadSchedule"],
+    "WaiverRequestAuthor": ["CreateWaiverRequest"],
+    "WaiverRequestAdmin": ["ReadWaiverRequest", "ApproveWaiverRequest"],
+    "CertificateAuthor": ["IssueCertificate"],
+    "AssessmentReader": ["ReadAssessment"],
+    "PaymentAuthor": ["CreatePayment", "ReadPayment"],
+    "EnrollmentReportReader": ["ReadEnrollmentReport"],
+    "EnrollmentReader": ["ReadEnrollment"],
+    "CatalogReader": ["ReadCatalog"],
+    "CatalogAdmin": ["ReadCatalog", "ManageCatalog", "ApproveSubstitution"],
+    "EnrollmentAuthor": ["CreateEnrollment"],
+    "OverloadRequestAuthor": ["CreateOverloadRequest"],
+    "OverloadRequestReader": ["ReadOverloadRequest"],
+    "OverloadRequestAdmin": ["ReadOverloadRequest", "ApproveOverloadRequest"],
+    "AddDropRequestAuthor": ["CreateAddDropRequest", "ReadAddDropRequest"],
+    "AddDropRequestReader": ["ReadAddDropRequest"],
+    "AddDropRequestAdmin": ["ReadAddDropRequest", "ApproveAddDrop"],
+    "FeeStructureAdmin": ["ManageFeeStructure"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
@@ -137,10 +150,22 @@ GROUPS: dict[str, list[str]] = {
     # product permissions (Home, Calendar, Courses, Enrollment) will be attached
     # by those domains. User administration, IAM, and audit reading belong to
     # the separate Superadmin story and must not leak through this seed.
-    ADMIN_GROUP: [],
+    ADMIN_GROUP: ["WaiverRequestAdmin"],
     FACULTY_GROUP: ["CourseSectionReader"],
     # Superadmin-created student accounts join this group.
-    STUDENT_GROUP: ["GradeReader", "TranscriptReader", "ScheduleReader"],
+    STUDENT_GROUP: [
+        "GradeReader",
+        "TranscriptReader",
+        "ScheduleReader",
+        "WaiverRequestAuthor",
+        "CertificateAuthor",
+        "AssessmentReader",
+        "PaymentAuthor",
+        "EnrollmentReader",
+        "EnrollmentAuthor",
+        "OverloadRequestAuthor",
+        "AddDropRequestAuthor",
+    ],
     SUPERADMIN_GROUP: list(POLICIES),
 }
 
@@ -161,7 +186,7 @@ async def _get_or_create_permission(
 
 
 async def _get_or_create_policy(session, name: str) -> Policy:
-    """Return the policy named ``name``, creating it if absent."""
+    """Return the policy with ``name``, creating it if absent."""
     existing = await session.scalar(select(Policy).where(Policy.name == name))
     if existing is not None:
         return existing
@@ -169,17 +194,6 @@ async def _get_or_create_policy(session, name: str) -> Policy:
     session.add(policy)
     await session.flush()
     return policy
-
-
-async def _get_or_create_group(session, name: str) -> Group:
-    """Return the group named ``name``, creating it if absent."""
-    existing = await session.scalar(select(Group).where(Group.name == name))
-    if existing is not None:
-        return existing
-    group = Group(name=name)
-    session.add(group)
-    await session.flush()
-    return group
 
 
 async def _ensure_policy_permission(
@@ -196,6 +210,17 @@ async def _ensure_policy_permission(
         session.add(PolicyPermission(policy_id=policy_id, permission_id=permission_id))
 
 
+async def _get_or_create_group(session, name: str) -> Group:
+    """Return the group with ``name``, creating it if absent."""
+    existing = await session.scalar(select(Group).where(Group.name == name))
+    if existing is not None:
+        return existing
+    group = Group(name=name)
+    session.add(group)
+    await session.flush()
+    return group
+
+
 async def _ensure_group_policy(session, group_id: int, policy_id: int) -> None:
     """Attach ``policy_id`` to ``group_id`` if not already attached."""
     exists = await session.scalar(
@@ -208,33 +233,62 @@ async def _ensure_group_policy(session, group_id: int, policy_id: int) -> None:
         session.add(GroupPolicy(group_id=group_id, policy_id=policy_id))
 
 
-async def seed() -> None:
-    """Create the baseline permissions, policies, and groups idempotently."""
-    async with AsyncSessionLocal() as session:
-        # 1) Permissions
-        permissions: dict[str, Permission] = {}
-        for action, description in PERMISSIONS:
-            permissions[action] = await _get_or_create_permission(
-                session, action, description
+async def _ensure_user_policy(session, user_id, policy_id: int) -> None:
+    """Attach ``policy_id`` directly to ``user_id`` if it is absent."""
+    exists = await session.scalar(
+        select(UserPolicy).where(
+            UserPolicy.user_id == user_id,
+            UserPolicy.policy_id == policy_id,
+        )
+    )
+    if exists is None:
+        session.add(UserPolicy(user_id=user_id, policy_id=policy_id))
+
+
+async def _seed_session(session) -> None:
+    """Populate permissions, policies, groups, and admin policies on ``session``."""
+    # 1) Permissions
+    permissions: dict[str, Permission] = {}
+    for action, description in PERMISSIONS:
+        permissions[action] = await _get_or_create_permission(
+            session, action, description
+        )
+
+    # 2) Policies, with their permissions attached
+    policies: dict[str, Policy] = {}
+    for policy_name, actions in POLICIES.items():
+        policy = await _get_or_create_policy(session, policy_name)
+        policies[policy_name] = policy
+        for action in actions:
+            await _ensure_policy_permission(session, policy.id, permissions[action].id)
+
+    # 3) Groups, with their policies attached
+    for group_name, policy_names in GROUPS.items():
+        group = await _get_or_create_group(session, group_name)
+        for policy_name in policy_names:
+            await _ensure_group_policy(session, group.id, policies[policy_name].id)
+
+    # 4) Position-specific policies for existing Admin accounts
+    # Admin is one login role, but permissions differ by position.
+    # Backfill direct policies for existing accounts; account creation uses
+    # the same mapping for new accounts.
+    admin_profiles = list((await session.scalars(select(AdminProfile))).all())
+    for profile in admin_profiles:
+        for policy_name in ADMIN_POSITION_POLICIES.get(profile.position, ()):
+            await _ensure_user_policy(
+                session, profile.user_id, policies[policy_name].id
             )
 
-        # 2) Policies, with their permissions attached
-        policies: dict[str, Policy] = {}
-        for policy_name, actions in POLICIES.items():
-            policy = await _get_or_create_policy(session, policy_name)
-            policies[policy_name] = policy
-            for action in actions:
-                await _ensure_policy_permission(
-                    session, policy.id, permissions[action].id
-                )
+    await session.commit()
 
-        # 3) Groups, with their policies attached
-        for group_name, policy_names in GROUPS.items():
-            group = await _get_or_create_group(session, group_name)
-            for policy_name in policy_names:
-                await _ensure_group_policy(session, group.id, policies[policy_name].id)
 
-        await session.commit()
+async def seed(session=None) -> None:
+    """Create the baseline permissions, policies, and groups idempotently."""
+    if session is not None:
+        await _seed_session(session)
+    else:
+        async with AsyncSessionLocal() as new_session:
+            await _seed_session(new_session)
     print("IAM seed complete.")
 
 
