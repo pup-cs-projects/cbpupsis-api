@@ -57,6 +57,29 @@ class StudentGrade(UUIDMixin, Base):
     )
 
 
+class SectionGradeSubmission(UUIDMixin, Base):
+    """Workflow state and optimistic lock version for a section's grade sheet."""
+
+    __tablename__ = "section_grade_submissions"
+
+    section_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("course_sections.id", ondelete="CASCADE"), unique=True
+    )
+    state: Mapped[str] = mapped_column(
+        String(20), default="DRAFT", server_default="DRAFT"
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    finalized_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
+    finalized_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class GradeAssessment(UUIDMixin, Base):
     """Raw exam, quiz, and project component scores for a course section."""
 

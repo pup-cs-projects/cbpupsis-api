@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Collection
+from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cbpupsis_database.models.grading import StudentGrade, StudentTermGPA
+from cbpupsis_database.models.grading import (
+    SectionGradeSubmission,
+    StudentGrade,
+    StudentTermGPA,
+)
 
 
 async def get_latest_student_term_gpa(
@@ -138,3 +144,110 @@ async def evaluated_standing(
         )
         .execution_options(populate_existing=True)
     )
+
+
+async def get_section_submission(
+    db: AsyncSession, section_id: uuid.UUID, *, lock: bool = False
+) -> SectionGradeSubmission | None:
+    """Return the section grade submission record, optionally locked for update.
+
+    SQL::
+
+        SELECT * FROM section_grade_submissions
+        WHERE section_id = :section_id [FOR UPDATE];
+    """
+    stmt = (
+        select(SectionGradeSubmission)
+        .where(SectionGradeSubmission.section_id == section_id)
+        .execution_options(populate_existing=True)
+    )
+    if lock:
+        stmt = stmt.with_for_update()
+    return await db.scalar(stmt)
+
+
+def add_section_submission(
+    db: AsyncSession,
+    *,
+    section_id: uuid.UUID,
+    state: str,
+    version: int,
+    updated_at: datetime,
+) -> SectionGradeSubmission:
+    """Stage a new section grade submission header.
+
+    On the caller's flush or commit::
+
+        INSERT INTO section_grade_submissions
+            (id, section_id, state, version, finalized_by, finalized_at, updated_at)
+        VALUES (:id, :section_id, :state, :version, NULL, NULL, :updated_at);
+    """
+    row = SectionGradeSubmission(
+        section_id=section_id,
+        state=state,
+        version=version,
+        updated_at=updated_at,
+    )
+    db.add(row)
+    return row
+
+
+async def roster_grades_for_update(
+    db: AsyncSession, ids: Collection[uuid.UUID]
+) -> list[StudentGrade]:
+    """Lock and return grade rows for the given course enrollment identifiers.
+
+    SQL::
+
+        SELECT * FROM student_grades
+        WHERE enrollment_item_id IN (:ids)
+        ORDER BY id
+        FOR UPDATE;
+    """
+    if not ids:
+        return []
+    return list(
+        await db.scalars(
+            select(StudentGrade)
+            .where(StudentGrade.enrollment_item_id.in_(ids))
+            .order_by(StudentGrade.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    )
+
+
+def add_student_grade(
+    db: AsyncSession,
+    *,
+    enrollment_item_id: uuid.UUID,
+    raw_score: Decimal | None,
+    midterm_grade: str | None,
+    final_grade: str | None,
+    remarks: str | None,
+    is_draft: bool,
+    is_locked: bool,
+    updated_at: datetime,
+) -> StudentGrade:
+    """Stage a new StudentGrade row on the caller's session.
+
+    On the caller's flush or commit::
+
+        INSERT INTO student_grades
+            (id, enrollment_item_id, raw_score, midterm_grade, final_grade,
+             remarks, is_draft, is_locked, updated_at)
+        VALUES (:id, :enrollment_item_id, :raw_score, :midterm_grade,
+                :final_grade, :remarks, :is_draft, :is_locked, :updated_at);
+    """
+    row = StudentGrade(
+        enrollment_item_id=enrollment_item_id,
+        raw_score=raw_score,
+        midterm_grade=midterm_grade,
+        final_grade=final_grade,
+        remarks=remarks,
+        is_draft=is_draft,
+        is_locked=is_locked,
+        updated_at=updated_at,
+    )
+    db.add(row)
+    return row

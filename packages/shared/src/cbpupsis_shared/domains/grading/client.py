@@ -10,19 +10,42 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.grading import service
 from cbpupsis_shared.domains.grading.schemas import (
+    FinalizeGradesRead,
+    FinalizeGradesRequest,
+    GradeDeadlineRead,
+    SaveGradeDraftRequest,
     ScholasticStandingRead,
+    SectionGradesRead,
     SectionRosterGrade,
 )
-from cbpupsis_shared.domains.grading.service import academic_record as academic_record
-from cbpupsis_shared.domains.grading.service import read_grades, read_transcript
+from cbpupsis_shared.domains.grading.service import (
+    academic_record as academic_record,
+)
+from cbpupsis_shared.domains.grading.service import (
+    finalize_section_grades,
+    get_section_grade_deadline,
+    get_section_grades,
+    read_grades,
+    read_transcript,
+    save_section_grade_draft,
+)
 
 __all__ = [
+    "FinalizeGradesRead",
+    "FinalizeGradesRequest",
+    "GradeDeadlineRead",
+    "SaveGradeDraftRequest",
     "ScholasticStandingRead",
+    "SectionGradesRead",
     "SectionRosterGrade",
+    "finalize_section_grades",
     "get_previous_regular_term_gwa",
+    "get_section_grade_deadline",
+    "get_section_grades",
     "get_student_scholastic_standing",
     "read_grades",
     "read_transcript",
+    "save_section_grade_draft",
     "section_roster_grades",
 ]
 

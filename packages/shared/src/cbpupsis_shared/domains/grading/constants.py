@@ -4,6 +4,21 @@ from enum import StrEnum
 
 READ_GRADE = "ReadGrade"
 READ_TRANSCRIPT = "ReadTranscript"
+UPDATE_GRADE = "UpdateGrade"
+SUBMIT_GRADE = "SubmitGrade"
+
+GRADE_STATE_DRAFT = "DRAFT"
+GRADE_STATE_FINAL = "FINAL"
+
+GRADE_DRAFT_SAVED_ACTION = "grading.draft_saved"
+GRADES_FINALIZED_ACTION = "grading.grades_finalized"
+GRADES_FINALIZED_EVENT = "grading.grades_finalized"
+
+INC_EXPIRY_DAYS = 365
+ENROLLED_COURSE_STATUSES = frozenset(
+    {"enrolled", "enrolled_pending", "officially_enrolled"}
+)
+
 NUMERIC_MARKS = frozenset(
     {"1.00", "1.25", "1.50", "1.75", "2.00", "2.25", "2.50", "2.75", "3.00", "5.00"}
 )

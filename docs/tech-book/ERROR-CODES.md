@@ -10,8 +10,8 @@ Add the row in the same commit as the code that raises it.
 
 | | |
 |---|---|
-| **Last updated** | 2026-11-06 |
-| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications`, `curriculum`, `sections`, and `enrollment` in `packages/shared`; `items` and `student_profile` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The `student_auth` and `faculty_auth` domains raise the shared `auth` classes and add none of their own. |
+| **Last updated** | 2026-11-18 |
+| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications`, `curriculum`, `sections`, `grading`, and `enrollment` in `packages/shared`; `items` and `student_profile` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The `student_auth` and `faculty_auth` domains raise the shared `auth` classes and add none of their own. |
 
 ## Certificate of Registration (US-ENRL-003)
 
@@ -80,6 +80,16 @@ the standard 403 missing-permission response.
 | 422 | `DECISION_REMARKS_REQUIRED` | A Chairperson or Dean rejected an add/drop request without non-blank remarks. |
 | 404 | `RESOURCE_NOT_FOUND` | Student attempting to read another student's request, or admin reviewing a request outside their department/college scope (anti-probing). |
 | 403 | — | Registrar attempting to mutate/decide an add/drop request lacks the required permission (`require_permission(APPROVE_ADD_DROP)`). |
+
+## Faculty grade submission (US-FAC-001)
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 409 | `GRADES_LOCKED` | The section's grades have already been finalized and locked. Any later draft save or finalize is refused. |
+| 409 | `VERSION_CONFLICT` | The supplied draft or finalize `version` does not match the current section version (`currentVersion` is returned). Nothing is saved. |
+| 403 | `GRADE_DEADLINE_PASSED` | Final submission was attempted after the term's grade submission deadline (`deadline` is returned). Contact a Department Chair or the Registrar's Office for an administrative override. |
+| 422 | `VALIDATION_ERROR` | One or more marks are outside the valid grading scale (1.00 to 5.00 in 0.25 steps excluding invalid increments, or `INC`), missing on finalize, or target a non-enrolled row. `errors` and `details.rows` identify the offending student row(s); nothing is saved. |
+| 404 | `RESOURCE_NOT_FOUND` | The section does not exist or is not assigned to the signed-in faculty member (byte-identical apart from `request_id`). |
 
 ## The envelope
 
