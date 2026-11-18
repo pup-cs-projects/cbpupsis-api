@@ -1,7 +1,15 @@
-"""Permissions and vocabulary owned by student billing."""
+"""Permissions, payment states, and vocabulary owned by student billing."""
 
 from decimal import Decimal
 
+CREATE_PAYMENT = "CreatePayment"
+
+PAYMENT_PENDING = "PENDING"
+PAYMENT_PAID = "PAID"
+PAYMENT_FAILED = "FAILED"
+
+IDEMPOTENCY_PROCESSING = "PROCESSING"
+IDEMPOTENCY_COMPLETED = "COMPLETED"
 READ_ASSESSMENT = "ReadAssessment"
 READ_PAYMENT = "ReadPayment"
 

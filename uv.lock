@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -525,6 +525,7 @@ dependencies = [
     { name = "cbpupsis-database" },
     { name = "cryptography" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "passlib", extra = ["argon2"] },
     { name = "pydantic", extra = ["email"] },
     { name = "pyjwt" },
@@ -542,6 +543,7 @@ requires-dist = [
     { name = "cbpupsis-database", editable = "packages/database" },
     { name = "cryptography", specifier = ">=46.0.0" },
     { name = "fastapi" },
+    { name = "httpx", specifier = ">=0.28,<1" },
     { name = "passlib", extras = ["argon2"] },
     { name = "pydantic", extras = ["email"] },
     { name = "pyjwt" },
