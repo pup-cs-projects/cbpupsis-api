@@ -12,6 +12,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cbpupsis_database.models.sections import CourseSection, SectionSchedule
 
 
+async def ids_for_courses(db: AsyncSession, course_ids):
+    """Resolve already-authorized courses to their section identifiers.
+
+    SQL::
+
+        SELECT id FROM course_sections WHERE course_id IN (:course_ids);
+    """
+    if not course_ids:
+        return []
+    return list(
+        await db.scalars(
+            select(CourseSection.id).where(CourseSection.course_id.in_(course_ids))
+        )
+    )
+
+
 async def schedule_sections(db: AsyncSession, ids: list[uuid.UUID]):
     """Read section metadata and meeting slots in two bounded queries.
 

@@ -25,6 +25,37 @@ class GradeRecordUnavailableError(GradingError):
         super().__init__("The academic record is temporarily unavailable.")
 
 
+class CorrectionWindowClosedError(GradingError, ForbiddenError):
+    code = "CORRECTION_WINDOW_CLOSED"
+
+    def __init__(self, closed_at: datetime) -> None:
+        super().__init__(
+            "The Correction of Entry filing window has closed.",
+            response_fields={"windowClosedAt": closed_at},
+        )
+
+
+class ApprovalSameActorError(GradingError, ForbiddenError):
+    code = "APPROVAL_SAME_ACTOR"
+
+    def __init__(self) -> None:
+        super().__init__("A filer or previous approver cannot act on another step.")
+
+
+class ApprovalOutOfOrderError(GradingError, ConflictError):
+    code = "APPROVAL_OUT_OF_ORDER"
+
+    def __init__(self) -> None:
+        super().__init__("Only the current step's approver may make this decision.")
+
+
+class DecisionRemarksRequiredError(GradingError, ValidationError):
+    code = "DECISION_REMARKS_REQUIRED"
+
+    def __init__(self) -> None:
+        super().__init__("Rejection requires nonblank remarks.")
+
+
 class GradesLockedError(GradingError, ConflictError):
     """Grades for the section have already been finalized and locked (HTTP 409)."""
 

@@ -84,6 +84,9 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ApproveAddDrop", "Approve or reject an in-scope add and drop request"),
     ("UpdateGrade", "Save draft grades for your assigned course sections"),
     ("SubmitGrade", "Finalize and submit grades for your assigned course sections"),
+    ("CreateGradeCorrection", "File a correction for your assigned section"),
+    ("ReadGradeCorrection", "Read your own grade corrections"),
+    ("ApproveGradeCorrection", "Decide the assigned in-scope grade correction step"),
     (
         "ManageFeeStructure",
         "Create and update term fee structures and payment plans",
@@ -123,6 +126,8 @@ POLICIES: dict[str, list[str]] = {
     "AddDropRequestReader": ["ReadAddDropRequest"],
     "AddDropRequestAdmin": ["ReadAddDropRequest", "ApproveAddDrop"],
     "GradeAuthor": ["UpdateGrade", "SubmitGrade"],
+    "GradeCorrectionAuthor": ["CreateGradeCorrection", "ReadGradeCorrection"],
+    "GradeCorrectionAdmin": ["ApproveGradeCorrection"],
     "FeeStructureAdmin": ["ManageFeeStructure"],
 }
 
@@ -154,7 +159,7 @@ GROUPS: dict[str, list[str]] = {
     # by those domains. User administration, IAM, and audit reading belong to
     # the separate Superadmin story and must not leak through this seed.
     ADMIN_GROUP: ["WaiverRequestAdmin"],
-    FACULTY_GROUP: ["CourseSectionReader", "GradeAuthor"],
+    FACULTY_GROUP: ["CourseSectionReader", "GradeAuthor", "GradeCorrectionAuthor"],
     # Superadmin-created student accounts join this group.
     STUDENT_GROUP: [
         "GradeReader",

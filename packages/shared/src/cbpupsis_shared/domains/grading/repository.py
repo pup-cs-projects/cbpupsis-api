@@ -7,14 +7,116 @@ from collections.abc import Collection
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.models.grading import (
+    GradeCorrection,
     SectionGradeSubmission,
     StudentGrade,
     StudentTermGPA,
 )
+
+
+def stage_correction(db: AsyncSession, **values):
+    """Stage one correction and its private document in the owner transaction.
+
+    SQL::
+
+        INSERT INTO grade_corrections
+            (id, grade_id, faculty_id, section_id, student_id, current_mark,
+             proposed_mark, reason, grading_sheet_file_id, grading_sheet_content,
+             grading_sheet_content_type, grading_sheet_size, grading_sheet_sha256,
+             window_closed_at, grade_updated_at, state, version, created_at)
+        VALUES (:id, :grade_id, :faculty_id, :section_id, :student_id, :current_mark,
+                :proposed_mark, :reason, :file_id, :content, :content_type, :size,
+                :sha256, :window_closed_at, :grade_updated_at, :state, :version,
+                :created_at);
+    """
+    row = GradeCorrection(**values)
+    db.add(row)
+    return row
+
+
+async def correction(db: AsyncSession, correction_id, *, lock=False):
+    """Read fresh state, optionally serializing competing decisions.
+
+    SQL::
+
+        SELECT * FROM grade_corrections WHERE id = :id FOR UPDATE;
+    """
+    query = select(GradeCorrection).where(GradeCorrection.id == correction_id)
+    if lock:
+        query = query.with_for_update()
+    return await db.scalar(query.execution_options(populate_existing=True))
+
+
+async def correction_page(
+    db: AsyncSession, *, faculty_id=None, section_ids=None, limit=50, offset=0
+):
+    """Apply visibility predicates before pagination, never after a global page.
+
+    SQL::
+
+        SELECT * FROM grade_corrections
+        WHERE faculty_id = :faculty_id AND section_id IN (:section_ids)
+        ORDER BY created_at DESC, id DESC LIMIT :limit OFFSET :offset;
+        SELECT count(*) FROM grade_corrections
+        WHERE faculty_id = :faculty_id AND section_id IN (:section_ids);
+    """
+    predicates = []
+    if faculty_id is not None:
+        predicates.append(GradeCorrection.faculty_id == faculty_id)
+    if section_ids is not None:
+        predicates.append(GradeCorrection.section_id.in_(section_ids))
+    total = await db.scalar(
+        select(func.count()).select_from(GradeCorrection).where(*predicates)
+    )
+    rows = await db.scalars(
+        select(GradeCorrection)
+        .where(*predicates)
+        .order_by(GradeCorrection.created_at.desc(), GradeCorrection.id.desc())
+        .limit(limit)
+        .offset(offset)
+        .execution_options(populate_existing=True)
+    )
+    return list(rows), total
+
+
+async def lock_grade(db: AsyncSession, *, grade_id=None, enrollment_id=None):
+    """Coordinate corrections using the same grade-row lock as finalization.
+
+    SQL::
+
+        SELECT * FROM student_grades WHERE id = :grade_id FOR UPDATE;
+    """
+    query = select(StudentGrade)
+    if grade_id is not None:
+        query = query.where(StudentGrade.id == grade_id)
+    else:
+        query = query.where(StudentGrade.enrollment_item_id == enrollment_id)
+    return await db.scalar(
+        query.with_for_update().execution_options(populate_existing=True)
+    )
+
+
+async def lock_student_gpas(db: AsyncSession, student_id):
+    """Read existing evaluations without inventing academic-standing decisions.
+
+    SQL::
+
+        SELECT * FROM student_term_gpa WHERE student_id = :student_id
+        ORDER BY academic_term_id FOR UPDATE;
+    """
+    return list(
+        await db.scalars(
+            select(StudentTermGPA)
+            .where(StudentTermGPA.student_id == student_id)
+            .order_by(StudentTermGPA.academic_term_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    )
 
 
 async def get_latest_student_term_gpa(

@@ -4443,6 +4443,202 @@
         }
       }
     },
+    "/api/v1/faculty/sections/{section_id}/grade-corrections": {
+      "post": {
+        "tags": [
+          "faculty-grade-corrections"
+        ],
+        "summary": "File Grade Correction",
+        "operationId": "file_faculty_grade_correction",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Section Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_file_faculty_grade_correction"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED."
+          },
+          "403": {
+            "description": "CORRECTION_WINDOW_CLOSED with windowClosedAt."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND for a missing or unowned resource."
+          },
+          "413": {
+            "description": "FILE_TOO_LARGE (maximum 10 MB)."
+          },
+          "415": {
+            "description": "UNSUPPORTED_MEDIA_TYPE; content must be PDF, JPEG or PNG."
+          },
+          "422": {
+            "description": "VALIDATION_ERROR for an invalid filing or nonfinal grade."
+          },
+          "503": {
+            "description": "GRADE_RECORD_UNAVAILABLE: missing calendar/catalog scope."
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/grade-corrections": {
+      "get": {
+        "tags": [
+          "faculty-grade-corrections"
+        ],
+        "summary": "List Grade Corrections",
+        "operationId": "list_faculty_grade_corrections",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED."
+          },
+          "403": {
+            "description": "AUTH_INSUFFICIENT_ROLE or missing permission."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND for a missing or unowned resource."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/grade-corrections/{correction_id}": {
+      "get": {
+        "tags": [
+          "faculty-grade-corrections"
+        ],
+        "summary": "Get Grade Correction",
+        "operationId": "get_faculty_grade_correction",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "correction_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Correction Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED."
+          },
+          "403": {
+            "description": "AUTH_INSUFFICIENT_ROLE or missing permission."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND for a missing or unowned resource."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/admin/login": {
       "post": {
         "tags": [
@@ -7690,6 +7886,194 @@
         }
       }
     },
+    "/api/v1/admin/grade-corrections": {
+      "get": {
+        "tags": [
+          "grade-corrections"
+        ],
+        "summary": "List Grade Corrections",
+        "operationId": "list_admin_grade_corrections",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED."
+          },
+          "403": {
+            "description": "Missing permission, Finance denial or APPROVAL_SAME_ACTOR."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND for missing or out-of-scope corrections."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/grade-corrections/{correction_id}": {
+      "get": {
+        "tags": [
+          "grade-corrections"
+        ],
+        "summary": "Get Grade Correction",
+        "operationId": "get_admin_grade_correction",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "correction_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Correction Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED."
+          },
+          "403": {
+            "description": "Missing permission, Finance denial or APPROVAL_SAME_ACTOR."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND for missing or out-of-scope corrections."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "grade-corrections"
+        ],
+        "summary": "Decide Grade Correction",
+        "operationId": "decide_admin_grade_correction",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "correction_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Correction Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectionDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED."
+          },
+          "403": {
+            "description": "Missing permission, Finance denial or APPROVAL_SAME_ACTOR."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND for missing or out-of-scope corrections."
+          },
+          "409": {
+            "description": "APPROVAL_OUT_OF_ORDER or VERSION_CONFLICT; nothing changes."
+          },
+          "422": {
+            "description": "DECISION_REMARKS_REQUIRED when rejecting without remarks."
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -9545,6 +9929,36 @@
         "title": "AvatarUploadRead",
         "description": "Confirmation returned when a student uploads a valid profile picture."
       },
+      "Body_file_faculty_grade_correction": {
+        "properties": {
+          "student_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Student Id"
+          },
+          "proposed_mark": {
+            "type": "string",
+            "title": "Proposed Mark"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "grading_sheet": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Grading Sheet"
+          }
+        },
+        "type": "object",
+        "required": [
+          "student_id",
+          "proposed_mark",
+          "reason",
+          "grading_sheet"
+        ],
+        "title": "Body_file_faculty_grade_correction"
+      },
       "Body_import_users_api_v1_admin_users_import_post": {
         "properties": {
           "file": {
@@ -10434,6 +10848,322 @@
         ],
         "title": "ConnectionRead",
         "description": "Direct private/no-store status; no status/data wrapper or Google credentials."
+      },
+      "CorrectionDecision": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "ENDORSE",
+              "COMMIT",
+              "REJECT"
+            ],
+            "title": "Action"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action",
+          "version"
+        ],
+        "title": "CorrectionDecision"
+      },
+      "CorrectionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CorrectionRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "CorrectionPage"
+      },
+      "CorrectionRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "gradeId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Gradeid"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "facultyId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Facultyid"
+          },
+          "currentMark": {
+            "type": "string",
+            "title": "Currentmark"
+          },
+          "proposedMark": {
+            "type": "string",
+            "title": "Proposedmark"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "gradingSheetFileId": {
+            "type": "string",
+            "title": "Gradingsheetfileid"
+          },
+          "gradingSheetContentType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradingsheetcontenttype"
+          },
+          "gradingSheetSize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradingsheetsize"
+          },
+          "gradingSheetSha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradingsheetsha256"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING_CHAIR",
+              "PENDING_DEAN",
+              "PENDING_REGISTRAR",
+              "COMMITTED",
+              "REJECTED"
+            ],
+            "title": "State"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "windowClosedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Windowclosedat"
+          },
+          "chairApprovedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chairapprovedby"
+          },
+          "chairApprovedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chairapprovedat"
+          },
+          "deanApprovedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deanapprovedby"
+          },
+          "deanApprovedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deanapprovedat"
+          },
+          "registrarApprovedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registrarapprovedby"
+          },
+          "registrarApprovedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registrarapprovedat"
+          },
+          "rejectedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejectedby"
+          },
+          "rejectionRemarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejectionremarks"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "gradeId",
+          "studentId",
+          "sectionId",
+          "facultyId",
+          "currentMark",
+          "proposedMark",
+          "reason",
+          "gradingSheetFileId",
+          "gradingSheetContentType",
+          "gradingSheetSize",
+          "gradingSheetSha256",
+          "state",
+          "version",
+          "windowClosedAt",
+          "chairApprovedBy",
+          "chairApprovedAt",
+          "deanApprovedBy",
+          "deanApprovedAt",
+          "registrarApprovedBy",
+          "registrarApprovedAt",
+          "rejectedBy",
+          "rejectionRemarks",
+          "resolvedAt",
+          "createdAt"
+        ],
+        "title": "CorrectionRead"
       },
       "CourseSectionRead": {
         "properties": {

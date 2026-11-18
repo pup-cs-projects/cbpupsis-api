@@ -9,6 +9,12 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.grading import service
+from cbpupsis_shared.domains.grading.corrections import (
+    decide_correction,
+    file_correction,
+    list_corrections,
+    read_correction,
+)
 from cbpupsis_shared.domains.grading.schemas import (
     FinalizeGradesRead,
     FinalizeGradesRequest,
@@ -38,11 +44,15 @@ __all__ = [
     "ScholasticStandingRead",
     "SectionGradesRead",
     "SectionRosterGrade",
+    "decide_correction",
+    "file_correction",
     "finalize_section_grades",
     "get_previous_regular_term_gwa",
     "get_section_grade_deadline",
     "get_section_grades",
     "get_student_scholastic_standing",
+    "list_corrections",
+    "read_correction",
     "read_grades",
     "read_transcript",
     "save_section_grade_draft",

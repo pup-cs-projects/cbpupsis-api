@@ -30,6 +30,9 @@ from cbpupsis_api_admin.domains.admin_catalog.router import (
 from cbpupsis_api_admin.domains.fee_structures.router import (
     router as fee_structures_router,
 )
+from cbpupsis_api_admin.domains.grade_corrections.router import (
+    router as grade_corrections_router,
+)
 from cbpupsis_api_admin.domains.overload_requests.router import (
     router as overload_requests_router,
 )
@@ -96,6 +99,9 @@ MOUNTS: tuple[RouterMount, ...] = (
         "waiver-requests",
     ),
     ADMIN_CATALOG,
+    RouterMount(
+        grade_corrections_router, "/admin/grade-corrections", "grade-corrections"
+    ),
 )
 
 # SQLAdmin bypasses service-layer MFA, justification, and immutable audit staging.

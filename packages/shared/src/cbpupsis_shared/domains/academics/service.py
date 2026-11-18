@@ -159,6 +159,14 @@ async def record_terms(db: AsyncSession, ids: Collection[uuid.UUID]) -> list[Ter
     ]
 
 
+async def correction_window_terms(db: AsyncSession, start_date):
+    """Expose actual academic-term dates and classification to grading."""
+    return [
+        AcademicTermRead.model_validate(row)
+        for row in await repository.terms_after(db, start_date)
+    ]
+
+
 async def resolve_term(
     db: AsyncSession, year: str | None, semester: str | None
 ) -> TermRead | None:
