@@ -43,10 +43,15 @@ TEMPORARY_PASSWORD_EXPIRED_MESSAGE = (
     "issue a new one."
 )
 
-RESET_PASSWORD_MIN_LENGTH = 8
 BCRYPT_MAX_PASSWORD_BYTES = 72
-PASSWORD_MIN_LENGTH = 12
+PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 128
+PASSWORD_REQUIRED_RULES: tuple[str, ...] = (
+    "uppercase",
+    "lowercase",
+    "digit",
+    "symbol",
+)
 #: System-generated temporary passwords: 20 characters from an alphabet with
 #: no look-alikes (0/O, 1/l/I), at least one of each complexity class.
 TEMPORARY_PASSWORD_LENGTH = 20

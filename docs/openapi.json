@@ -75,13 +75,35 @@
         }
       }
     },
+    "/api/v1/auth/password-policy": {
+      "get": {
+        "tags": [
+          "account"
+        ],
+        "summary": "Get Password Policy",
+        "description": "Return password length and character-class rules for reset and change.",
+        "operationId": "get_password_policy_api_v1_auth_password_policy_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordPolicyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/forgot-password": {
       "post": {
         "tags": [
           "account"
         ],
         "summary": "Forgot Password",
-        "description": "Request a password-reset email.\n\nAlways 202 Accepted. Returning 404 for an unknown address would make this endpoint a\nmembership oracle for any email list.\n\nA shared per-address allowance prevents inbox flooding; an outer IP limit\nalso guards abusive request volume. Earlier usable links remain valid.",
+        "description": "Request a password-reset email by email address or institutional ID.\n\nAlways 202 Accepted. Returning 404 for an unknown identifier would make this\nendpoint a membership oracle.\n\nA shared per-account allowance prevents inbox flooding; an outer IP limit\nalso guards abusive request volume. Earlier usable links remain valid.",
         "operationId": "forgot_password_api_v1_auth_forgot_password_post",
         "requestBody": {
           "content": {
@@ -228,7 +250,7 @@
           "users"
         ],
         "summary": "Read Me",
-        "description": "Return the authenticated user's own profile.",
+        "description": "Return the authenticated user's own profile, group, and permissions.",
         "operationId": "read_me_api_v1_users_me_get",
         "responses": {
           "200": {
@@ -3755,6 +3777,91 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FacultySessionRead"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/faculty/profile": {
+      "get": {
+        "tags": [
+          "faculty-profile"
+        ],
+        "summary": "Get Faculty Profile",
+        "description": "Return the signed-in faculty member's profile and field editability flags.",
+        "operationId": "get_faculty_profile",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacultyProfileRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE), missing permission, or locked field (PROFILE_FIELD_LOCKED)."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "faculty-profile"
+        ],
+        "summary": "Update Faculty Profile",
+        "description": "Update editable faculty profile fields (title, office location, hours, qualifications).",
+        "operationId": "update_faculty_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacultyProfileRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE), missing permission, or locked field (PROFILE_FIELD_LOCKED)."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -8674,7 +8781,8 @@
           "admin_registrar",
           "admin_finance",
           "admin_chairperson",
-          "admin_dean"
+          "admin_dean",
+          "admin_advisor"
         ],
         "title": "AccountRole",
         "description": "The ``role`` a Superadmin gives a new account, one per CSV row."
@@ -9175,6 +9283,7 @@
       "AdminPosition": {
         "type": "string",
         "enum": [
+          "advisor",
           "chairperson",
           "dean",
           "finance",
@@ -10755,7 +10864,6 @@
           "new_password": {
             "type": "string",
             "maxLength": 128,
-            "minLength": 12,
             "title": "New Password"
           }
         },
@@ -12121,6 +12229,39 @@
         "title": "FacultyPrerequisiteRecordRead",
         "description": "Published outcomes for one prerequisite of the taught course."
       },
+      "FacultyProfileRead": {
+        "properties": {
+          "petitionRoute": {
+            "type": "string",
+            "title": "Petitionroute"
+          },
+          "fields": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/cbpupsis_api_faculty__domains__faculty_profile__schemas__ProfileFieldEntry"
+            },
+            "type": "object",
+            "title": "Fields"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "petitionRoute",
+          "fields"
+        ],
+        "title": "FacultyProfileRead",
+        "description": "Faculty profile response with per-field editability flags."
+      },
       "FacultySessionRead": {
         "properties": {
           "id": {
@@ -12504,16 +12645,16 @@
       },
       "ForgotPasswordRequest": {
         "properties": {
-          "email": {
+          "identifier": {
             "type": "string",
-            "format": "email",
-            "title": "Email"
+            "title": "Identifier",
+            "description": "Email address, student number, or employee ID."
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "email"
+          "identifier"
         ],
         "title": "ForgotPasswordRequest",
         "description": "Payload for requesting a password-reset email."
@@ -14661,6 +14802,25 @@
         ],
         "title": "Page[WaiverRead]"
       },
+      "PasswordPolicyResponse": {
+        "properties": {
+          "minimumLength": {
+            "type": "integer",
+            "title": "Minimumlength",
+            "default": 8
+          },
+          "requiredRules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Requiredrules"
+          }
+        },
+        "type": "object",
+        "title": "PasswordPolicyResponse",
+        "description": "Password complexity requirements enforced by reset and password change."
+      },
       "PaymentCreate": {
         "properties": {
           "amount": {
@@ -14962,35 +15122,6 @@
         "title": "PolicyRead",
         "description": "Policy as returned by the API, including its resolved permissions."
       },
-      "ProfileFieldEntry": {
-        "properties": {
-          "value": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Value"
-          },
-          "editable": {
-            "type": "boolean",
-            "title": "Editable"
-          }
-        },
-        "type": "object",
-        "required": [
-          "value",
-          "editable"
-        ],
-        "title": "ProfileFieldEntry",
-        "description": "One profile field with its value and self-service editability flag."
-      },
       "ProgramTuitionRate": {
         "properties": {
           "programId": {
@@ -15123,11 +15254,6 @@
       },
       "ResetTokenVerificationResponse": {
         "properties": {
-          "valid": {
-            "type": "boolean",
-            "title": "Valid",
-            "default": true
-          },
           "minimumLength": {
             "type": "integer",
             "title": "Minimumlength",
@@ -15139,6 +15265,11 @@
             },
             "type": "array",
             "title": "Requiredrules"
+          },
+          "valid": {
+            "type": "boolean",
+            "title": "Valid",
+            "default": true
           }
         },
         "type": "object",
@@ -16329,7 +16460,7 @@
           },
           "fields": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/ProfileFieldEntry"
+              "$ref": "#/components/schemas/cbpupsis_api_student__domains__student_profile__schemas__ProfileFieldEntry"
             },
             "type": "object",
             "title": "Fields"
@@ -17111,6 +17242,31 @@
               }
             ],
             "title": "Phone Number"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Permissions"
+          },
+          "page_permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Page Permissions"
           }
         },
         "type": "object",
@@ -17611,6 +17767,61 @@
         ],
         "title": "TotpEnrollmentRead",
         "description": "A pending seed: the secret for manual entry and the URI to scan."
+      },
+      "cbpupsis_api_faculty__domains__faculty_profile__schemas__ProfileFieldEntry": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "editable": {
+            "type": "boolean",
+            "title": "Editable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "editable"
+        ],
+        "title": "ProfileFieldEntry",
+        "description": "One faculty profile field with its value and self-service editability flag."
+      },
+      "cbpupsis_api_student__domains__student_profile__schemas__ProfileFieldEntry": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "editable": {
+            "type": "boolean",
+            "title": "Editable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "editable"
+        ],
+        "title": "ProfileFieldEntry",
+        "description": "One profile field with its value and self-service editability flag."
       }
     },
     "securitySchemes": {

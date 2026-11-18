@@ -27,7 +27,7 @@ import uuid
 from collections.abc import Collection
 from datetime import date, datetime
 
-from sqlalchemy import delete, func, select, union_all
+from sqlalchemy import delete, func, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.models.users import (
@@ -428,6 +428,47 @@ async def get_user_by_email_for_update(db: AsyncSession, email: str) -> User | N
     )
 
 
+async def get_user_by_institutional_id_for_update(
+    db: AsyncSession, institutional_id: str
+) -> User | None:
+    """Return the live user holding a student number or employee id, locked.
+
+    Checks student numbers, faculty employee ids, and admin employee ids.
+
+    SQL::
+
+        SELECT * FROM users
+        WHERE deleted_at IS NULL
+          AND (id IN (SELECT user_id FROM student_profiles WHERE student_number = :id)
+               OR id IN (SELECT user_id FROM faculty_profiles WHERE employee_id = :id)
+               OR id IN (SELECT user_id FROM admin_profiles WHERE employee_id = :id))
+        FOR UPDATE
+    """
+    return await db.scalar(
+        LIVE_USERS.where(
+            or_(
+                User.id.in_(
+                    select(StudentProfile.user_id).where(
+                        StudentProfile.student_number == institutional_id
+                    )
+                ),
+                User.id.in_(
+                    select(FacultyProfile.user_id).where(
+                        FacultyProfile.employee_id == institutional_id
+                    )
+                ),
+                User.id.in_(
+                    select(AdminProfile.user_id).where(
+                        AdminProfile.employee_id == institutional_id
+                    )
+                ),
+            )
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
 async def get_student_by_number(
     db: AsyncSession, student_number: str
 ) -> tuple[User, UserProfile | None] | None:
@@ -726,6 +767,19 @@ def update_user_profile(profile: UserProfile, **fields: object) -> UserProfile:
     On commit, using the supplied fields::
 
         UPDATE user_profiles SET personal_email = :personal_email, ...
+        WHERE user_id = :user_id
+    """
+    for name, value in fields.items():
+        setattr(profile, name, value)
+    return profile
+
+
+def update_faculty_profile(profile: FacultyProfile, **fields: object) -> FacultyProfile:
+    """Stage changes onto a loaded ``FacultyProfile`` row.
+
+    On commit, using the supplied fields::
+
+        UPDATE faculty_profiles SET academic_rank = :academic_rank, ...
         WHERE user_id = :user_id
     """
     for name, value in fields.items():

@@ -6,6 +6,7 @@ READ_GRADE = "ReadGrade"
 READ_TRANSCRIPT = "ReadTranscript"
 UPDATE_GRADE = "UpdateGrade"
 SUBMIT_GRADE = "SubmitGrade"
+MODERATE_GRADE = "ModerateGrade"
 CREATE_INCOMPLETE_COMPLETION = "CreateIncompleteCompletion"
 APPROVE_INCOMPLETE_COMPLETION = "ApproveIncompleteCompletion"
 

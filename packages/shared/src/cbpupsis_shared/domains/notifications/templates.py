@@ -70,6 +70,18 @@ MESSAGES_BY_EVENT: dict[str, tuple[str, str]] = {
         "Grades available",
         "Your finalized grade for this course is now available.",
     ),
+    "faculty.roster_updated": (
+        "Class roster updated",
+        "A student add or drop updated one of your assigned course rosters.",
+    ),
+    "faculty.deadline_reminder": (
+        "Submission deadline reminder",
+        "An upcoming grading or form submission deadline requires your attention.",
+    ),
+    "faculty.system_announcement": (
+        "System announcement",
+        "There is a new portal maintenance or institutional announcement.",
+    ),
     "grading.inc_completion_decided": (
         "Incomplete completion reviewed",
         "A College Dean has reviewed an Incomplete completion request.",
