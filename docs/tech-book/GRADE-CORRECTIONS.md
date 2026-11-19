@@ -91,9 +91,11 @@ produce no successful-step row. No replacement for #226's logging work is added.
 
 ## Migration and deployment
 
-Run owner-managed migrations to `f103_grade_corrections` and seed IAM. The chain is
-`f177_section_grade_submissions` -> `f178_inc_lifecycle` -> `f103_grade_corrections`;
-#103 preserves the INC tables/indexes and does not replay or replace #178.
+Run owner-managed migrations to `m103_corrections_profile` and seed IAM.
+`f103_grade_corrections` and `f178_faculty_qualifications` both follow
+`f178_inc_lifecycle`; the no-DDL merge revision joins them without rewriting either
+published migration. Alembic applies the missing branch when upgrading from either
+head. #103 preserves the INC tables/indexes and the faculty-profile column.
 The migration
 adds private document metadata/content, source-version evidence, scope identity,
 and rejection resolution metadata to the existing correction table. It backfills

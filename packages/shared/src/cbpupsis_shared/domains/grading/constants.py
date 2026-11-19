@@ -7,6 +7,7 @@ READ_TRANSCRIPT = "ReadTranscript"
 UPDATE_GRADE = "UpdateGrade"
 SUBMIT_GRADE = "SubmitGrade"
 MAX_GRADING_SHEET_BYTES = 10 * 1024 * 1024
+MODERATE_GRADE = "ModerateGrade"
 CREATE_INCOMPLETE_COMPLETION = "CreateIncompleteCompletion"
 APPROVE_INCOMPLETE_COMPLETION = "ApproveIncompleteCompletion"
 

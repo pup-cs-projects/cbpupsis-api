@@ -215,7 +215,30 @@ async def test_ac_fac_002_8_postgres_audit_atomicity_and_concurrent_decisions(
                 text("SELECT to_regclass('public.student_grades')")
             ), "Nonempty database: refusing destructive reuse"
             await ensure_runtime_role(connection)
+        await asyncio.to_thread(migrate, url, "upgrade", "f103_grade_corrections")
+        async with owner.connect() as connection:
+            assert not await connection.scalar(
+                text("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'faculty_profiles'
+                          AND column_name = 'qualifications'
+                    )
+                """)
+            )
         await asyncio.to_thread(migrate, url, "upgrade", "head")
+        async with owner.connect() as connection:
+            assert await connection.scalar(
+                text("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'faculty_profiles'
+                          AND column_name = 'qualifications'
+                    )
+                """)
+            )
         await asyncio.to_thread(migrate, url, "downgrade", "f178_inc_lifecycle")
         async with owner.connect() as connection:
             assert (
@@ -365,7 +388,7 @@ async def test_migration_preserves_legacy_correction_without_fabricated_evidence
                 text("SELECT to_regclass('public.student_grades')")
             )
             await ensure_runtime_role(connection)
-        await asyncio.to_thread(migrate, url, "upgrade", "f178_inc_lifecycle")
+        await asyncio.to_thread(migrate, url, "upgrade", "f178_faculty_qualifications")
         async with sessions() as db:
             data, _actors = await seed_record(db)
             grade_id = await db.scalar(
