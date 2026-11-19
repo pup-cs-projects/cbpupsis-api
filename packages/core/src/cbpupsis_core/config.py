@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     #: JSON for machines (deployed), plain text for humans (local). Log
     #: aggregators query fields; a formatted string is not queryable.
     log_json: bool = False
+    #: Service calls wrapped with ``@logged`` slower than this (ms) log at WARNING.
+    log_slow_call_ms: int = Field(default=1000, ge=1)
 
     # --- Database (Neon) ---
     #: Pooled connection string (host contains ``-pooler``); used by the app.
