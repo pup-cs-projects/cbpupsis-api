@@ -100,6 +100,9 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ApproveAddDrop", "Approve or reject an in-scope add and drop request"),
     ("UpdateGrade", "Save draft grades for your assigned course sections"),
     ("SubmitGrade", "Finalize and submit grades for your assigned course sections"),
+    ("CreateGradeCorrection", "File a correction for your assigned section"),
+    ("ReadGradeCorrection", "Read your own grade corrections"),
+    ("ApproveGradeCorrection", "Decide the assigned in-scope grade correction step"),
     (
         "CreateIncompleteCompletion",
         "File a completion grade for an Incomplete in your assigned section",
@@ -154,6 +157,8 @@ POLICIES: dict[str, list[str]] = {
     "AddDropRequestReader": ["ReadAddDropRequest"],
     "AddDropRequestAdmin": ["ReadAddDropRequest", "ApproveAddDrop"],
     "GradeAuthor": ["UpdateGrade", "SubmitGrade"],
+    "GradeCorrectionAuthor": ["CreateGradeCorrection", "ReadGradeCorrection"],
+    "GradeCorrectionAdmin": ["ApproveGradeCorrection"],
     "IncompleteCompletionAuthor": ["CreateIncompleteCompletion"],
     "IncompleteCompletionAdmin": ["ApproveIncompleteCompletion"],
     "FeeStructureAdmin": ["ManageFeeStructure"],
@@ -197,6 +202,7 @@ GROUPS: dict[str, list[str]] = {
     FACULTY_GROUP: [
         "CourseSectionReader",
         "GradeAuthor",
+        "GradeCorrectionAuthor",
         "ProfileAuthor",
         "IncompleteCompletionAuthor",
     ],

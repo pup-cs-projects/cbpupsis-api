@@ -6,6 +6,7 @@ READ_GRADE = "ReadGrade"
 READ_TRANSCRIPT = "ReadTranscript"
 UPDATE_GRADE = "UpdateGrade"
 SUBMIT_GRADE = "SubmitGrade"
+MAX_GRADING_SHEET_BYTES = 10 * 1024 * 1024
 MODERATE_GRADE = "ModerateGrade"
 CREATE_INCOMPLETE_COMPLETION = "CreateIncompleteCompletion"
 APPROVE_INCOMPLETE_COMPLETION = "ApproveIncompleteCompletion"
@@ -58,3 +59,6 @@ UNIT_REDUCTIONS = {
     AcademicStanding.WARNING_2: 3,
     AcademicStanding.PROBATION: 6,
 }
+CREATE_GRADE_CORRECTION = "CreateGradeCorrection"
+READ_GRADE_CORRECTION = "ReadGradeCorrection"
+APPROVE_GRADE_CORRECTION = "ApproveGradeCorrection"

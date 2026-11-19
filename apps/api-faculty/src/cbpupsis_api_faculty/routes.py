@@ -10,6 +10,9 @@ from __future__ import annotations
 from cbpupsis_api_faculty.domains.faculty_auth.router import (
     router as faculty_auth_router,
 )
+from cbpupsis_api_faculty.domains.faculty_grades.correction_router import (
+    router as corrections_router,
+)
 from cbpupsis_api_faculty.domains.faculty_grades.router import (
     incompletes_router,
 )
@@ -33,11 +36,13 @@ INCOMPLETES = RouterMount(
     incompletes_router, "/faculty/incompletes", "faculty-incompletes"
 )
 
+CORRECTIONS = RouterMount(corrections_router, "/faculty", "faculty-grade-corrections")
 MOUNTS: tuple[RouterMount, ...] = (
     *COMMON_MOUNTS,
     FACULTY_AUTH,
     FACULTY_PROFILE,
     SECTIONS,
     GRADES,
+    CORRECTIONS,
     INCOMPLETES,
 )

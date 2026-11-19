@@ -200,6 +200,11 @@ async def get_owned_section(
     return OwnedSectionRead.model_validate(section)
 
 
+async def ids_for_courses(db: AsyncSession, course_ids):
+    """Resolve a catalog-owner scoped course set without cross-owner SQL."""
+    return await repository.ids_for_courses(db, course_ids)
+
+
 async def list_owned_sections(
     db: AsyncSession, *, faculty_id: uuid.UUID
 ) -> list[OwnedSectionRead]:

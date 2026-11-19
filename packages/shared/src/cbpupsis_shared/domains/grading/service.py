@@ -160,7 +160,7 @@ async def get_previous_regular_term_gwa(
             str(row.id),
         ),
     )
-    return Decimal(str(latest.term_gpa))
+    return None if latest.term_gpa is None else Decimal(str(latest.term_gpa))
 
 
 def utc(value: datetime) -> datetime:
@@ -236,10 +236,14 @@ async def _load(
     latest: bool = False,
     year: str | None = None,
     semester: str | None = None,
+    load_identity: bool = True,
 ):
-    identity = await users.record_identity(db, student_id)
-    if identity is None or (
-        student_number is not None and student_number != identity.student_number
+    # Staff-owned numeric updates do not depend on the student's login status.
+    # Public student reads retain the original active-owner identity gate.
+    identity = await users.record_identity(db, student_id) if load_identity else None
+    if load_identity and (
+        identity is None
+        or (student_number is not None and student_number != identity.student_number)
     ):
         raise ResourceNotFoundError
     if (year is None) != (semester is None) or (
@@ -454,6 +458,11 @@ def _normalize_mark(value: object) -> str:
         ) from exc
     if not numeric.is_finite():
         raise ValueError("Mark must be finite.")
+    # Bound magnitude before fixed-point formatting can allocate exponent-sized text.
+    if not Decimal("1.00") <= numeric <= Decimal("5.00"):
+        raise ValueError(
+            "Mark must be a valid grade (1.00 to 3.00 in 0.25 steps, 5.00, or INC)."
+        )
     formatted = format(numeric, ".2f")
     if numeric != Decimal(formatted) or formatted not in NUMERIC_MARKS:
         raise ValueError(

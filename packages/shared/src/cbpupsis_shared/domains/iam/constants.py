@@ -55,12 +55,14 @@ STUDENT_GROUP = "Students"
 
 ADMIN_POSITION_POLICIES: dict[str, tuple[str, ...]] = {
     "chairperson": (
+        "GradeCorrectionAdmin",
         "AddDropRequestAdmin",
         "CatalogAdmin",
         "EnrollmentReportReader",
         "OverloadRequestReader",
     ),
     "dean": (
+        "GradeCorrectionAdmin",
         "AddDropRequestAdmin",
         "CatalogReader",
         "EnrollmentReportReader",
@@ -68,6 +70,7 @@ ADMIN_POSITION_POLICIES: dict[str, tuple[str, ...]] = {
         "OverloadRequestAdmin",
     ),
     "registrar": (
+        "GradeCorrectionAdmin",
         "AddDropRequestReader",
         "CatalogReader",
         "EnrollmentReportReader",

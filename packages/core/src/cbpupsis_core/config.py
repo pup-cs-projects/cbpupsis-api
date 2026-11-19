@@ -282,6 +282,8 @@ class Settings(BaseSettings):
     #: Minimum regular semester load required during add/drop adjustments.
     enrollment_minimum_regular_load: Decimal = Field(default=Decimal("12.0"))
 
+    # Count real regular semesters after publication, never elapsed fixed days.
+    grade_correction_window_regular_semesters: int = Field(default=1, ge=1, le=10)
     # --- Grading & Incomplete (INC) lifecycle ---
     #: Days after submission before an uncompleted INC expires into 5.00.
     inc_completion_days: int = Field(default=365, ge=1)

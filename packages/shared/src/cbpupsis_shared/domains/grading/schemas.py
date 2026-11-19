@@ -12,6 +12,15 @@ from pydantic.alias_generators import to_camel
 
 from cbpupsis_shared.domains.academics.schemas import TermRead
 from cbpupsis_shared.domains.grading.constants import AcademicStanding
+from cbpupsis_shared.domains.grading.correction_schemas import (
+    CorrectionDecision as CorrectionDecision,
+)
+from cbpupsis_shared.domains.grading.correction_schemas import (
+    CorrectionPage as CorrectionPage,
+)
+from cbpupsis_shared.domains.grading.correction_schemas import (
+    CorrectionRead as CorrectionRead,
+)
 from cbpupsis_shared.domains.users.schemas import RecordIdentity
 
 
@@ -35,8 +44,8 @@ class StudentTermGPARead(BaseModel):
     student_id: uuid.UUID
     academic_term_id: uuid.UUID
     total_gpa_units: Decimal
-    term_gpa: Decimal
-    cumulative_gpa: Decimal
+    term_gpa: Decimal | None
+    cumulative_gpa: Decimal | None
     academic_standing: str
     calculated_at: datetime
 

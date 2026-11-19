@@ -31,3 +31,18 @@ def test_student_holds_runtime_acl_grants_required_crud() -> None:
     assert (
         'f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE student_holds TO {quoted}"'
     ) in migration
+
+
+def test_corrections_profile_merge_preserves_published_predecessors() -> None:
+    config = Config(str(MIGRATIONS / "alembic.ini"))
+    scripts = ScriptDirectory.from_config(config)
+    assert scripts.get_revision("f103_grade_corrections").down_revision == (
+        "f178_inc_lifecycle"
+    )
+    assert scripts.get_revision("f178_faculty_qualifications").down_revision == (
+        "f178_inc_lifecycle"
+    )
+    assert set(scripts.get_revision("m103_corrections_profile").down_revision) == {
+        "f103_grade_corrections",
+        "f178_faculty_qualifications",
+    }

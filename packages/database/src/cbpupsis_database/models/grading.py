@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -175,6 +176,25 @@ class GradeCorrection(UUIDMixin, Base):
     proposed_mark: Mapped[str] = mapped_column(String(10))
     reason: Mapped[str] = mapped_column(Text)
     grading_sheet_file_id: Mapped[str] = mapped_column(String(100))
+    section_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("course_sections.id", ondelete="RESTRICT"), index=True
+    )
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True
+    )
+    # Same transactional, private binary-storage pattern as user_avatars.
+    grading_sheet_content: Mapped[bytes | None] = mapped_column(
+        LargeBinary, default=None, deferred=True
+    )
+    grading_sheet_content_type: Mapped[str | None] = mapped_column(String(32))
+    grading_sheet_size: Mapped[int | None] = mapped_column(Integer)
+    grading_sheet_sha256: Mapped[str | None] = mapped_column(String(64))
+    window_closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    grade_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejected_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT")
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     state: Mapped[str] = mapped_column(
         String(30), default="PENDING_CHAIR", server_default="PENDING_CHAIR"
     )
@@ -217,8 +237,10 @@ class StudentTermGPA(UUIDMixin, Base):
         ForeignKey("academic_terms.id", ondelete="CASCADE")
     )
     total_gpa_units: Mapped[Decimal] = mapped_column(Numeric(precision=4, scale=1))
-    term_gpa: Mapped[Decimal] = mapped_column(Numeric(precision=4, scale=2))
-    cumulative_gpa: Mapped[Decimal] = mapped_column(Numeric(precision=4, scale=2))
+    term_gpa: Mapped[Decimal | None] = mapped_column(Numeric(precision=4, scale=2))
+    cumulative_gpa: Mapped[Decimal | None] = mapped_column(
+        Numeric(precision=4, scale=2)
+    )
     academic_standing: Mapped[str] = mapped_column(
         String(50), default="Good Standing", server_default="Good Standing"
     )

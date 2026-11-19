@@ -13,6 +13,22 @@ Add the row in the same commit as the code that raises it.
 | **Last updated** | 2026-11-18 |
 | **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications`, `curriculum`, `sections`, `grading`, and `enrollment` in `packages/shared`; `items` and `student_profile` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The `student_auth` and `faculty_auth` domains raise the shared `auth` classes and add none of their own. |
 
+## Correction of Entry (US-FAC-002)
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 403 | `CORRECTION_WINDOW_CLOSED` | Filing after the configured actual regular-semester deadline; `windowClosedAt` is returned. |
+| 403 | `APPROVAL_SAME_ACTOR` | The filer or a previous actor attempted another step. |
+| 409 | `APPROVAL_OUT_OF_ORDER` | Wrong position/action for the current pending step, or a terminal request. |
+| 409 | `VERSION_CONFLICT` | Stale correction version or changed source grade; no mutation applied. |
+| 422 | `DECISION_REMARKS_REQUIRED` | Rejection requires nonblank remarks. |
+| 413 | `FILE_TOO_LARGE` | Grading sheet exceeds 10 MiB. |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | Actual document content is not a valid PDF, JPEG, or PNG. |
+| 503 | `GRADE_RECORD_UNAVAILABLE` | Required calendar/source record is unavailable; no fixed-day window is substituted. |
+
+Existing session/MFA, permission, opaque 404, and validation contracts also apply.
+See [GRADE-CORRECTIONS.md](GRADE-CORRECTIONS.md).
+
 ## Certificate of Registration (US-ENRL-003)
 
 | HTTP | Code | Meaning |
