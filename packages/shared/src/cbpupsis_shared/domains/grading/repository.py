@@ -321,6 +321,41 @@ async def roster_grades_for_update(
     )
 
 
+async def any_marks_for_enrollments(
+    db: AsyncSession, enrollment_ids: Collection[uuid.UUID]
+) -> bool:
+    """Return True when any enrollment in ``enrollment_ids`` has saved or locked marks.
+
+    SQL::
+
+        SELECT id FROM student_grades
+        WHERE enrollment_item_id IN (:enrollment_ids)
+          AND (
+              final_grade IS NOT NULL
+              OR midterm_grade IS NOT NULL
+              OR raw_score IS NOT NULL
+              OR is_locked IS true
+          )
+        LIMIT 1;
+    """
+    if not enrollment_ids:
+        return False
+    row_id = await db.scalar(
+        select(StudentGrade.id)
+        .where(
+            StudentGrade.enrollment_item_id.in_(enrollment_ids),
+            or_(
+                StudentGrade.final_grade.is_not(None),
+                StudentGrade.midterm_grade.is_not(None),
+                StudentGrade.raw_score.is_not(None),
+                StudentGrade.is_locked.is_(True),
+            ),
+        )
+        .limit(1)
+    )
+    return row_id is not None
+
+
 def add_student_grade(
     db: AsyncSession,
     *,
