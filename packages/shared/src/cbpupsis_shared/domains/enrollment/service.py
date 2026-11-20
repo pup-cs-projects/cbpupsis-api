@@ -10,6 +10,7 @@ from decimal import Decimal
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cbpupsis_core import logged
 from cbpupsis_core.config import settings
 from cbpupsis_core.events import Event
 from cbpupsis_core.exceptions import ConflictError, ForbiddenError, ValidationError
@@ -575,6 +576,7 @@ async def list_available_courses(
     )
 
 
+@logged("enrollment.submit", fields=("student_id",))
 async def submit_enrollment(
     db: AsyncSession,
     *,
@@ -1487,6 +1489,7 @@ async def list_admin_add_drop_requests(
     ]
 
 
+@logged("enrollment.decide_add_drop_request", fields=("reviewer_id",))
 async def decide_add_drop_request(
     db: AsyncSession,
     *,
