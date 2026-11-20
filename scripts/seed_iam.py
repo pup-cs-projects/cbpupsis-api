@@ -57,6 +57,7 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ReadGrade", "Read your own finalized grades"),
     ("ReadTranscript", "Read and export your own transcript"),
     ("ReadSchedule", "Read and export your own student course schedule"),
+    ("ReadDashboard", "Read your own student dashboard"),
     ("CreateWaiverRequest", "File your own prerequisite waiver request"),
     ("ReadWaiverRequest", "Read position-scoped prerequisite waiver requests"),
     ("ApproveWaiverRequest", "Record the assigned prerequisite waiver decision"),
@@ -104,6 +105,7 @@ POLICIES: dict[str, list[str]] = {
     "GradeReader": ["ReadGrade"],
     "TranscriptReader": ["ReadTranscript"],
     "ScheduleReader": ["ReadSchedule"],
+    "DashboardReader": ["ReadDashboard"],
     "WaiverRequestAuthor": ["CreateWaiverRequest"],
     "WaiverRequestAdmin": ["ReadWaiverRequest", "ApproveWaiverRequest"],
     "CertificateAuthor": ["IssueCertificate"],
@@ -154,6 +156,7 @@ GROUPS: dict[str, list[str]] = {
     FACULTY_GROUP: ["CourseSectionReader"],
     # Superadmin-created student accounts join this group.
     STUDENT_GROUP: [
+        "DashboardReader",
         "GradeReader",
         "TranscriptReader",
         "ScheduleReader",

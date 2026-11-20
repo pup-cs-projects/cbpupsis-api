@@ -14,6 +14,6 @@ __all__ = [
 
 
 async def list_active_announcements(
-    db: AsyncSession, limit: int = 10
+    db: AsyncSession, limit: int = 10, *, role_code: str | None = None
 ) -> list[AnnouncementRead]:
-    return await service.list_active_announcements(db, limit=limit)
+    return await service.list_active_announcements(db, limit=limit, role_code=role_code)

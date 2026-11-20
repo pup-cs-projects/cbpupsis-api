@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import re
 
+#: Required permission to view the student dashboard
+READ_DASHBOARD = "ReadDashboard"
+
 #: Empty state fallback messages (AC-101.5)
 EMPTY_ANNOUNCEMENTS = "No announcements at this time."
 EMPTY_EVENTS = "No upcoming events on the academic calendar."

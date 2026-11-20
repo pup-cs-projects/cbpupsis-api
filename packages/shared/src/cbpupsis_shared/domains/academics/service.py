@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Collection
 from datetime import UTC, datetime, time
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +17,8 @@ from cbpupsis_shared.domains.academics.schemas import (
     HolidayRead,
     TermRead,
 )
+
+MANILA_TZ = ZoneInfo("Asia/Manila")
 
 
 def _to_utc(dt: datetime) -> datetime:
@@ -131,8 +134,11 @@ def get_term_periods(
 async def list_upcoming_events(
     db: AsyncSession, term_id: uuid.UUID, limit: int = 10
 ) -> list[AcademicEventRead]:
-    """Return academic calendar events for the given term."""
-    rows = await repository.list_events_for_term(db, term_id, limit=limit)
+    """Return current and upcoming academic calendar events for the given term."""
+    today = datetime.now(MANILA_TZ).date()
+    rows = await repository.list_events_for_term(
+        db, term_id, limit=limit, on_or_after=today
+    )
     events: list[AcademicEventRead] = []
     for r in rows:
         starts_at = datetime.combine(r.start_date, time.min, tzinfo=UTC)

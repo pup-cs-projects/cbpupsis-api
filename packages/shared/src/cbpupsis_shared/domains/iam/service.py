@@ -105,6 +105,11 @@ async def is_user_in_group(
     return await repository.is_user_in_group_named(db, user_id, group_name)
 
 
+async def get_role_id_by_code(db: AsyncSession, code: str) -> uuid.UUID | None:
+    """Return the role id matching ``code``, or ``None`` if absent."""
+    return await repository.get_role_id_by_code(db, code)
+
+
 # --------------------------------------------------------------------------- #
 # Management operations (create the building blocks; wire them together).
 # --------------------------------------------------------------------------- #
