@@ -139,8 +139,8 @@ async def get_prescribed_load(
     *,
     curriculum_id: uuid.UUID | None,
     year_level: int,
-    semester: str,
-) -> Decimal:
+    semester: str | None,
+) -> Decimal | None:
     return await service.get_prescribed_load(
         db, curriculum_id=curriculum_id, year_level=year_level, semester=semester
     )

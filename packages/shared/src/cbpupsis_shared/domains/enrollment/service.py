@@ -341,8 +341,8 @@ async def get_enrollment_summary(
     *,
     student_id: uuid.UUID,
     academic_term_id: uuid.UUID,
-    prescribed_load: Decimal,
-    standing_reduction: Decimal,
+    prescribed_load: Decimal | None,
+    standing_reduction: Decimal | None,
 ) -> EnrollmentSummaryRead:
     enrolled_units, course_count = await repository.get_enrolled_units_and_course_count(
         db, student_id=student_id, academic_term_id=academic_term_id
@@ -350,6 +350,38 @@ async def get_enrollment_summary(
     approved_overload = await repository.get_approved_overload_units(
         db, student_id=student_id, academic_term_id=academic_term_id
     )
+
+    if prescribed_load is None:
+        return EnrollmentSummaryRead(
+            enrolled_units=enrolled_units,
+            effective_ceiling=None,
+            unit_ceiling=None,
+            prescribed_load=None,
+            approved_overload_units=approved_overload,
+            standing_reduction=standing_reduction,
+            enrolled_course_count=course_count,
+            schedule_url="/api/v1/student/schedule",
+            state="unavailable",
+            message="No prescribed curriculum load on record for this term.",
+        )
+
+    if standing_reduction is None:
+        return EnrollmentSummaryRead(
+            enrolled_units=enrolled_units,
+            effective_ceiling=None,
+            unit_ceiling=None,
+            prescribed_load=prescribed_load,
+            approved_overload_units=approved_overload,
+            standing_reduction=None,
+            enrolled_course_count=course_count,
+            schedule_url="/api/v1/student/schedule",
+            state="error",
+            message=(
+                "Maximum allowed units are unavailable because academic standing "
+                "could not be loaded."
+            ),
+            error="Unable to load scholastic standing.",
+        )
 
     effective_ceiling = compute_effective_ceiling(
         CeilingStudent(
@@ -603,12 +635,14 @@ async def submit_enrollment(
             if standing.value.upper() in BLOCKED_ACADEMIC_STANDINGS:
                 raise EnrollmentStandingBlockedError(standing=standing.value)
 
-            prescribed_load = await curriculum.get_prescribed_load(
-                db,
-                curriculum_id=profile.curriculum_id,
-                year_level=profile.year_level,
-                semester=term.semester,
-            )
+            prescribed_load = (
+                await curriculum.get_prescribed_load(
+                    db,
+                    curriculum_id=profile.curriculum_id,
+                    year_level=profile.year_level,
+                    semester=term.semester,
+                )
+            ) or Decimal("0")
             approved_overload = await repository.get_approved_overload_units(
                 db, student_id=student_id, academic_term_id=term.id
             )
@@ -1309,12 +1343,14 @@ async def file_add_drop_request(
             if occupied >= sec.capacity:
                 raise EnrollmentSectionFullError(section_id=sid)
 
-        prescribed_load = await curriculum.get_prescribed_load(
-            db,
-            curriculum_id=profile.curriculum_id,
-            year_level=profile.year_level,
-            semester=term.semester,
-        )
+        prescribed_load = (
+            await curriculum.get_prescribed_load(
+                db,
+                curriculum_id=profile.curriculum_id,
+                year_level=profile.year_level,
+                semester=term.semester,
+            )
+        ) or Decimal("0")
         approved_overload = await repository.get_approved_overload_units(
             db, student_id=student_id, academic_term_id=term.id
         )
@@ -1614,12 +1650,14 @@ async def _decide_add_drop_request(
                 raise ResourceNotFoundError
 
             if add_ids:
-                prescribed_load = await curriculum.get_prescribed_load(
-                    db,
-                    curriculum_id=profile.curriculum_id,
-                    year_level=profile.year_level,
-                    semester=term.semester,
-                )
+                prescribed_load = (
+                    await curriculum.get_prescribed_load(
+                        db,
+                        curriculum_id=profile.curriculum_id,
+                        year_level=profile.year_level,
+                        semester=term.semester,
+                    )
+                ) or Decimal("0")
                 approved_overload = await repository.get_approved_overload_units(
                     db, student_id=request_row.student_id, academic_term_id=term.id
                 )

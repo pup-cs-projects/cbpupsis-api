@@ -134,9 +134,11 @@ async def get_prescribed_load(
     *,
     curriculum_id: uuid.UUID | None,
     year_level: int,
-    semester: str,
-) -> Decimal:
+    semester: str | None,
+) -> Decimal | None:
     """Compute prescribed units load for curriculum year level and semester.
+
+    Returns ``None`` when no curriculum or matching curriculum courses exist.
 
     SQL::
 
@@ -147,8 +149,8 @@ async def get_prescribed_load(
           AND curriculum_courses.year_level = :year_level
           AND curriculum_courses.semester = :semester
     """
-    if curriculum_id is None:
-        return Decimal("0")
+    if curriculum_id is None or not semester:
+        return None
     stmt = (
         select(func.sum(Course.lecture_units + Course.lab_units))
         .select_from(CurriculumCourse)
@@ -160,7 +162,7 @@ async def get_prescribed_load(
         )
     )
     units = await db.scalar(stmt)
-    return Decimal(str(units)) if units is not None else Decimal("0")
+    return Decimal(str(units)) if units is not None else None
 
 
 async def list_all_courses(db: AsyncSession) -> list[Course]:

@@ -244,8 +244,8 @@ async def get_enrollment_summary(
     *,
     student_id: uuid.UUID,
     academic_term_id: uuid.UUID,
-    prescribed_load: Decimal,
-    standing_reduction: Decimal,
+    prescribed_load: Decimal | None,
+    standing_reduction: Decimal | None,
 ) -> EnrollmentSummaryRead:
     return await service.get_enrollment_summary(
         db,

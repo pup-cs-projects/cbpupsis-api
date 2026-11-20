@@ -15,14 +15,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, event
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_api_student.domains.dashboard import service as dashboard_service
 from cbpupsis_database.models.academics import AcademicTerm
 from cbpupsis_database.models.audit import AuthAuditLog
-from cbpupsis_database.models.billing import StudentBillingAccount
+from cbpupsis_database.models.billing import StudentBillingAccount, StudentHold
 from cbpupsis_database.models.curriculum import (
     Course,
     Curriculum,
@@ -38,6 +38,10 @@ from cbpupsis_database.models.grading import StudentTermGPA
 from cbpupsis_database.models.sections import CourseSection
 from cbpupsis_database.models.users import StudentProfile, User, UserProfile
 from cbpupsis_shared.domains.auth.security import hash_password
+from cbpupsis_shared.domains.billing.exceptions import BillingAccountUnavailableError
+from cbpupsis_shared.domains.grading.exceptions import GradeRecordUnavailableError
+from cbpupsis_shared.domains.users.exceptions import UserNotFoundError
+from main import app
 
 DASHBOARD_URL = "/api/v1/student/dashboard"
 LOGIN_URL = "/api/v1/auth/student/login"
@@ -143,6 +147,20 @@ class TestStudentDashboardAcceptanceCriteria:
             year_level=3,
             enrollment_status="ENROLLED",
         )
+        db.add(
+            AcademicTerm(
+                academic_year="2026-2027",
+                semester="First Semester",
+                start_date=date(2026, 8, 15),
+                end_date=date(2026, 12, 20),
+                is_current=True,
+                regular_enrollment_start=datetime.now(UTC) - timedelta(days=5),
+                regular_enrollment_end=datetime.now(UTC) + timedelta(days=5),
+                add_drop_deadline=datetime.now(UTC) + timedelta(days=10),
+                grade_submission_deadline=datetime.now(UTC) + timedelta(days=30),
+            )
+        )
+        await db.commit()
         headers = await _get_student_headers(client, student_num)
 
         resp = await client.get(DASHBOARD_URL, headers=headers)
@@ -645,21 +663,35 @@ class TestNonFunctionalRequirementsAndArchitecture:
     async def test_partial_failure_resilience(
         self, client: AsyncClient, db: AsyncSession
     ) -> None:
-        """Reliability: Fail one upstream panel and assert the rest still renders."""
+        """Reliability: Fail one upstream panel and assert explicit error state."""
         student_num = "2021-00555-MN-0"
         await _create_student(db, student_number=student_num)
         headers = await _get_student_headers(client, student_num)
 
         with patch(
             "cbpupsis_shared.domains.billing.client.get_student_holds",
-            side_effect=RuntimeError("Billing service temporary outage"),
+            side_effect=BillingAccountUnavailableError(),
         ):
             resp = await client.get(DASHBOARD_URL, headers=headers)
             assert resp.status_code == 200, resp.text
             data = resp.json()["data"]
             assert data["student"]["student_number"] == student_num
-            assert data["holds"] == []
+            assert data["holds"] is None
+            assert data["panel_errors"]["holds"]
             assert data["standing"]["value"] == "Good Standing"
+
+        with patch(
+            "cbpupsis_shared.domains.grading.client.get_student_scholastic_standing",
+            side_effect=GradeRecordUnavailableError(),
+        ):
+            resp = await client.get(DASHBOARD_URL, headers=headers)
+            assert resp.status_code == 200, resp.text
+            data = resp.json()["data"]
+            assert data["standing"]["state"] == "error"
+            assert data["standing"]["error"]
+            assert data["standing"]["value"] is None
+            assert data["standing"]["unit_reduction"] is None
+            assert data["panel_errors"]["standing"]
 
     async def test_error_scenarios(self, client: AsyncClient, db: AsyncSession) -> None:
         """Errors: 400 INVALID_INPUT, 401 UNAUTHORIZED, 404 RESOURCE_NOT_FOUND."""
@@ -698,3 +730,243 @@ class TestNonFunctionalRequirementsAndArchitecture:
         )
         assert other_resp.status_code == 404
         assert other_resp.json()["code"] == "RESOURCE_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+class TestDashboardNoFabricatedValues:
+    """US-STU-001 (#150): Never invent dashboard values on missing or failed reads."""
+
+    async def test_ac_stu_001_5_no_term_returns_null_term_and_empty_term_panels(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        """No term found: current_term is None and term panels show empty state."""
+        student_num = "2021-00201-MN-0"
+        await _create_student(db, student_number=student_num)
+        headers = await _get_student_headers(client, student_num)
+
+        resp = await client.get(DASHBOARD_URL, headers=headers)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+
+        assert data["current_term"] is None
+        assert data["periods"] == []
+        assert data["events"] == []
+        assert data["enrollment"]["state"] == "unavailable"
+        assert data["enrollment"]["prescribed_load"] is None
+        assert data["enrollment"]["effective_ceiling"] is None
+        assert data["enrollment"]["unit_ceiling"] is None
+        assert data["enrollment"]["message"]
+        assert data["empty_states"]["events"]
+
+    async def test_ac_stu_001_2_financial_hold_zero_balance_returns_zero_string(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        """Financial hold with real balance 0.00 returns amount_outstanding='0.00'."""
+        student_num = "2021-00202-MN-0"
+        user, _ = await _create_student(
+            db, student_number=student_num, has_financial_hold=True
+        )
+
+        term = AcademicTerm(
+            academic_year="2026-2027",
+            semester="First Semester",
+            start_date=date(2026, 8, 15),
+            end_date=date(2026, 12, 20),
+            is_current=True,
+            regular_enrollment_start=datetime.now(UTC) - timedelta(days=5),
+            regular_enrollment_end=datetime.now(UTC) + timedelta(days=5),
+            add_drop_deadline=datetime.now(UTC) + timedelta(days=10),
+            grade_submission_deadline=datetime.now(UTC) + timedelta(days=30),
+        )
+        db.add(term)
+        await db.flush()
+
+        db.add(
+            StudentBillingAccount(
+                student_id=user.id,
+                academic_term_id=term.id,
+                gross_amount=Decimal("5000.00"),
+                amount_paid=Decimal("5000.00"),
+                payment_status="paid",
+                due_date=date(2026, 9, 15),
+            )
+        )
+        db.add(
+            StudentHold(
+                student_id=user.id,
+                hold_type="FINANCIAL",
+                office="Accounting Office",
+                description="Pending clearance verification",
+                amount_outstanding=Decimal("0.00"),
+                blocks_enrollment=True,
+            )
+        )
+        await db.commit()
+
+        headers = await _get_student_headers(client, student_num)
+        resp = await client.get(DASHBOARD_URL, headers=headers)
+        assert resp.status_code == 200, resp.text
+        holds = resp.json()["data"]["holds"]
+
+        assert len(holds) == 1
+        assert holds[0]["type"] == "FINANCIAL"
+        assert holds[0]["office"] == "Accounting Office"
+        assert holds[0]["amount_outstanding"] == "0.00"
+        assert holds[0]["blocks_enrollment"] is True
+
+    async def test_ac_stu_001_13_academic_hold_registrar_returns_zero_string(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        """Academic hold from Registrar returns amount_outstanding='0.00'."""
+        student_num = "2021-00203-MN-0"
+        user, _ = await _create_student(
+            db, student_number=student_num, has_academic_hold=True
+        )
+
+        db.add(
+            StudentHold(
+                student_id=user.id,
+                hold_type="ACADEMIC",
+                office="Office of the University Registrar",
+                description="Submit Form 137",
+                amount_outstanding=None,
+                blocks_enrollment=True,
+            )
+        )
+        await db.commit()
+
+        headers = await _get_student_headers(client, student_num)
+        resp = await client.get(DASHBOARD_URL, headers=headers)
+        assert resp.status_code == 200, resp.text
+        holds = resp.json()["data"]["holds"]
+
+        assert len(holds) == 1
+        assert holds[0]["type"] == "ACADEMIC"
+        assert holds[0]["office"] == "Office of the University Registrar"
+        assert holds[0]["amount_outstanding"] == "0.00"
+        assert holds[0]["blocks_enrollment"] is True
+
+    async def test_ac_stu_001_4_no_curriculum_load_returns_null_load_and_ceiling(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        """No curriculum load: prescribed_load and ceiling are None with message."""
+        student_num = "2021-00204-MN-0"
+        await _create_student(db, student_number=student_num, curriculum_id=None)
+
+        db.add(
+            AcademicTerm(
+                academic_year="2026-2027",
+                semester="First Semester",
+                start_date=date(2026, 8, 15),
+                end_date=date(2026, 12, 20),
+                is_current=True,
+                regular_enrollment_start=datetime.now(UTC) - timedelta(days=5),
+                regular_enrollment_end=datetime.now(UTC) + timedelta(days=5),
+                add_drop_deadline=datetime.now(UTC) + timedelta(days=10),
+                grade_submission_deadline=datetime.now(UTC) + timedelta(days=30),
+            )
+        )
+        await db.commit()
+
+        headers = await _get_student_headers(client, student_num)
+        resp = await client.get(DASHBOARD_URL, headers=headers)
+        assert resp.status_code == 200, resp.text
+        enrollment = resp.json()["data"]["enrollment"]
+
+        assert enrollment["state"] == "unavailable"
+        assert enrollment["prescribed_load"] is None
+        assert enrollment["effective_ceiling"] is None
+        assert enrollment["unit_ceiling"] is None
+        assert enrollment["message"]
+
+    async def test_ac_stu_001_3_standing_read_failure_returns_error_state(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        """Standing read failure returns error state and never 'Good Standing'."""
+        student_num = "2021-00205-MN-0"
+        await _create_student(db, student_number=student_num)
+        headers = await _get_student_headers(client, student_num)
+
+        with patch(
+            "cbpupsis_shared.domains.grading.client.get_student_scholastic_standing",
+            side_effect=GradeRecordUnavailableError(),
+        ):
+            resp = await client.get(DASHBOARD_URL, headers=headers)
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data["standing"]["state"] == "error"
+        assert data["standing"]["error"]
+        assert data["standing"]["value"] is None
+        assert data["standing"]["unit_reduction"] is None
+        assert data["panel_errors"]["standing"]
+        assert data["enrollment"]["effective_ceiling"] is None
+
+    async def test_ac_stu_001_2_holds_read_failure_returns_error_state(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        """Holds read failure returns error state (holds=None), never empty list."""
+        student_num = "2021-00206-MN-0"
+        await _create_student(db, student_number=student_num)
+        headers = await _get_student_headers(client, student_num)
+
+        with patch(
+            "cbpupsis_shared.domains.billing.client.get_student_holds",
+            side_effect=BillingAccountUnavailableError(),
+        ):
+            resp = await client.get(DASHBOARD_URL, headers=headers)
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data["holds"] is None
+        assert data["panel_errors"]["holds"]
+
+    async def test_ac_stu_001_5_identity_read_failure_returns_error_state(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        """Identity read failure returns error state without fake year_level=1."""
+        student_num = "2021-00207-MN-0"
+        user, _ = await _create_student(db, student_number=student_num)
+        headers = await _get_student_headers(client, student_num)
+
+        with (
+            patch(
+                "cbpupsis_shared.domains.users.client.get_student_profile",
+                side_effect=UserNotFoundError(user.id),
+            ),
+            patch(
+                "cbpupsis_shared.domains.users.client.get_user",
+                side_effect=UserNotFoundError(user.id),
+            ),
+        ):
+            resp = await client.get(DASHBOARD_URL, headers=headers)
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        student = data["student"]
+        assert student["state"] == "error"
+        assert student["error"]
+        assert student["year_level"] is None
+        assert student["programme"] is None
+        assert student["name"] is None
+        assert data["panel_errors"]["identity"]
+
+    async def test_ac_stu_001_5_unexpected_runtime_error_in_panel_returns_500(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        """Unexpected RuntimeError in a dashboard panel returns HTTP 500."""
+        student_num = "2021-00208-MN-0"
+        await _create_student(db, student_number=student_num)
+        headers = await _get_student_headers(client, student_num)
+
+        with patch(
+            "cbpupsis_shared.domains.billing.client.get_student_holds",
+            side_effect=RuntimeError("Unexpected dashboard failure"),
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app, raise_app_exceptions=False),
+                base_url="http://test",
+            ) as safe_client:
+                resp = await safe_client.get(DASHBOARD_URL, headers=headers)
+
+        assert resp.status_code == 500, resp.text

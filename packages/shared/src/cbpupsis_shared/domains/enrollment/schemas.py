@@ -27,18 +27,21 @@ class EnrollmentSummaryRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    enrolled_units: Decimal
-    effective_ceiling: Decimal
+    enrolled_units: Decimal | None = None
+    effective_ceiling: Decimal | None = None
     unit_ceiling: Decimal | None = None
-    prescribed_load: Decimal
-    approved_overload_units: Decimal = Decimal("0")
-    standing_reduction: Decimal = Decimal("0")
+    prescribed_load: Decimal | None = None
+    approved_overload_units: Decimal | None = Decimal("0")
+    standing_reduction: Decimal | None = Decimal("0")
     enrolled_course_count: int = 0
     schedule_url: str = "/api/v1/student/schedule"
+    state: Literal["available", "unavailable", "error"] = "available"
+    message: str | None = None
+    error: str | None = None
 
     @model_validator(mode="after")
     def populate_unit_ceiling(self) -> EnrollmentSummaryRead:
-        if self.unit_ceiling is None:
+        if self.unit_ceiling is None and self.effective_ceiling is not None:
             self.unit_ceiling = self.effective_ceiling
         return self
 

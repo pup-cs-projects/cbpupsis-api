@@ -145,12 +145,14 @@ async def get_eligibility(
         if profile.curriculum_id is not None
         else None
     )
-    prescribed_load = await curriculum.get_prescribed_load(
-        db,
-        curriculum_id=profile.curriculum_id,
-        year_level=profile.year_level,
-        semester=term.semester,
-    )
+    prescribed_load = (
+        await curriculum.get_prescribed_load(
+            db,
+            curriculum_id=profile.curriculum_id,
+            year_level=profile.year_level,
+            semester=term.semester,
+        )
+    ) or Decimal("0")
     approved_overload = await enrollment.get_approved_overload_units(
         db, student_id=student_id, academic_term_id=term.id
     )

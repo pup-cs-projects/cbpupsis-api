@@ -19,10 +19,12 @@ class ScholasticStandingRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    value: str
-    unit_reduction: int = 0
+    value: str | None = None
+    unit_reduction: int | None = 0
     explanation: str | None = None
     appeal_available: bool = False
+    state: Literal["available", "error"] = "available"
+    error: str | None = None
 
 
 class StudentTermGPARead(BaseModel):
