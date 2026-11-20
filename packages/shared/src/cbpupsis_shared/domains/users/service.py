@@ -25,7 +25,7 @@ from cbpupsis_core.pagination import Page
 from cbpupsis_database.models.users import AdminPosition, User
 from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.auth import client as auth_client
-from cbpupsis_shared.domains.auth.exceptions import SuperadminRoleRequiredError
+from cbpupsis_shared.domains.auth.exceptions import InsufficientRoleError
 from cbpupsis_shared.domains.curriculum import client as curriculum_client
 from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.iam.constants import (
@@ -423,7 +423,7 @@ async def get_profile_for(
         # a caller who may not read it that the id exists.
         try:
             await auth_client.require_superadmin_actor(db, viewer_id)
-        except SuperadminRoleRequiredError:
+        except InsufficientRoleError:
             raise UserNotFoundError(user_id) from None
         granted = await iam_service.get_effective_permissions(db, viewer_id)
         if READ_ALL_USER not in granted:

@@ -99,7 +99,7 @@ should confirm them. Earlier ids in code and commits (`US-AUTH-001` to
 |---|---|---|---|
 | AC-101.1 | An active, unlocked student | They sign in with correct details | They get a student session and an HttpOnly refresh cookie |
 | AC-101.2 | Any caller | They submit a student number not in `YYYY-NNNNN-XX-N` form | 422 `AUTH_ID_FORMAT_INVALID`, and no password is checked |
-| AC-101.3 | A student | They submit a wrong birthdate, a wrong password, or an unknown number | One byte-identical 401 `AUTH_FAILED` for all three |
+| AC-101.3 | A student | They submit a wrong birthdate, a wrong password, or an unknown number | One byte-identical 401 `AUTH_INVALID_CREDENTIALS` for all three |
 | AC-101.4 | A student with 4 failures in 15 minutes | They fail a 5th time | 423 `AUTH_ACCOUNT_LOCKED` with the remaining seconds, and one security notice is sent |
 | AC-101.5 | A locked student | They sign in with correct details | 423 with the remaining time, and the lock is not extended |
 | AC-101.6 | Any attempt | It completes | One append-only ledger row with the identifier, address, and outcome, never the password |

@@ -68,7 +68,7 @@ async def login_faculty(
             or not profile.is_active
             or not password_ok
         ):
-            return "AUTH_FAILED"
+            return "invalid_credentials"
         return None
 
     subject_id = await auth_client.verify_identifier_password(

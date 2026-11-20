@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.exceptions import UnauthorizedError
 from cbpupsis_shared.domains.auth import service as auth_service
-from cbpupsis_shared.domains.auth.exceptions import SuperadminRoleRequiredError
+from cbpupsis_shared.domains.auth.exceptions import InsufficientRoleError
 from cbpupsis_shared.domains.auth.security import (
     create_refresh_token,
     decode_token,
@@ -59,7 +59,7 @@ class TestNoPublicRegistration:
         self, db: AsyncSession, registered_user: dict[str, str]
     ) -> None:
         """The kept service function refuses an actor who is not a Superadmin."""
-        with pytest.raises(SuperadminRoleRequiredError):
+        with pytest.raises(InsufficientRoleError):
             await auth_service.register(
                 db,
                 email="new@example.com",

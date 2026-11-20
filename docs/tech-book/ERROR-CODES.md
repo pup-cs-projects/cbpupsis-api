@@ -202,8 +202,7 @@ Every table has the same columns. A blank **Code** means the error carries no
 | 401 | `AUTH_MFA_CODE_REUSED` | That security code has already been used; enter the current code | A TOTP time-step at or below the last accepted one. Counts toward the lockout. | `auth/service/mfa.py` |
 | 401 | `AUTH_MFA_REQUIRED` | A second factor is required | An Admin or faculty challenge token presented where a completed session is required. | `admin_auth/dependencies.py`, `faculty_auth/dependencies.py` |
 | 403 | `AUTH_MFA_ENROLLMENT_REQUIRED` | Set up multi-factor authentication to continue | Enrollment is not available or not finished: enrolling when TOTP is already enrolled, confirming without a pending seed, verifying before enrolling, or an Admin or faculty enrollment challenge presented as a session. | `auth/service/mfa.py`, `admin_auth/*`, `faculty_auth/*` |
-| 403 | `AUTH_INSUFFICIENT_ROLE` | This action is not available to your role | The session is not a current MFA-completed session of the role the endpoint needs (student, faculty, Admin), or the faculty profile is inactive. | `auth/exceptions.py` (raised by each role's `dependencies.py`) |
-| 403 | `SUPERADMIN_ROLE_REQUIRED` | A live MFA-completed Superadmin session is required | Live, verified, non-conflicting Superadmin MFA session required. Also every account-management route (`POST /admin/users`, `POST /admin/users/import`, `POST /admin/users/{id}/reissue-temporary-password`) called with another role's session. | `auth/service/sessions.py`, `iam/dependencies.py` |
+| 403 | `AUTH_INSUFFICIENT_ROLE` | This action is not available to your role | The session is not a current MFA-completed session of the role the endpoint needs (student, faculty, Admin, Superadmin), or the faculty profile is inactive. Also every Superadmin-only and account-management route (`POST /admin/users`, `POST /admin/users/import`, `POST /admin/users/{id}/reissue-temporary-password`) called with another role's session. | `auth/exceptions.py` (raised by each role's `dependencies.py`, `auth/dependencies.py`, `auth/service/sessions.py`) |
 | 403 | `PASSWORD_CHANGE_REQUIRED` | Change your temporary password to continue. | **Every authenticated route, for every role,** while the account holds a Superadmin-issued temporary password, except `POST /auth/change-password` (which clears it) and the logout routes. Refresh still rotates; the tokens it mints get this 403 too. | `auth/service/sessions.py` |
 | 403 | `email_not_verified` | Verify your email address to continue. Check your inbox, or request a new verification link. | Email sign-in or refresh with a correct password, but the address is unverified. **Only reachable after the password check passes**; see below. | `auth/service/sessions.py` |
 | 404 | `RESOURCE_NOT_FOUND` | Resource not found. | The record is absent or outside the caller's reach: an Admin position's scope, or a course section not assigned to the faculty member. Identical for both cases. | `auth/exceptions.py` |
@@ -363,13 +362,13 @@ them must move to the rows above.
 |---|---|
 | Student 423 `ACCOUNT_LOCKED` with `data.retry_after_seconds` | 423 `AUTH_ACCOUNT_LOCKED` with top-level `retry_after_seconds` |
 | Faculty 400 `INVALID_INPUT` | 422 `AUTH_ID_FORMAT_INVALID` |
-| Faculty 401 `AUTH_FAILED` "... {n} attempts remaining before lockout." | 401 `AUTH_FAILED` "Invalid employee ID or password." |
+| Faculty 401 `AUTH_FAILED` "... {n} attempts remaining before lockout." | 401 `AUTH_INVALID_CREDENTIALS` "Invalid employee ID or password." |
 | Faculty 401 `AUTH_MFA_INVALID` "The code has expired..." and other faculty-only MFA wordings | 401 `AUTH_MFA_INVALID` with the shared message |
 | Faculty 403 `PERMISSION_DENIED` (audit deletion refused) | 405: the ledger has no write endpoint |
 | Faculty 503 `SERVICE_UNAVAILABLE` | The generic 500 with a `request_id` |
 | Student 401 "Your session has expired due to inactivity." | 401 `AUTH_SESSION_EXPIRED` "Your session has ended. Sign in again." |
 | Admin 404 "Resource not found" (no period) | 404 `RESOURCE_NOT_FOUND` "Resource not found." |
-| 403 `Missing required permission(s): ['ReadAllUser']` (or 403 `SUPERADMIN_ROLE_REQUIRED`) on `GET /admin/users/{id}` for another user's profile | 404 `User {id} not found` |
+| 403 `Missing required permission(s): ['ReadAllUser']` (or 403 `AUTH_INSUFFICIENT_ROLE`) on `GET /admin/users/{id}` for another user's profile | 404 `User {id} not found` |
 | 403 `You do not have access to this item` on `PATCH` or `DELETE /items/{id}` for someone else's item, without `ReadAllItem` | 404 `Item {id} not found` |
 | 422 `INVALID_CLIENT_ADDRESS` on every sign-in route (student, faculty, admin, superadmin, `/auth/login`) | No error: the sign-in proceeds and the session and sign-in ledger record a NULL address |
 | `POST /auth/register` (201, 409 "Email already registered", 429 `rate_limited`) | 404: there is no public registration. A Superadmin creates accounts with `POST /admin/users` or `POST /admin/users/import` |

@@ -402,3 +402,12 @@ async def test_an_expired_temporary_password_is_refused_at_the_password_step(
     assert response.json()["code"] == "AUTH_TEMPORARY_PASSWORD_EXPIRED"
     wrong = await _login(client, "Wrong-Password-123!")
     assert wrong.json()["code"] == "AUTH_INVALID_CREDENTIALS"
+
+
+async def test_ac_auth_001_3_wrong_password_returns_auth_invalid_credentials(
+    client: AsyncClient, faculty
+) -> None:
+    """AC-AUTH-001.3: wrong faculty password returns AUTH_INVALID_CREDENTIALS."""
+    response = await _login(client, password="Wrong-Password-123!")
+    assert response.status_code == 401
+    assert response.json()["code"] == "AUTH_INVALID_CREDENTIALS"

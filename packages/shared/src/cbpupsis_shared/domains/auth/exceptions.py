@@ -38,13 +38,6 @@ class AuthError(AppError):
     """Base for every error raised by the auth domain."""
 
 
-class SuperadminRoleRequiredError(AuthError, ForbiddenError):
-    code = "SUPERADMIN_ROLE_REQUIRED"
-
-    def __init__(self) -> None:
-        super().__init__("A live MFA-completed Superadmin session is required")
-
-
 class AuthSessionExpiredError(AuthError, UnauthorizedError):
     """The server-side session is missing or idle past the timeout (HTTP 401).
 

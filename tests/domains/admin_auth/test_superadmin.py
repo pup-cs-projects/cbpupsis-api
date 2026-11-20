@@ -196,7 +196,9 @@ async def test_ac_104_5_admin_cannot_manage_even_with_grants(
     auth_headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
     await grant(uuid.UUID(registered_user["id"]), "ManageIAM")
     for path in ("/api/v1/superadmin/me", "/api/v1/iam/groups", "/api/v1/admin/users"):
-        assert (await client.get(path, headers=auth_headers)).status_code == 403
+        res = await client.get(path, headers=auth_headers)
+        assert res.status_code == 403
+        assert res.json()["code"] == "AUTH_INSUFFICIENT_ROLE"
     assert (
         await client.patch(
             "/api/v1/audit/00000000-0000-0000-0000-000000000001",
@@ -204,6 +206,48 @@ async def test_ac_104_5_admin_cannot_manage_even_with_grants(
             json={},
         )
     ).status_code in (404, 405)
+
+
+async def test_ac_auth_003_4_admin_on_superadmin_route_returns_auth_insufficient_role(
+    client, db, registered_user
+):
+    """AC-AUTH-003.4: Admin on superadmin-only route gets AUTH_INSUFFICIENT_ROLE."""
+    from cbpupsis_api_admin.domains.admin_auth import service as admin_service
+
+    user_id = uuid.UUID(registered_user["id"])
+    group = await iam_service.create_group(db, name=ADMIN_GROUP)
+    await iam_service.add_user_to_group(db, user_id, group.id)
+    await admin_service.configure_admin_profile(
+        db, user_id=user_id, position=AdminPosition.registrar
+    )
+    login = await client.post(
+        "/api/v1/auth/admin/login",
+        json={
+            "email": registered_user["email"],
+            "password": registered_user["password"],
+        },
+    )
+    challenge = login.json()["challenge_token"]
+    secret = (
+        await client.post(
+            "/api/v1/auth/admin/mfa/totp/enroll", json={"challenge_token": challenge}
+        )
+    ).json()["secret"]
+    tokens = (
+        await client.post(
+            "/api/v1/auth/admin/mfa/totp/confirm",
+            json={
+                "challenge_token": challenge,
+                "code": totp_at(secret, int(datetime.now(UTC).timestamp()) // 30),
+            },
+        )
+    ).json()
+    admin_headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    for path in ("/api/v1/superadmin/me", "/api/v1/iam/groups", "/api/v1/admin/users"):
+        response = await client.get(path, headers=admin_headers)
+        assert response.status_code == 403
+        assert response.json()["code"] == "AUTH_INSUFFICIENT_ROLE"
 
 
 async def test_ac_104_6_distinct_second_person(

@@ -18,9 +18,9 @@ from cbpupsis_shared.domains.auth.constants import ROLE_SUPERADMIN
 from cbpupsis_shared.domains.auth.exceptions import (
     AuthSessionExpiredError,
     InactiveUserError,
+    InsufficientRoleError,
     InvalidAuthTokenError,
     PasswordChangeRequiredError,
-    SuperadminRoleRequiredError,
     UnverifiedEmailError,
 )
 from cbpupsis_shared.domains.auth.security import require_session_version
@@ -58,7 +58,7 @@ async def require_superadmin_actor(db: AsyncSession, user_id: uuid.UUID) -> None
         or not await iam_service.is_user_in_group(db, user_id, SUPERADMIN_GROUP)
         or await iam_service.is_user_in_any_group(db, user_id, ADMIN_GROUPS)
     ):
-        raise SuperadminRoleRequiredError
+        raise InsufficientRoleError
 
 
 def session_ids_from_claims(claims: dict) -> tuple[uuid.UUID, uuid.UUID]:
@@ -117,11 +117,11 @@ async def check_superadmin_session(
 ) -> uuid.UUID:
     """:func:`check_session` plus the live Superadmin role and MFA claim."""
     if claims.get("role") != ROLE_SUPERADMIN or claims.get("mfa") is not True:
-        raise SuperadminRoleRequiredError
+        raise InsufficientRoleError
     user_id, _sid = session_ids_from_claims(claims)
     try:
         await require_superadmin_actor(db, user_id)
-    except SuperadminRoleRequiredError:
+    except InsufficientRoleError:
         await repository.delete_active_sessions(db, user_id)
         await db.commit()
         raise
