@@ -159,7 +159,7 @@ class TestOnlyASuperadminCreatesAccounts:
             USERS, headers=auth_headers, json=ROWS["admin_registrar"]
         )
         assert ordinary.status_code == 403
-        assert ordinary.json()["code"] == "SUPERADMIN_ROLE_REQUIRED"
+        assert ordinary.json()["code"] == "AUTH_INSUFFICIENT_ROLE"
 
     async def test_reissue_is_superadmin_only(
         self, client: AsyncClient, auth_headers: dict[str, str], registered_user

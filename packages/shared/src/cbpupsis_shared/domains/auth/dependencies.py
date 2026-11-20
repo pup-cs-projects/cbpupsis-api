@@ -45,11 +45,11 @@ from cbpupsis_shared.domains.auth.constants import (
 from cbpupsis_shared.domains.auth.exceptions import (
     AuthSessionExpiredError,
     InactiveUserError,
+    InsufficientRoleError,
     InvalidAuthTokenError,
     MfaEnrollmentRequiredError,
     MfaRequiredError,
     NotAuthenticatedError,
-    SuperadminRoleRequiredError,
     UnverifiedEmailError,
 )
 from cbpupsis_shared.domains.auth.schemas import RefreshRequest
@@ -177,7 +177,7 @@ async def _authenticate(
         db.info["audit_event_handler"] = audit_client.capture_event
         request.state.audit_db = db
     elif await iam_service.is_user_in_group(db, user.id, SUPERADMIN_GROUP):
-        raise SuperadminRoleRequiredError
+        raise InsufficientRoleError
     else:
         sid = await auth_service.check_session(
             db, claims, allow_password_change=allow_password_change
@@ -201,7 +201,7 @@ async def require_superadmin_session(
     user: CurrentUser = Depends(get_current_user),
 ) -> CurrentUser:
     if user.role != "superadmin":
-        raise SuperadminRoleRequiredError
+        raise InsufficientRoleError
     return user
 
 

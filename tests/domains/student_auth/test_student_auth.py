@@ -165,6 +165,16 @@ class TestCredentialIndistinguishability:
         )
         assert response.status_code == 401
 
+    async def test_ac_auth_001_3_wrong_password_returns_auth_invalid_credentials(
+        self, client: AsyncClient, student_user: dict[str, object]
+    ) -> None:
+        """AC-AUTH-001.3: wrong student password returns AUTH_INVALID_CREDENTIALS."""
+        response = await client.post(
+            LOGIN, json=_body(student_user, password="WrongPassword123!")
+        )
+        assert response.status_code == 401
+        assert response.json()["code"] == "AUTH_INVALID_CREDENTIALS"
+
 
 class TestAccountLockout:
     async def test_ac_101_4_fifth_failure_locks_and_notifies(
