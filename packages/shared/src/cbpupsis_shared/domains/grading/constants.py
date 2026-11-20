@@ -43,6 +43,26 @@ NUMERIC_COMPLETION_MARKS = frozenset(
 )
 NUMERIC_MARKS = NUMERIC_COMPLETION_MARKS | {"5.00"}
 
+GRADING_MODE_NUMERIC = "NUMERIC"
+GRADING_MODE_PASS_FAIL = "PASS_FAIL"
+GRADING_MODES = frozenset({GRADING_MODE_NUMERIC, GRADING_MODE_PASS_FAIL})
+
+PASS_FAIL_MARKS = frozenset({"PASS", "FAIL"})
+NUMERIC_ALLOWED_MARKS: tuple[str, ...] = (
+    "1.00",
+    "1.25",
+    "1.50",
+    "1.75",
+    "2.00",
+    "2.25",
+    "2.50",
+    "2.75",
+    "3.00",
+    "5.00",
+    "INC",
+)
+PASS_FAIL_ALLOWED_MARKS: tuple[str, ...] = ("PASS", "FAIL")
+
 
 class AcademicStanding(StrEnum):
     GOOD = "Good Standing"

@@ -65,6 +65,45 @@ class GradesLockedError(GradingError, ConflictError):
         super().__init__("Grades for this section are finalized and locked.")
 
 
+class GradeModeLockedError(GradingError, ConflictError):
+    """Section grading mode cannot change while marks exist for the term (HTTP 409)."""
+
+    code = "GRADE_MODE_LOCKED"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Grading mode cannot be changed while the section has marks for the term."
+        )
+
+
+class GradeModeMismatchError(GradingError, ValidationError):
+    """Submitted mark does not fit the section's grading mode (HTTP 422)."""
+
+    code = "GRADE_MODE_MISMATCH"
+
+    def __init__(
+        self,
+        *,
+        grading_mode: str,
+        allowed_marks: Sequence[str],
+        row_errors: Sequence[dict[str, object]] = (),
+    ) -> None:
+        errors = list(row_errors)
+        allowed = list(allowed_marks)
+        detail = (
+            f"Submitted mark does not fit the section's {grading_mode} grading mode. "
+            f"Allowed marks: {', '.join(allowed)}."
+        )
+        fields: dict[str, object] = {
+            "gradingMode": grading_mode,
+            "allowedMarks": allowed,
+        }
+        if errors:
+            fields["errors"] = errors
+            fields["details"] = {"rows": errors}
+        super().__init__(detail, response_fields=fields)
+
+
 class GradeVersionConflictError(GradingError, ConflictError):
     """Draft submission version does not match current section version (HTTP 409)."""
 

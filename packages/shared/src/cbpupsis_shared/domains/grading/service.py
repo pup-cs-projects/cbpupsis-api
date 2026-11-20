@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Collection
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import IntegrityError
@@ -34,6 +35,8 @@ from cbpupsis_shared.domains.grading.constants import (
     GRADE_STATE_FINAL,
     GRADES_FINALIZED_ACTION,
     GRADES_FINALIZED_EVENT,
+    GRADING_MODE_NUMERIC,
+    GRADING_MODE_PASS_FAIL,
     INC_COMPLETION_DECIDED_EVENT,
     INC_COMPLETION_ENDORSED_ACTION,
     INC_COMPLETION_FILED_ACTION,
@@ -43,13 +46,17 @@ from cbpupsis_shared.domains.grading.constants import (
     INC_STATE_COMPLETED,
     INC_STATE_EXPIRED,
     INC_STATE_PENDING,
+    NUMERIC_ALLOWED_MARKS,
     NUMERIC_COMPLETION_MARKS,
     NUMERIC_MARKS,
+    PASS_FAIL_ALLOWED_MARKS,
+    PASS_FAIL_MARKS,
     UNIT_REDUCTIONS,
     AcademicStanding,
 )
 from cbpupsis_shared.domains.grading.exceptions import (
     GradeDeadlinePassedError,
+    GradeModeMismatchError,
     GradeRecordUnavailableError,
     GradesLockedError,
     GradeValidationError,
@@ -192,7 +199,7 @@ def earned_courses(courses: list[GradeCourse]) -> dict[uuid.UUID, Decimal]:
 
 def _course(mark, section, course) -> GradeCourse:
     value = mark.final_grade.strip().upper()
-    if value not in {"INC", "W"}:
+    if value not in {"INC", "W", "PASS", "FAIL"}:
         try:
             numeric = Decimal(value)
             if not numeric.is_finite():
@@ -212,7 +219,7 @@ def _course(mark, section, course) -> GradeCourse:
         else "Withdrawn"
         if value == "W"
         else "Failed"
-        if value == "5.00"
+        if value in {"5.00", "FAIL"}
         else "Passed"
     )
     return GradeCourse(
@@ -440,6 +447,71 @@ def _is_enrolled(status: str) -> bool:
     return status.strip().lower() in ENROLLED_COURSE_STATUSES
 
 
+class _MarkModeMismatch(Exception):
+    """Distinguish a grading-mode mismatch from generic mark syntax errors."""
+
+
+def _section_grading_mode(course) -> Literal["NUMERIC", "PASS_FAIL"]:
+    if course is None:
+        return GRADING_MODE_NUMERIC
+    mode = (course.grading_mode or GRADING_MODE_NUMERIC).strip().upper()
+    if mode == GRADING_MODE_PASS_FAIL:
+        return GRADING_MODE_PASS_FAIL
+    if mode == GRADING_MODE_NUMERIC:
+        return GRADING_MODE_NUMERIC
+    raise GradeRecordUnavailableError
+
+
+def allowed_marks_for_mode(grading_mode: str) -> list[str]:
+    if grading_mode == GRADING_MODE_PASS_FAIL:
+        return list(PASS_FAIL_ALLOWED_MARKS)
+    return list(NUMERIC_ALLOWED_MARKS)
+
+
+def _normalize_mark_for_mode(value: object, *, grading_mode: str) -> str:
+    if isinstance(value, bool) or value is None:
+        if grading_mode == GRADING_MODE_PASS_FAIL:
+            raise ValueError("Mark must be PASS or FAIL.")
+        raise ValueError(
+            "Mark must be between 1.00 and 5.00 on the grading scale, or INC."
+        )
+    raw = str(value).strip()
+    if not raw:
+        raise ValueError("Mark must not be blank.")
+    upper = raw.upper()
+    if grading_mode == GRADING_MODE_PASS_FAIL:
+        if upper in PASS_FAIL_MARKS:
+            return upper
+        if upper == "INC":
+            raise _MarkModeMismatch("INC is not allowed on a PASS_FAIL section.")
+        try:
+            numeric = Decimal(raw)
+        except InvalidOperation as exc:
+            raise ValueError("Mark must be PASS or FAIL.") from exc
+        if numeric.is_finite():
+            raise _MarkModeMismatch(
+                "Numeric marks are not allowed on a PASS_FAIL section."
+            )
+        raise ValueError("Mark must be PASS or FAIL.")
+    if upper in PASS_FAIL_MARKS:
+        raise _MarkModeMismatch(f"{upper} is not allowed on a NUMERIC section.")
+    return _normalize_mark(value)
+
+
+async def sections_have_marks(
+    db: AsyncSession, section_ids: Collection[uuid.UUID]
+) -> bool:
+    """Return True when any enrollment in ``section_ids`` has saved or locked marks."""
+    if not section_ids:
+        return False
+    enrollments = await enrollment.list_sections_enrollments(db, set(section_ids))
+    if not enrollments:
+        return False
+    return await repository.any_marks_for_enrollments(
+        db, {row.enrollment_id for row in enrollments}
+    )
+
+
 def _normalize_mark(value: object) -> str:
     if isinstance(value, bool) or value is None:
         raise ValueError(
@@ -624,11 +696,14 @@ def _build_section_grades_read(
                 ),
             )
         )
+    grading_mode = _section_grading_mode(course)
     return SectionGradesRead(
         section_id=section.id,
         section_name=section.section_name,
         course_code=course.course_code if course else None,
         course_title=course.title if course else None,
+        grading_mode=grading_mode,
+        allowed_marks=allowed_marks_for_mode(grading_mode),
         state="FINAL" if state == GRADE_STATE_FINAL else "DRAFT",
         version=version,
         deadline=deadline,
@@ -764,7 +839,10 @@ async def save_section_grade_draft(
         if submission.version != payload.version:
             raise GradeVersionConflictError(current_version=submission.version)
 
+        grading_mode = _section_grading_mode(course)
+        allowed_marks = allowed_marks_for_mode(grading_mode)
         row_errors: list[dict[str, object]] = []
+        mismatch_errors: list[dict[str, object]] = []
         seen_enrollments: set[uuid.UUID] = set()
         normalized_items: list[tuple[object, object, dict[str, object]]] = []
 
@@ -803,7 +881,19 @@ async def save_section_grade_draft(
                     updates["final_grade"] = None
                 else:
                     try:
-                        updates["final_grade"] = _normalize_mark(item.final_grade)
+                        updates["final_grade"] = _normalize_mark_for_mode(
+                            item.final_grade, grading_mode=grading_mode
+                        )
+                    except _MarkModeMismatch as exc:
+                        mismatch_errors.append(
+                            {
+                                **row_meta,
+                                "field": "finalGrade",
+                                "value": str(item.final_grade),
+                                "message": str(exc),
+                            }
+                        )
+                        continue
                     except ValueError as exc:
                         row_errors.append(
                             {
@@ -839,6 +929,12 @@ async def save_section_grade_draft(
                 )
             normalized_items.append((target, item, updates))
 
+        if mismatch_errors:
+            raise GradeModeMismatchError(
+                grading_mode=grading_mode,
+                allowed_marks=allowed_marks,
+                row_errors=mismatch_errors,
+            )
         if row_errors:
             raise GradeValidationError(row_errors)
 
@@ -978,8 +1074,11 @@ async def finalize_section_grades(
         if now > deadline:
             raise GradeDeadlinePassedError(deadline=deadline)
 
+        grading_mode = _section_grading_mode(course)
+        allowed_marks = allowed_marks_for_mode(grading_mode)
         grades_by_enrollment = {g.enrollment_item_id: g for g in existing_grades}
         row_errors: list[dict[str, object]] = []
+        mismatch_errors: list[dict[str, object]] = []
         normalized_final_marks: dict[uuid.UUID, str] = {}
         for idx, membership in enumerate(memberships):
             identity = identities.get(membership.student_id)
@@ -1001,8 +1100,19 @@ async def finalize_section_grades(
                 )
                 continue
             try:
-                normalized_final_marks[membership.enrollment_id] = _normalize_mark(
-                    grade.final_grade
+                normalized_final_marks[membership.enrollment_id] = (
+                    _normalize_mark_for_mode(
+                        grade.final_grade, grading_mode=grading_mode
+                    )
+                )
+            except _MarkModeMismatch as exc:
+                mismatch_errors.append(
+                    {
+                        **row_meta,
+                        "field": "finalGrade",
+                        "value": str(grade.final_grade),
+                        "message": str(exc),
+                    }
                 )
             except ValueError as exc:
                 row_errors.append(
@@ -1013,6 +1123,12 @@ async def finalize_section_grades(
                         "message": str(exc),
                     }
                 )
+        if mismatch_errors:
+            raise GradeModeMismatchError(
+                grading_mode=grading_mode,
+                allowed_marks=allowed_marks,
+                row_errors=mismatch_errors,
+            )
         if row_errors:
             raise GradeValidationError(row_errors)
 
@@ -1314,7 +1430,11 @@ def _evaluate_term_standing(
 ) -> str:
     total_units = sum((c.units for c in term_courses if c.units > 0), Decimal("0"))
     failed_units = sum(
-        (c.units for c in term_courses if c.final_grade == "5.00" and c.units > 0),
+        (
+            c.units
+            for c in term_courses
+            if c.final_grade in {"5.00", "FAIL"} and c.units > 0
+        ),
         Decimal("0"),
     )
     if total_units <= 0 or failed_units <= 0:

@@ -77,7 +77,7 @@ async def get_section_grades(
     user: CurrentUser = Depends(require_faculty_session),
     db: AsyncSession = Depends(get_db),
 ) -> SectionGradesRead:
-    """Return enrolled students' marks, state, version, and submission deadline."""
+    """Return enrolled marks, grading mode, allowed marks, state, and deadline."""
     return await service.get_section_grades(
         db, faculty_id=user.id, section_id=section_id
     )
@@ -120,8 +120,9 @@ async def get_section_grade_deadline(
             "if the draft version is stale."
         },
         422: {
-            "description": "VALIDATION_ERROR naming offending student row(s) when "
-            "marks are outside 1.00 to 5.00 and not INC."
+            "description": "GRADE_MODE_MISMATCH with gradingMode and allowedMarks "
+            "when a mark does not fit the section's grading mode, or VALIDATION_ERROR "
+            "naming offending student row(s) when marks are invalid."
         },
     },
 )
@@ -184,8 +185,9 @@ async def save_section_grade_draft(
             "if a supplied version is stale."
         },
         422: {
-            "description": "VALIDATION_ERROR naming student row(s) with missing or "
-            "invalid marks; the section remains in DRAFT."
+            "description": "GRADE_MODE_MISMATCH with gradingMode and allowedMarks "
+            "when a mark does not fit the section's grading mode, or VALIDATION_ERROR "
+            "naming student row(s) with missing or invalid marks; section stays DRAFT."
         },
     },
 )

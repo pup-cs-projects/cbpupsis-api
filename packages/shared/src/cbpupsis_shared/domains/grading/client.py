@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
 from datetime import date
 from decimal import Decimal
 
@@ -79,7 +80,14 @@ __all__ = [
     "read_transcript",
     "save_section_grade_draft",
     "section_roster_grades",
+    "sections_have_marks",
 ]
+
+
+async def sections_have_marks(
+    db: AsyncSession, section_ids: Collection[uuid.UUID]
+) -> bool:
+    return await service.sections_have_marks(db, section_ids)
 
 
 async def section_roster_grades(

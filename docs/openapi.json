@@ -4249,7 +4249,7 @@
           "faculty-grades"
         ],
         "summary": "Get Section Grades",
-        "description": "Return enrolled students' marks, state, version, and submission deadline.",
+        "description": "Return enrolled marks, grading mode, allowed marks, state, and deadline.",
         "operationId": "get_faculty_section_grades",
         "security": [
           {
@@ -4458,7 +4458,7 @@
             "description": "GRADES_LOCKED if already finalized, or VERSION_CONFLICT if the draft version is stale."
           },
           "422": {
-            "description": "VALIDATION_ERROR naming offending student row(s) when marks are outside 1.00 to 5.00 and not INC."
+            "description": "GRADE_MODE_MISMATCH with gradingMode and allowedMarks when a mark does not fit the section's grading mode, or VALIDATION_ERROR naming offending student row(s) when marks are invalid."
           }
         }
       }
@@ -4545,7 +4545,7 @@
             "description": "GRADES_LOCKED if already finalized, or VERSION_CONFLICT if a supplied version is stale."
           },
           "422": {
-            "description": "VALIDATION_ERROR naming student row(s) with missing or invalid marks; the section remains in DRAFT."
+            "description": "GRADE_MODE_MISMATCH with gradingMode and allowedMarks when a mark does not fit the section's grading mode, or VALIDATION_ERROR naming student row(s) with missing or invalid marks; section stays DRAFT."
           }
         }
       }
@@ -13450,13 +13450,17 @@
               "2.75",
               "3.00",
               "5.00",
+              "PASS",
+              "FAIL",
               "Inc",
               "W"
             ],
             "title": "Final Grade",
-            "description": "Published final mark. Numeric marks have two places; Inc means incomplete and W means withdrawn.",
+            "description": "Published final mark. Numeric marks have two places; PASS/FAIL apply to Pass/Fail sections; Inc is incomplete, W is withdrawn.",
             "examples": [
               "1.25",
+              "PASS",
+              "FAIL",
               "Inc",
               "W"
             ]
@@ -13589,7 +13593,7 @@
               }
             ],
             "title": "Finalgrade",
-            "description": "Final grade mark (1.00 to 5.00 or INC).",
+            "description": "Final grade mark (1.00 to 5.00 or INC for NUMERIC; PASS or FAIL for PASS_FAIL).",
             "examples": [
               "1.25"
             ]
@@ -16644,6 +16648,24 @@
               }
             ],
             "title": "Coursetitle"
+          },
+          "gradingMode": {
+            "type": "string",
+            "enum": [
+              "NUMERIC",
+              "PASS_FAIL"
+            ],
+            "title": "Gradingmode",
+            "description": "Section grading mode (NUMERIC or PASS_FAIL).",
+            "default": "NUMERIC"
+          },
+          "allowedMarks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowedmarks",
+            "description": "Allowed marks for the section's grading mode."
           },
           "state": {
             "type": "string",

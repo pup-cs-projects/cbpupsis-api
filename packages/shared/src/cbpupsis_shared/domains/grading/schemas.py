@@ -11,7 +11,10 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from cbpupsis_shared.domains.academics.schemas import TermRead
-from cbpupsis_shared.domains.grading.constants import AcademicStanding
+from cbpupsis_shared.domains.grading.constants import (
+    NUMERIC_ALLOWED_MARKS,
+    AcademicStanding,
+)
 from cbpupsis_shared.domains.grading.correction_schemas import (
     CorrectionDecision as CorrectionDecision,
 )
@@ -61,6 +64,8 @@ FinalGrade = Literal[
     "2.75",
     "3.00",
     "5.00",
+    "PASS",
+    "FAIL",
     "Inc",
     "W",
 ]
@@ -99,8 +104,8 @@ class GradeCourse(BaseModel):
     )
     final_grade: FinalGrade = Field(
         description="Published final mark. Numeric marks have two places; "
-        "Inc means incomplete and W means withdrawn.",
-        examples=["1.25", "Inc", "W"],
+        "PASS/FAIL apply to Pass/Fail sections; Inc is incomplete, W is withdrawn.",
+        examples=["1.25", "PASS", "FAIL", "Inc", "W"],
     )
     status: Literal["Passed", "Failed", "Incomplete", "Withdrawn"] = Field(
         description="Readable outcome for this attempt; Inc is not a numeric failure."
@@ -278,6 +283,14 @@ class SectionGradesRead(BaseModel):
     section_name: str
     course_code: str | None = None
     course_title: str | None = None
+    grading_mode: Literal["NUMERIC", "PASS_FAIL"] = Field(
+        default="NUMERIC",
+        description="Section grading mode (NUMERIC or PASS_FAIL).",
+    )
+    allowed_marks: list[str] = Field(
+        default_factory=lambda: list(NUMERIC_ALLOWED_MARKS),
+        description="Allowed marks for the section's grading mode.",
+    )
     state: Literal["DRAFT", "FINAL"]
     version: int
     deadline: datetime
@@ -329,7 +342,8 @@ class GradeDraftItemInput(BaseModel):
     final_grade: str | int | float | Decimal | None = Field(
         default=None,
         validation_alias=AliasChoices("finalGrade", "final_grade", "mark"),
-        description="Final grade mark (1.00 to 5.00 or INC).",
+        description="Final grade mark (1.00 to 5.00 or INC for NUMERIC; "
+        "PASS or FAIL for PASS_FAIL).",
         examples=["1.25"],
     )
     raw_score: Decimal | int | float | str | None = Field(
