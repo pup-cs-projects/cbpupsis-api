@@ -111,7 +111,7 @@ not.
 
 ## Workflow
 
-- **Base branch is `dev`.** Branches are `feature/<name>`, `bugfix/<name>`, `hotfix/<name>`.
+- **Story branches target their FR branch.** A story is built on `api-us-<module>-<nnn>` from `fr00N` and merged back into it; `fr00N` merges into `dev`. Fixes after testing use `bugfix/`, `style/`, or `docs/`; urgent production fixes use `hotfix/`. See CONTRIBUTING.md section 4.
   Commits and PR titles follow Conventional Commits. Maintainers squash and merge. Details in
   [CONTRIBUTING.md](../../CONTRIBUTING.md).
 - **No attribution trailers** (`Co-Authored-By`, "Generated with") in commits or PRs.

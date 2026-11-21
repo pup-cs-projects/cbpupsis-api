@@ -16,7 +16,7 @@ class AcademicTermRead(BaseModel):
     id: uuid.UUID
     academic_year: str
     semester: str
-    term_type: str = "REGULAR"
+    term_type: str | None = None
     is_current: bool = False
     start_date: date | None = None
     end_date: date | None = None
