@@ -1,0 +1,711 @@
+"""Data access for the auth domain: the refresh-token and one-time-token ledgers.
+
+Two of these functions carry a security property in their *shape*, not just in
+their SQL, so they are worth reading before changing:
+
+- :func:`consume_one_time_token` marks a token used with a conditional UPDATE
+  (``WHERE consumed_at IS NULL AND expires_at > now``) and returns the owning
+  user id via RETURNING. Read-then-write would let two requests racing with the
+  same token both pass the check before either wrote, and the token would be
+  redeemed twice. Keeping the predicate and the write in one statement makes the
+  database the arbiter, so exactly one caller wins.
+- :func:`revoke_refresh_token` and :func:`revoke_all_refresh_tokens_for_user`
+  filter on ``revoked_at IS NULL`` so a re-revocation cannot overwrite the
+  original timestamp, which is the audit record of when a token actually died.
+
+Nothing here commits, and that matters more than usual in this domain: whether a
+consumed token stays consumed when a later rule fails is a transaction decision,
+and it belongs to the service that knows which rule ran. See
+``service._consume_one_time_token``, which rolls back on a miss and commits on a
+hit, and ``service.refresh``, which deliberately commits a rotation *before* the
+email-verification gate can raise so a blocked account cannot retry the token.
+
+Returning ORM rows and scalars, never schemas or domain errors: a lookup that
+finds nothing returns ``None``, and deciding that this means "invalid or expired
+token" — with one identical message for every failure mode — is the service's job.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime
+
+from sqlalchemy import case, delete, func, select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from cbpupsis_database.models.auth import (
+    AuthenticationFailure,
+    AuthenticationLockout,
+    AuthFailureStep,
+    MfaChallenge,
+    MfaType,
+    OneTimeToken,
+    PasswordResetThrottle,
+    RefreshToken,
+    TokenPurpose,
+    UserActiveSession,
+    UserMfaCredential,
+    UserMfaRecoveryCode,
+)
+
+# --------------------------------------------------------------------------- #
+# Refresh tokens
+# --------------------------------------------------------------------------- #
+
+
+async def get_refresh_token(db: AsyncSession, jti: str) -> RefreshToken | None:
+    """Return the refresh-token record with this ``jti``, or ``None``.
+
+    Deliberately does not filter on ``revoked_at``: the caller needs to tell
+    "no such token" from "a token that was already used", because the second is
+    evidence of replay and triggers revocation of the whole family. Filtering
+    revoked rows out here would erase that distinction.
+
+    SQL::
+
+        SELECT refresh_tokens.user_id, refresh_tokens.jti,
+               refresh_tokens.expires_at, refresh_tokens.revoked_at,
+               refresh_tokens.id, refresh_tokens.created_at,
+               refresh_tokens.updated_at
+        FROM refresh_tokens
+        WHERE refresh_tokens.jti = :jti_1
+    """
+    return await db.scalar(select(RefreshToken).where(RefreshToken.jti == jti))
+
+
+def add_refresh_token(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    jti: str,
+    expires_at: datetime,
+    session_id: uuid.UUID | None = None,
+) -> RefreshToken:
+    """Stage a newly issued refresh token on the session and return it.
+
+    Only the ``jti`` is recorded, never the token string: knowing the id is
+    enough to revoke, and storing the credential itself would turn a database
+    leak into a set of usable sessions.
+
+    Emits no SQL here. On the service's commit::
+
+        INSERT INTO refresh_tokens (user_id, jti, expires_at, revoked_at, id)
+        VALUES (:user_id::UUID, :jti, :expires_at, :revoked_at, :id::UUID)
+        RETURNING refresh_tokens.created_at, refresh_tokens.updated_at
+    """
+    record = RefreshToken(
+        user_id=user_id, jti=jti, expires_at=expires_at, session_id=session_id
+    )
+    db.add(record)
+    return record
+
+
+async def get_active_session(
+    db: AsyncSession, user_id: uuid.UUID, session_id: uuid.UUID
+):
+    """Lock one session.
+
+    SQL::
+
+        SELECT * FROM user_active_sessions
+        WHERE id=:id AND user_id=:user FOR UPDATE
+    """
+    return await db.scalar(
+        select(UserActiveSession)
+        .where(UserActiveSession.id == session_id, UserActiveSession.user_id == user_id)
+        .with_for_update()
+    )
+
+
+def add_active_session(db: AsyncSession, **fields) -> None:
+    """Stage a session. SQL:: INSERT INTO user_active_sessions (...) VALUES (...)"""
+    db.add(UserActiveSession(**fields))
+
+
+async def delete_active_sessions(
+    db: AsyncSession, user_id: uuid.UUID, session_id: uuid.UUID | None = None
+) -> None:
+    """Remove sessions and revoke their refresh capability.
+
+    SQL::
+
+        DELETE FROM user_active_sessions WHERE user_id=:user [AND id=:sid];
+        UPDATE refresh_tokens SET revoked_at=:now
+        WHERE user_id=:user AND revoked_at IS NULL [AND session_id=:sid]
+    """
+    statement = delete(UserActiveSession).where(UserActiveSession.user_id == user_id)
+    tokens = update(RefreshToken).where(
+        RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None)
+    )
+    if session_id is not None:
+        statement = statement.where(UserActiveSession.id == session_id)
+        tokens = tokens.where(RefreshToken.session_id == session_id)
+    await db.execute(statement)
+    await db.execute(tokens.values(revoked_at=datetime.now(UTC)))
+
+
+def mark_refresh_token_revoked(
+    db: AsyncSession, record: RefreshToken, revoked_at: datetime
+) -> RefreshToken:
+    """Stamp ``revoked_at`` on an already-loaded refresh-token row.
+
+    Distinct from :func:`revoke_refresh_token`, which revokes by ``jti`` in one
+    statement. Rotation has already loaded the row to inspect ``revoked_at`` for
+    replay detection, so it mutates that instance instead of issuing a second
+    lookup — and it must stay the *same* instance, because the caller flushes
+    and commits around it at a precisely chosen point.
+
+    Does not flush: when the write lands is the service's decision, and in the
+    rotation path that timing is a security property.
+
+    Emits no SQL here. On the service's flush or commit — note the unit of work
+    keys on the primary key, not on ``jti``, unlike
+    :func:`revoke_refresh_token`::
+
+        UPDATE refresh_tokens
+        SET revoked_at=:revoked_at, updated_at=now()
+        WHERE refresh_tokens.id = :id_1::UUID
+    """
+    record.revoked_at = revoked_at
+    return record
+
+
+async def revoke_refresh_token(
+    db: AsyncSession, jti: str, revoked_at: datetime
+) -> None:
+    """Mark one live refresh token revoked. A no-op if it is already revoked.
+
+    ``WHERE revoked_at IS NULL`` keeps the first revocation's timestamp intact,
+    so the ledger records when the token really stopped working.
+
+    SQL::
+
+        UPDATE refresh_tokens
+        SET revoked_at=:revoked_at, updated_at=now()
+        WHERE refresh_tokens.jti = :jti_1
+          AND refresh_tokens.revoked_at IS NULL
+    """
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.jti == jti, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=revoked_at)
+    )
+
+
+async def revoke_all_refresh_tokens_for_user(
+    db: AsyncSession, user_id: uuid.UUID, revoked_at: datetime
+) -> int:
+    """Revoke every live refresh token a user holds.
+
+    A set-based UPDATE rather than a loop over loaded rows: it is one round trip
+    regardless of how many sessions exist, and it cannot race with a token
+    issued between a SELECT and a write. Returns the count of revoked tokens.
+
+    SQL::
+
+        UPDATE refresh_tokens
+        SET revoked_at=:revoked_at, updated_at=now()
+        WHERE refresh_tokens.user_id = :user_id_1::UUID
+          AND refresh_tokens.revoked_at IS NULL
+    """
+    result = await db.execute(
+        update(RefreshToken)
+        .where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > revoked_at,
+        )
+        .values(revoked_at=revoked_at)
+    )
+    return int(result.rowcount or 0)
+
+
+# --------------------------------------------------------------------------- #
+# One-time tokens (email verification, password reset)
+# --------------------------------------------------------------------------- #
+
+
+def add_one_time_token(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    token_hash: str,
+    purpose: TokenPurpose,
+    expires_at: datetime,
+) -> OneTimeToken:
+    """Stage a one-time token on the session and return it.
+
+    Takes the digest, never the raw secret — the raw value exists only in the
+    email that carries it, so a database leak yields nothing replayable.
+
+    Emits no SQL here. On the service's commit::
+
+        INSERT INTO one_time_tokens (user_id, token_hash, purpose, expires_at,
+                                     consumed_at, id)
+        VALUES (:user_id::UUID, :token_hash, :purpose, :expires_at,
+                :consumed_at, :id::UUID)
+        RETURNING one_time_tokens.created_at, one_time_tokens.updated_at
+    """
+    record = OneTimeToken(
+        user_id=user_id,
+        token_hash=token_hash,
+        purpose=purpose,
+        expires_at=expires_at,
+    )
+    db.add(record)
+    return record
+
+
+async def consume_outstanding_one_time_tokens(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    purpose: TokenPurpose,
+    consumed_at: datetime,
+) -> None:
+    """Mark every live token a user holds for one purpose as consumed.
+
+    Called before issuing a replacement, so a "resend" invalidates the previous
+    link instead of leaving a second live credential sitting in another inbox.
+
+    SQL::
+
+        UPDATE one_time_tokens
+        SET consumed_at=:consumed_at, updated_at=now()
+        WHERE one_time_tokens.user_id = :user_id_1::UUID
+          AND one_time_tokens.purpose = :purpose_1
+          AND one_time_tokens.consumed_at IS NULL
+    """
+    await db.execute(
+        update(OneTimeToken)
+        .where(
+            OneTimeToken.user_id == user_id,
+            OneTimeToken.purpose == purpose,
+            OneTimeToken.consumed_at.is_(None),
+        )
+        .values(consumed_at=consumed_at)
+    )
+
+
+async def consume_one_time_token(
+    db: AsyncSession,
+    token_hash: str,
+    purpose: TokenPurpose,
+    now: datetime,
+) -> uuid.UUID | None:
+    """Atomically redeem a one-time token, returning its user id or ``None``.
+
+    ``None`` covers every failure mode without distinguishing them — unknown
+    digest, wrong purpose, expired, already consumed. That is intentional: the
+    service maps them all to one identical error message, and a repository that
+    reported *which* check failed would make it possible to reintroduce an
+    oracle simply by logging the reason.
+
+    The predicate and the write are one statement (see the module docstring):
+    the row is only stamped if it is still unconsumed and unexpired at the
+    instant of the UPDATE, so concurrent redemptions produce exactly one winner.
+
+    SQL::
+
+        UPDATE one_time_tokens
+        SET consumed_at=:consumed_at, updated_at=now()
+        WHERE one_time_tokens.token_hash = :token_hash_1
+          AND one_time_tokens.purpose = :purpose_1
+          AND one_time_tokens.consumed_at IS NULL
+          AND one_time_tokens.expires_at > :expires_at_1
+        RETURNING one_time_tokens.user_id
+    """
+    result = await db.execute(
+        update(OneTimeToken)
+        .where(
+            OneTimeToken.token_hash == token_hash,
+            OneTimeToken.purpose == purpose,
+            OneTimeToken.consumed_at.is_(None),
+            OneTimeToken.expires_at > now,
+        )
+        .values(consumed_at=now)
+        .returning(OneTimeToken.user_id)
+        .execution_options(synchronize_session=False)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_one_time_token(
+    db: AsyncSession,
+    token_hash: str,
+    purpose: TokenPurpose,
+) -> OneTimeToken | None:
+    """Return the one-time token record with this digest and purpose, or None.
+
+    Used by the reset flow to distinguish why a token failed (already used vs
+    expired) while preserving the single-query redemption in
+    consume_one_time_token for flows that require indistinguishability.
+
+    SQL::
+
+        SELECT one_time_tokens.id, one_time_tokens.user_id,
+               one_time_tokens.token_hash, one_time_tokens.purpose,
+               one_time_tokens.expires_at, one_time_tokens.consumed_at
+        FROM one_time_tokens
+        WHERE one_time_tokens.token_hash = :token_hash_1
+          AND one_time_tokens.purpose = :purpose_1
+    """
+    return await db.scalar(
+        select(OneTimeToken)
+        .where(
+            OneTimeToken.token_hash == token_hash,
+            OneTimeToken.purpose == purpose,
+        )
+        .execution_options(populate_existing=True)
+    )
+
+
+async def acquire_authentication_lock(db: AsyncSession, subject_id: uuid.UUID) -> None:
+    """Serialize one lockout subject's sign-in state for this transaction.
+
+    SQL::
+
+        SELECT pg_advisory_xact_lock(hashtextextended(CAST(:subject_id AS text), 0))
+    """
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    await db.execute(
+        text(
+            "SELECT pg_advisory_xact_lock("
+            "hashtextextended(CAST(:subject_id AS text), 0))"
+        ),
+        {"subject_id": str(subject_id)},
+    )
+
+
+def add_authentication_failure(
+    db: AsyncSession,
+    *,
+    subject_id: uuid.UUID,
+    step: AuthFailureStep,
+    occurred_at: datetime,
+) -> AuthenticationFailure:
+    """Stage one failed sign-in step.
+
+    On commit::
+
+        INSERT INTO authentication_failures (id, user_id, step, occurred_at)
+        VALUES (:id, :subject_id, :step, :occurred_at)
+    """
+    failure = AuthenticationFailure(
+        user_id=subject_id, step=step, occurred_at=occurred_at
+    )
+    db.add(failure)
+    return failure
+
+
+async def count_authentication_failures(
+    db: AsyncSession, *, subject_id: uuid.UUID, since: datetime
+) -> int:
+    """Count password and MFA failures in the rolling window.
+
+    SQL::
+
+        SELECT count(*) FROM authentication_failures
+        WHERE user_id = :subject_id AND occurred_at >= :since
+    """
+    count = await db.scalar(
+        select(func.count())
+        .select_from(AuthenticationFailure)
+        .where(
+            AuthenticationFailure.user_id == subject_id,
+            AuthenticationFailure.occurred_at >= since,
+        )
+    )
+    return count or 0
+
+
+async def delete_authentication_failures(
+    db: AsyncSession, subject_id: uuid.UUID
+) -> None:
+    """Remove a subject's rolling failure counter.
+
+    SQL::
+
+        DELETE FROM authentication_failures WHERE user_id = :subject_id
+    """
+    await db.execute(
+        delete(AuthenticationFailure).where(AuthenticationFailure.user_id == subject_id)
+    )
+
+
+async def get_authentication_lockout(
+    db: AsyncSession, subject_id: uuid.UUID
+) -> AuthenticationLockout | None:
+    """Return a subject's current lock row.
+
+    SQL::
+
+        SELECT * FROM authentication_lockouts WHERE user_id = :subject_id
+    """
+    return await db.scalar(
+        select(AuthenticationLockout).where(AuthenticationLockout.user_id == subject_id)
+    )
+
+
+def add_authentication_lockout(
+    db: AsyncSession, *, subject_id: uuid.UUID, locked_until: datetime
+) -> AuthenticationLockout:
+    """Stage a new lock.
+
+    On commit::
+
+        INSERT INTO authentication_lockouts (user_id, locked_until)
+        VALUES (:subject_id, :locked_until)
+    """
+    lockout = AuthenticationLockout(user_id=subject_id, locked_until=locked_until)
+    db.add(lockout)
+    return lockout
+
+
+def update_authentication_lockout(
+    lockout: AuthenticationLockout, *, locked_until: datetime
+) -> AuthenticationLockout:
+    """Stage an extended lock on a loaded row.
+
+    On commit::
+
+        UPDATE authentication_lockouts SET locked_until = :locked_until
+        WHERE user_id = :subject_id
+    """
+    lockout.locked_until = locked_until
+    return lockout
+
+
+async def delete_authentication_lockout(
+    db: AsyncSession, subject_id: uuid.UUID
+) -> None:
+    """Remove an expired or cleared lock.
+
+    SQL::
+
+        DELETE FROM authentication_lockouts WHERE user_id = :subject_id
+    """
+    await db.execute(
+        delete(AuthenticationLockout).where(AuthenticationLockout.user_id == subject_id)
+    )
+
+
+async def get_mfa_credential(
+    db: AsyncSession, *, user_id: uuid.UUID, mfa_type: MfaType
+) -> UserMfaCredential | None:
+    """Return the user's newest credential for one factor type.
+
+    SQL::
+
+        SELECT * FROM user_mfa_credentials
+        WHERE user_id = :user_id AND mfa_type = :mfa_type
+        ORDER BY created_at DESC LIMIT 1
+    """
+    return await db.scalar(
+        select(UserMfaCredential)
+        .where(
+            UserMfaCredential.user_id == user_id,
+            UserMfaCredential.mfa_type == mfa_type.value,
+        )
+        .order_by(UserMfaCredential.created_at.desc())
+        .limit(1)
+    )
+
+
+async def get_mfa_credential_by_digest(
+    db: AsyncSession, digest: str
+) -> UserMfaCredential | None:
+    """Resolve a registered hardware key by its unique keyed digest.
+
+    SQL::
+
+        SELECT * FROM user_mfa_credentials WHERE credential_id_digest = :digest
+    """
+    return await db.scalar(
+        select(UserMfaCredential).where(
+            UserMfaCredential.credential_id_digest == digest
+        )
+    )
+
+
+def add_mfa_credential(
+    db: AsyncSession, *, user_id: uuid.UUID, mfa_type: MfaType, **fields: object
+) -> UserMfaCredential:
+    """Stage a new factor credential.
+
+    On commit::
+
+        INSERT INTO user_mfa_credentials (id, user_id, mfa_type, ...)
+        VALUES (:id, :user_id, :mfa_type, ...)
+    """
+    credential = UserMfaCredential(user_id=user_id, mfa_type=mfa_type.value, **fields)
+    db.add(credential)
+    return credential
+
+
+def update_mfa_credential(
+    credential: UserMfaCredential, **fields: object
+) -> UserMfaCredential:
+    """Stage changes to a loaded factor credential.
+
+    On commit, using the supplied fields::
+
+        UPDATE user_mfa_credentials SET ... WHERE id = :id
+    """
+    for name, value in fields.items():
+        setattr(credential, name, value)
+    return credential
+
+
+async def get_mfa_challenge(
+    db: AsyncSession, user_id: uuid.UUID
+) -> MfaChallenge | None:
+    """Return the account's live challenge binding.
+
+    SQL::
+
+        SELECT * FROM mfa_challenges WHERE user_id = :user_id
+    """
+    return await db.get(MfaChallenge, user_id, populate_existing=True)
+
+
+def add_mfa_challenge(db: AsyncSession, *, user_id: uuid.UUID, jti: str) -> None:
+    """Stage a challenge binding.
+
+    On commit::
+
+        INSERT INTO mfa_challenges (user_id, active_jti) VALUES (:user_id, :jti)
+    """
+    db.add(MfaChallenge(user_id=user_id, active_jti=jti))
+
+
+def update_mfa_challenge(challenge: MfaChallenge, *, jti: str) -> None:
+    """Stage a replaced challenge binding on a loaded row.
+
+    On commit::
+
+        UPDATE mfa_challenges SET active_jti = :jti WHERE user_id = :user_id
+    """
+    challenge.active_jti = jti
+
+
+async def delete_mfa_challenge(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Retire the account's live challenge, if any.
+
+    SQL::
+
+        DELETE FROM mfa_challenges WHERE user_id = :user_id
+    """
+    await db.execute(delete(MfaChallenge).where(MfaChallenge.user_id == user_id))
+
+
+async def delete_recovery_codes(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Remove every recovery code of a user, used or not.
+
+    SQL::
+
+        DELETE FROM user_mfa_recovery_codes WHERE user_id = :user_id
+    """
+    await db.execute(
+        delete(UserMfaRecoveryCode).where(UserMfaRecoveryCode.user_id == user_id)
+    )
+
+
+def add_recovery_code(db: AsyncSession, *, user_id: uuid.UUID, code_hash: str) -> None:
+    """Stage one recovery code digest.
+
+    On commit::
+
+        INSERT INTO user_mfa_recovery_codes (id, user_id, code_hash, is_used)
+        VALUES (:id, :user_id, :code_hash, false)
+    """
+    db.add(UserMfaRecoveryCode(user_id=user_id, code_hash=code_hash, is_used=False))
+
+
+async def consume_recovery_code(
+    db: AsyncSession, *, user_id: uuid.UUID, code_hash: str, used_at: datetime
+) -> bool:
+    """Mark one unused recovery code used, returning whether one matched.
+
+    A conditional UPDATE, so two racing requests with the same code produce one
+    winner.
+
+    SQL::
+
+        UPDATE user_mfa_recovery_codes SET is_used = true, used_at = :used_at
+        WHERE user_id = :user_id AND code_hash = :code_hash AND is_used = false
+    """
+    result = await db.execute(
+        update(UserMfaRecoveryCode)
+        .where(
+            UserMfaRecoveryCode.user_id == user_id,
+            UserMfaRecoveryCode.code_hash == code_hash,
+            UserMfaRecoveryCode.is_used.is_(False),
+        )
+        .values(is_used=True, used_at=used_at)
+    )
+    return result.rowcount == 1
+
+
+def touch_active_session(session: UserActiveSession, at: datetime) -> None:
+    """Stage a new last-activity time on a loaded session.
+
+    On commit::
+
+        UPDATE user_active_sessions SET last_activity_at = :at WHERE id = :id
+    """
+    session.last_activity_at = at
+
+
+async def claim_reset_request(
+    db: AsyncSession, email_hash: str, now: datetime, window_start: datetime, limit: int
+) -> bool:
+    """Atomically spend the shared address allowance, equally for unknown emails.
+
+    SQL::
+
+        INSERT INTO password_reset_throttles (email_hash, window_started_at, requests)
+        VALUES (:email_hash, :now, 1)
+        ON CONFLICT (email_hash) DO UPDATE
+        SET requests = CASE WHEN window_started_at <= :window_start
+                            THEN 1 ELSE password_reset_throttles.requests + 1 END,
+            window_started_at = CASE WHEN window_started_at <= :window_start
+                                     THEN :now ELSE window_started_at END
+        WHERE window_started_at <= :window_start OR requests < :limit
+        RETURNING email_hash
+    """
+    insert = sqlite_insert if db.get_bind().dialect.name == "sqlite" else pg_insert
+    expired = PasswordResetThrottle.window_started_at <= window_start
+    statement = (
+        insert(PasswordResetThrottle)
+        .values(email_hash=email_hash, window_started_at=now, requests=1)
+        .on_conflict_do_update(
+            index_elements=[PasswordResetThrottle.email_hash],
+            set_={
+                "requests": case(
+                    (expired, 1), else_=PasswordResetThrottle.requests + 1
+                ),
+                "window_started_at": case(
+                    (expired, now), else_=PasswordResetThrottle.window_started_at
+                ),
+            },
+            where=expired | (PasswordResetThrottle.requests < limit),
+        )
+        .returning(PasswordResetThrottle.email_hash)
+    )
+    return (await db.execute(statement)).scalar_one_or_none() is not None
+
+
+async def reset_request_retry_after(db: AsyncSession, email_hash: str) -> datetime:
+    """Read the current window to return an actionable retry delay.
+
+    SQL::
+
+        SELECT window_started_at FROM password_reset_throttles
+        WHERE email_hash = :email_hash
+    """
+    return await db.scalar(
+        select(PasswordResetThrottle.window_started_at).where(
+            PasswordResetThrottle.email_hash == email_hash
+        )
+    )

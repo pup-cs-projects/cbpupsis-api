@@ -1,0 +1,217 @@
+"""HTTP layer for the auth domain: login, refresh, logout, and the
+email-verification, password-reset, and password-change flows.
+
+There is no public registration: a Superadmin creates every account
+(``POST /users``), and the account signs in with a mailed temporary password.
+
+Thin by design — each endpoint parses the request, delegates to the service, and
+shapes the response. All flow logic lives in ``cbpupsis_shared.domains.auth.service``.
+
+Reset requests answer 202 identically for registered and unknown addresses;
+resend-verification answers 204 identically. Account existence never changes
+their successful response.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from cbpupsis_core.middleware import client_ip, client_ip_or_none, rate_limit
+from cbpupsis_database.session import get_db
+from cbpupsis_shared.domains.auth import service as auth_service
+from cbpupsis_shared.domains.auth.dependencies import (
+    CurrentUser,
+    get_current_user,
+    get_password_changing_user,
+)
+from cbpupsis_shared.domains.auth.schemas import (
+    ChangePasswordRequest,
+    CurrentUserRead,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    LoginRequest,
+    RefreshRequest,
+    ResendVerificationRequest,
+    ResetPasswordRequest,
+    ResetPasswordResponse,
+    ResetTokenVerificationResponse,
+    TokenPair,
+    VerifyEmailRequest,
+    VerifyResetTokenRequest,
+)
+
+router = APIRouter()
+
+# login, refresh, logout, and whoami are the template's email sign-in. Every CBPUPSIS
+# account signs in through /auth/<role> instead (this login answers them 401), so these
+# four are left out of the docs, where they read as a second sign-in. They stay served
+# until the pytest fixtures and the Bruno suite stop signing in through them.
+
+
+@router.post("/login", response_model=TokenPair, include_in_schema=False)
+@rate_limit("login")
+async def login(
+    request: Request,
+    data: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TokenPair:
+    """Exchange email and password for an access/refresh token pair.
+
+    Rate limited against credential stuffing. ``request`` is unused by the
+    body but required: slowapi reads the limiter and the caller's key off it.
+
+    Three outcomes, and the difference between them is deliberate:
+
+    - **401** — unknown email, wrong password, or a disabled account, all with
+      one identical message so the endpoint cannot be used to discover which
+      addresses are registered.
+    - **401** with ``code: "AUTH_TEMPORARY_PASSWORD_EXPIRED"``: the password
+      was a correct temporary one past its expiry; a Superadmin must reissue.
+    - **403** with ``code: "email_not_verified"`` — the password was correct but
+      the address is unverified. Branch on the code, not the message, and send
+      the user to a resend-verification screen rather than back to login.
+    - **200** — a token pair.
+
+    Accounts with a role-specific sign-in (student, faculty, Admin,
+    Superadmin) get the same 401 here: they must use ``/auth/<role>/login``.
+    """
+    return await auth_service.login(
+        db,
+        email=data.email,
+        password=data.password,
+        ip_address=client_ip_or_none(request),
+        device_info=request.headers.get("user-agent", ""),
+    )
+
+
+@router.post("/refresh", response_model=TokenPair, include_in_schema=False)
+async def refresh(
+    data: RefreshRequest, db: AsyncSession = Depends(get_db)
+) -> TokenPair:
+    """Exchange a refresh token for a new pair, invalidating the old token."""
+    return await auth_service.refresh(db, data.refresh_token)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, include_in_schema=False)
+async def logout(data: RefreshRequest, db: AsyncSession = Depends(get_db)) -> None:
+    """Revoke a refresh token. Idempotent: always succeeds."""
+    await auth_service.logout(db, data.refresh_token)
+
+
+@router.get("/whoami", response_model=CurrentUserRead, include_in_schema=False)
+async def whoami(user: CurrentUser = Depends(get_current_user)) -> CurrentUserRead:
+    """Return the authenticated principal — useful for verifying token wiring."""
+    return CurrentUserRead(id=user.id, email=user.email)
+
+
+@router.post("/verify-email", status_code=status.HTTP_204_NO_CONTENT)
+async def verify_email(
+    data: VerifyEmailRequest, db: AsyncSession = Depends(get_db)
+) -> None:
+    """Redeem an email-verification token.
+
+    401 for a token that is unknown, expired, already used, or issued for a
+    different purpose — all with the same message, so the response cannot be
+    used to probe which.
+    """
+    await auth_service.verify_email(db, data.token)
+
+
+@router.post("/resend-verification", status_code=status.HTTP_204_NO_CONTENT)
+@rate_limit("resend_verification")
+async def resend_verification(
+    request: Request,
+    data: ResendVerificationRequest,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Request a fresh verification email.
+
+    Always 204, whether or not the address is registered, active, or already
+    verified. Any live token previously issued to that user is invalidated.
+
+    The strictest limit in the app, alongside /forgot-password: this endpoint
+    sends mail to an address the caller names, so without one an anonymous
+    caller can bomb a stranger's inbox from your domain and spend your SES
+    budget doing it.
+    """
+    await auth_service.resend_verification(db, data.email)
+
+
+@router.post(
+    "/forgot-password",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ForgotPasswordResponse,
+)
+@rate_limit("forgot_password")
+async def forgot_password(
+    request: Request,
+    data: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ForgotPasswordResponse:
+    """Request a password-reset email.
+
+    Always 202 Accepted. Returning 404 for an unknown address would make this endpoint a
+    membership oracle for any email list.
+
+    A shared per-address allowance prevents inbox flooding; an outer IP limit
+    also guards abusive request volume. Earlier usable links remain valid.
+    """
+    ip_address = client_ip(request)
+    await auth_service.forgot_password(db, data.email, ip_address=ip_address)
+    return ForgotPasswordResponse()
+
+
+@router.post(
+    "/reset-password",
+    status_code=status.HTTP_200_OK,
+    response_model=ResetPasswordResponse | ResetTokenVerificationResponse,
+)
+async def reset_password(
+    request: Request,
+    data: ResetPasswordRequest | VerifyResetTokenRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ResetPasswordResponse | ResetTokenVerificationResponse:
+    """Redeem a reset token and set a new password.
+
+    Every existing access and refresh session is invalidated, lockout state
+    is cleared, and the client must sign in again with the new password.
+    """
+    if isinstance(data, VerifyResetTokenRequest):
+        await auth_service.verify_reset_token(db, data.token)
+        return ResetTokenVerificationResponse()
+    ip_address = client_ip(request)
+    sessions_revoked = await auth_service.reset_password(
+        db, data.token, data.new_password, ip_address=ip_address
+    )
+    return ResetPasswordResponse(sessions_revoked=sessions_revoked)
+
+
+@router.post("/change-password", response_model=TokenPair)
+async def change_password(
+    data: ChangePasswordRequest,
+    user: CurrentUser = Depends(get_password_changing_user),
+    db: AsyncSession = Depends(get_db),
+) -> TokenPair:
+    """Change your own password, returning a replacement token pair.
+
+    The one route open to an account holding a temporary password: changing
+    it clears ``PASSWORD_CHANGE_REQUIRED``. The temporary password cannot be
+    kept as the new one (422), and once expired it cannot be changed (401
+    ``AUTH_TEMPORARY_PASSWORD_EXPIRED``).
+
+    Authorization is by identity alone: the target is the authenticated user,
+    taken from the token, so there is no id to tamper with and no object-level
+    check to make. Requires the current password.
+
+    All existing refresh tokens — including the caller's — are revoked, and the
+    returned pair replaces them.
+    """
+    return await auth_service.change_password(
+        db,
+        user_id=user.id,
+        current_password=data.current_password,
+        new_password=data.new_password,
+        session_id=user.session_id,
+        session_claims=dict(user.claims),
+    )

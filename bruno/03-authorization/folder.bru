@@ -1,0 +1,17 @@
+meta {
+  name: 03-authorization
+  seq: 4
+}
+
+docs {
+  Every access-control guarantee, in one place a reviewer can read end to end.
+
+  CONVENTIONS.md describes authorization as two independent levels: a coarse
+  permission on the endpoint, AND an object-level ownership check in the
+  service. Enforcing only the first is an IDOR bug. Both levels are exercised
+  here — the permission level by the unauthenticated and non-admin requests, the
+  object level by `other` attempting to act on `owner`'s item.
+
+  This folder creates its own item so it never depends on whether folder 02 ran
+  or left one behind.
+}

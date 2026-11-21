@@ -1,0 +1,52 @@
+"""The routers the admin app serves, and its development-only admin panel.
+
+IAM, audit, and user management are shared code, because every app enforces
+permissions, records audited events, and serves each user's own account, but
+administering them is this app's job alone: the student and faculty apps mount
+none of it.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+
+from fastapi import FastAPI
+
+from cbpupsis_api_admin.domains.admin_auth.router import (
+    protected_router as admin_router,
+)
+from cbpupsis_api_admin.domains.admin_auth.router import router as admin_auth_router
+from cbpupsis_api_admin.domains.admin_auth.router import (
+    superadmin_auth_router,
+    superadmin_protected_router,
+)
+from cbpupsis_api_admin.domains.superadmin_ops.router import (
+    router as superadmin_ops_router,
+)
+from cbpupsis_api_admin.domains.user_import.router import (
+    router as user_import_router,
+)
+from cbpupsis_shared.application import RouterMount
+from cbpupsis_shared.routes import AUDIT, COMMON_MOUNTS, IAM, USER_MANAGEMENT
+
+ADMIN_AUTH = RouterMount(admin_auth_router, "/auth/admin", "admin-auth")
+ADMIN = RouterMount(admin_router, "/admin", "admin")
+
+MOUNTS: tuple[RouterMount, ...] = (
+    *COMMON_MOUNTS,
+    ADMIN_AUTH,
+    ADMIN,
+    IAM,
+    AUDIT,
+    # After COMMON_MOUNTS, so /users/me resolves before /users/{user_id}.
+    USER_MANAGEMENT,
+    RouterMount(superadmin_auth_router, "/auth/superadmin", "superadmin-auth"),
+    RouterMount(superadmin_protected_router, "/superadmin", "superadmin"),
+    RouterMount(superadmin_ops_router, "/superadmin", "superadmin"),
+    # Beside the shared users router, at the same prefix: only this app parses
+    # multipart uploads.
+    RouterMount(user_import_router, "/users", "users"),
+)
+
+# SQLAdmin bypasses service-layer MFA, justification, and immutable audit staging.
+DEVELOPMENT_TOOLS: tuple[Callable[[FastAPI], None], ...] = ()

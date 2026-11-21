@@ -1,0 +1,68 @@
+# Checks the conventions a squash merge depends on. The PR title becomes the
+# commit on dev, so it must follow Conventional Commits; the branch name and
+# base branch must match CONTRIBUTING.md.
+#
+# The organization is on the GitHub Free plan with private repositories, so
+# branch protection cannot mark these checks as required. They still turn the
+# PR red, and the team agreement is that nobody merges a red PR.
+
+name: pr-conventions
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  title:
+    name: Conventional Commits title
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # The same list as CONTRIBUTING.md.
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            chore
+          requireScope: false
+          subjectPattern: ^[a-z].*[^.]$
+          subjectPatternError: >
+            The description "{subject}" must start with a lowercase letter and
+            must not end with a period. Example: feat(auth): add account lockout
+
+  branch:
+    name: Branch name and base
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check branch naming and target
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          case "$BASE_REF" in
+            dev)
+              echo "$HEAD_REF" | grep -Eq '^((feature|bugfix|hotfix)/[a-z0-9][a-z0-9._-]*|dependabot/.+)$' \
+                || fail "Branch '$HEAD_REF' must be feature/<name>, bugfix/<name>, or hotfix/<name> (lowercase, hyphens)."
+              ;;
+            main)
+              echo "$HEAD_REF" | grep -Eq '^(dev|hotfix/[a-z0-9][a-z0-9._-]*)$' \
+                || fail "Only dev (a release) or a hotfix/ branch may target main. Retarget this PR to dev."
+              ;;
+            *)
+              fail "PRs target dev. This one targets '$BASE_REF'."
+              ;;
+          esac
+          echo "ok: $HEAD_REF -> $BASE_REF"
