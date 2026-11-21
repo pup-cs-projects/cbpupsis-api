@@ -36,6 +36,8 @@ def academic_data_unavailable():
 
 
 def passed(mark: str) -> bool:
+    if mark.strip().upper() == "PASS":
+        return True
     try:
         value = Decimal(mark)
         return value.is_finite() and Decimal("1.00") <= value <= Decimal("3.00")
@@ -141,7 +143,7 @@ def eligible_conditions(facts: AcademicFacts, prerequisite_id) -> set[str]:
     conditions = set()
     selected = {s.course_id for s in facts.proposed} | facts.retake_courses
     if prerequisite_id in selected and any(
-        a.course_id == prerequisite_id and a.mark == "5.00"
+        a.course_id == prerequisite_id and a.mark in {"5.00", "FAIL"}
         for a in facts.record.attempts
     ):
         conditions.add("REPEATED_PREREQUISITE")

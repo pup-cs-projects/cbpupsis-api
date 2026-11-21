@@ -52,7 +52,13 @@ async def ops_grants(db, superadmin_headers):
     return superadmin_headers
 
 
-async def test_ac_104_1_password_is_only_a_challenge(client, superadmin_account):
+@pytest.mark.parametrize("skip", [False, True])
+async def test_ac_104_1_password_is_only_a_challenge(
+    client, superadmin_account, monkeypatch, skip
+):
+    from cbpupsis_core.config import settings
+
+    monkeypatch.setattr(settings, "development_mfa_skip", skip)
     response = await client.post(
         "/api/v1/auth/superadmin/login",
         json={

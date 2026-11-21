@@ -63,6 +63,7 @@ from cbpupsis_shared.domains.users.schemas import (
     AvatarRead,
     EmergencyContactRead,
     FacultyProfileRead,
+    FacultyRosterIdentity,
     OverloadStudentIdentity,
     RecordIdentity,
     ScheduleIdentity,
@@ -93,6 +94,25 @@ async def overload_student_identities(
         )
         for row in await repository.list_overload_student_identities(db, student_ids)
     }
+
+
+async def faculty_roster_identities(
+    db: AsyncSession, student_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, FacultyRosterIdentity]:
+    result = {}
+    for row in await repository.list_faculty_roster_identities(db, student_ids):
+        name = row.full_name or " ".join(
+            part for part in (row.first_name, row.last_name) if part
+        )
+        result[row.student_id] = FacultyRosterIdentity(
+            student_id=row.student_id,
+            student_number=row.student_number,
+            name=name or row.student_number,
+            email=row.email,
+            program_id=row.program_id,
+            year_level=row.year_level,
+        )
+    return result
 
 
 async def schedule_identity(
@@ -686,6 +706,18 @@ async def get_faculty_profile(
     """Return a user's faculty profile, or ``None``."""
     profile = await repository.get_faculty_profile(db, user_id)
     return None if profile is None else FacultyProfileRead.model_validate(profile)
+
+
+async def stage_update_faculty_profile(
+    db: AsyncSession, user_id: uuid.UUID, **fields: object
+) -> FacultyProfileRead:
+    """Stage changes onto ``user_id``'s faculty profile without committing."""
+    profile = await repository.get_faculty_profile(db, user_id)
+    if profile is None:
+        raise UserNotFoundError(user_id)
+    repository.update_faculty_profile(profile, **fields)
+    await db.flush()
+    return FacultyProfileRead.model_validate(profile)
 
 
 async def get_user_profile(

@@ -989,12 +989,11 @@ Review, manual acceptance and approved data readiness are separate delivery gate
 Student schedule reads and exports follow the
 [US-STU-003 contract](STUDENT-SCHEDULE.md), including weekly contact-hour totals,
 snake_case fields, private documents, and durable calendar revisions. Schedule
-JSON is a direct object, consistent with existing resource endpoints. This
-user-approved naming alignment replaces the earlier draft's camelCase fields;
-see the schedule guide's client migration notes before updating a consumer.
-Use `/api/v1/students/me/schedule` and `/api/v1/students/me/schedule/export`;
-the earlier draft's deprecated `/api/v1/student/schedule` URLs were removed and
-now return 404. Scalar documents term selection, filtering, ownership, empty
+JSON is a direct object, consistent with existing resource endpoints. See the
+schedule guide's client migration notes before updating a consumer.
+Use `/api/v1/student/schedule` and `/api/v1/student/schedule/export`; the old
+`/api/v1/students/me/...` and `/api/v1/students/{student_number}/...` URLs were
+removed and now return 404. Scalar documents term selection, filtering, ownership, empty
 states, weekly totals, download formats and failure/retry behavior on these routes.
 
 The optional [Google Calendar connection](GOOGLE-CALENDAR.md) adds student-owned

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.config import settings
 from cbpupsis_core.events import Event
-from cbpupsis_database.models.auth import TokenPurpose
+from cbpupsis_database.models.auth import AuthFailureStep, TokenPurpose
 from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.audit import service as audit_service
 from cbpupsis_shared.domains.auth import repository
@@ -45,6 +45,11 @@ from cbpupsis_shared.domains.auth.security import (
     hash_password,
     reset_address_hash,
     verify_password,
+)
+from cbpupsis_shared.domains.auth.service.lockout import (
+    clear_sign_in_failures,
+    record_sign_in_failure,
+    require_not_locked,
 )
 from cbpupsis_shared.domains.auth.service.sessions import as_utc, stage_session
 from cbpupsis_shared.domains.auth.service.tokens import (
@@ -296,9 +301,11 @@ async def change_password(
     user = await users_service.get_active_user_for_update(db, user_id)
     if user is None:
         raise InactiveUserError
+    await require_not_locked(db, user_id)
     if not await asyncio.to_thread(
         verify_password, current_password, user.password_hash
     ):
+        await record_sign_in_failure(db, user_id, AuthFailureStep.credentials)
         # Distinct from the token errors: the caller is already authenticated,
         # so telling them their password was wrong reveals nothing they do not
         # know.
@@ -324,6 +331,7 @@ async def change_password(
     digest = await asyncio.to_thread(hash_password, new_password)
     await users_service.stage_password_reset(db, user_id, digest)
     await stage_revoke_all_for_user(db, user_id)
+    await clear_sign_in_failures(db, user_id)
     await invalidate_outstanding(db, user_id, TokenPurpose.password_reset)
     await repository.delete_mfa_challenge(db, user_id)
 

@@ -78,6 +78,105 @@ async def _enrolled_session(client: AsyncClient) -> tuple[dict, str, int]:
     return confirmed.json(), secret, counter
 
 
+@pytest.mark.parametrize("enrolled", [False, True])
+async def test_development_skip_faculty_login_refresh_and_disable(
+    client, db, faculty, monkeypatch, enrolled
+):
+    from cbpupsis_core.config import settings
+    from cbpupsis_database.models.audit import AuditEntry
+
+    if enrolled:
+        await _enrolled_session(client)
+    credentials = (await db.scalars(select(UserMfaCredential))).all()
+    secrets_before = [credential.totp_secret for credential in credentials]
+    monkeypatch.setattr(settings, "development_mfa_skip", True)
+    response = await _login(client)
+    assert response.status_code == 200, response.text
+    pair = response.json()
+    assert "challenge_token" not in pair
+    assert "refresh_token=" in response.headers["set-cookie"]
+    for kind in ("access", "refresh"):
+        claims = decode_token(pair[f"{kind}_token"], kind)
+        assert claims["mfa"] is False
+        assert claims["development_mfa_skipped"] is True
+    headers = {"Authorization": f"Bearer {pair['access_token']}"}
+    assert (await client.get(f"{AUTH}/me", headers=headers)).status_code == 200
+    assert (await client.get("/api/v1/admin/me", headers=headers)).status_code == 403
+    audit = await db.scalar(
+        select(AuditEntry).where(AuditEntry.action == "auth.development_mfa_skipped")
+    )
+    assert audit.actor_id == faculty["id"]
+    assert audit.new_state == {"role": "faculty", "mfa": False}
+    attempts = (await db.scalars(select(AuthAuditLog))).all()
+    assert attempts[-1].success and attempts[-1].mfa_used is False
+    after = (await db.scalars(select(UserMfaCredential))).all()
+    assert [credential.totp_secret for credential in after] == secrets_before
+    refreshed = await client.post(
+        f"{AUTH}/refresh", json={"refresh_token": pair["refresh_token"]}
+    )
+    assert refreshed.status_code == 200, refreshed.text
+    rotated = refreshed.json()
+    assert decode_token(rotated["access_token"], "access")["mfa"] is False
+    assert decode_token(rotated["refresh_token"], "refresh")["development_mfa_skipped"]
+    monkeypatch.setattr(settings, "development_mfa_skip", False)
+    for path in (f"{AUTH}/me", "/api/v1/users/me"):
+        assert (await client.get(path, headers=headers)).status_code == 401
+    denied = await client.post(
+        f"{AUTH}/refresh", json={"refresh_token": rotated["refresh_token"]}
+    )
+    assert denied.status_code == 401
+    restored = (await _login(client)).json()
+    assert restored["mfa_required"] is True
+    assert restored["enrollment_required"] is not enrolled
+
+
+async def test_development_skip_faculty_still_requires_password_and_active_profile(
+    client, db, faculty, monkeypatch
+):
+    from cbpupsis_core.config import settings
+
+    monkeypatch.setattr(settings, "development_mfa_skip", True)
+    assert (await _login(client, "wrong")).status_code == 401
+    profile = await db.get(FacultyProfile, faculty["id"])
+    profile.is_active = False
+    await db.commit()
+    assert (await _login(client)).status_code == 401
+
+
+async def test_development_skip_faculty_refuses_concurrent_credential_reset(
+    client, db, faculty, monkeypatch
+):
+    from cbpupsis_core.config import settings
+    from cbpupsis_shared.domains.users import client as users_client
+
+    original = users_client.get_faculty_sign_in
+
+    async def read_then_reset(session, employee_id):
+        subject = await original(session, employee_id)
+        user = await session.get(User, subject.user_id)
+        user.session_version += 1
+        await session.commit()
+        return subject
+
+    monkeypatch.setattr(settings, "development_mfa_skip", True)
+    monkeypatch.setattr(users_client, "get_faculty_sign_in", read_then_reset)
+    response = await _login(client)
+    assert response.status_code == 401
+    assert response.json()["code"] == "AUTH_SESSION_EXPIRED"
+
+
+async def test_development_skip_faculty_still_enforces_lockout(
+    client, faculty, monkeypatch
+):
+    from cbpupsis_core.config import settings
+
+    monkeypatch.setattr(settings, "development_mfa_skip", True)
+    for _ in range(4):
+        assert (await _login(client, "wrong")).status_code == 401
+    assert (await _login(client, "wrong")).status_code == 423
+    assert (await _login(client)).status_code == 423
+
+
 class TestPasswordStep:
     async def test_ac_102_1_password_yields_only_a_challenge(
         self, client: AsyncClient, faculty
@@ -393,9 +492,13 @@ async def _expired_temporary_password(db, user_id, password: str) -> None:
     await db.commit()
 
 
+@pytest.mark.parametrize("skip", [False, True])
 async def test_an_expired_temporary_password_is_refused_at_the_password_step(
-    client: AsyncClient, db: AsyncSession, faculty
+    client: AsyncClient, db: AsyncSession, faculty, monkeypatch, skip
 ) -> None:
+    from cbpupsis_core.config import settings
+
+    monkeypatch.setattr(settings, "development_mfa_skip", skip)
     await _expired_temporary_password(db, faculty["id"], PASSWORD)
     response = await _login(client)
     assert response.status_code == 401

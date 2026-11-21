@@ -12,6 +12,9 @@ import enum
 import re
 
 from cbpupsis_database.models.users import (
+    ACADEMIC_RANK_MAX_LENGTH as ACADEMIC_RANK_MAX_LENGTH,
+)
+from cbpupsis_database.models.users import (
     AVATAR_URL_MAX_LENGTH as AVATAR_URL_MAX_LENGTH,
 )
 from cbpupsis_database.models.users import (
@@ -33,10 +36,19 @@ from cbpupsis_database.models.users import (
     LOCALE_MAX_LENGTH as LOCALE_MAX_LENGTH,
 )
 from cbpupsis_database.models.users import (
+    OFFICE_HOURS_MAX_LENGTH as OFFICE_HOURS_MAX_LENGTH,
+)
+from cbpupsis_database.models.users import (
+    OFFICE_LOCATION_MAX_LENGTH as OFFICE_LOCATION_MAX_LENGTH,
+)
+from cbpupsis_database.models.users import (
     PHONE_NUMBER_MAX_LENGTH as PHONE_NUMBER_MAX_LENGTH,
 )
 from cbpupsis_database.models.users import (
     PROFILE_NAME_MAX_LENGTH as PROFILE_NAME_MAX_LENGTH,
+)
+from cbpupsis_database.models.users import (
+    QUALIFICATIONS_MAX_LENGTH as QUALIFICATIONS_MAX_LENGTH,
 )
 from cbpupsis_database.models.users import (
     TIMEZONE_MAX_LENGTH as TIMEZONE_MAX_LENGTH,
@@ -109,6 +121,8 @@ READ_ALL_USER = "ReadAllUser"
 #: Deliberately does NOT cover deletion, which stays self-service and
 #: password-confirmed — see users/service.py::delete_own_account.
 MANAGE_USER = "ManageUser"
+READ_PROFILE = "ReadProfile"
+UPDATE_PROFILE = "UpdateProfile"
 
 
 #: E.164: a leading +, then 8-15 digits, first non-zero.

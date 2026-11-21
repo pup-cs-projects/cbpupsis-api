@@ -83,6 +83,7 @@ _ACTION_VERBS = (
     # The declared transitions in tests/core/test_permission_naming.py.
     "Request",
     "Approve",
+    "Submit",
 )
 
 

@@ -119,7 +119,7 @@ async def read_payments(db: AsyncSession, student_id: uuid.UUID) -> list[Payment
             if (row.paid_at or row.created_at).tzinfo is None
             else row.paid_at or row.created_at,
             amount=f"{row.amount:.2f}",
-            reference=row.gateway_reference,
+            reference=row.gateway_reference or row.merchant_reference,
             status=row.payment_status,
         )
         for row in await repository.list_student_payments(db, student_id)

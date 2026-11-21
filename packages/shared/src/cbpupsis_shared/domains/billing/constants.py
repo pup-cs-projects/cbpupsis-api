@@ -1,7 +1,8 @@
-"""Permissions, payment states, and vocabulary owned by student billing."""
+"""Permissions, limits, and stable state vocabulary owned by billing."""
 
 from decimal import Decimal
 
+READ_ASSESSMENT = "ReadAssessment"
 CREATE_PAYMENT = "CreatePayment"
 
 PAYMENT_PENDING = "PENDING"
@@ -10,7 +11,6 @@ PAYMENT_FAILED = "FAILED"
 
 IDEMPOTENCY_PROCESSING = "PROCESSING"
 IDEMPOTENCY_COMPLETED = "COMPLETED"
-READ_ASSESSMENT = "ReadAssessment"
 READ_PAYMENT = "ReadPayment"
 
 # PM-approved project policy, not a reinterpretation of fee_structures.late_fee_rate.

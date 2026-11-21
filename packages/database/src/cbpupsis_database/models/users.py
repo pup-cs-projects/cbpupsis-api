@@ -112,6 +112,10 @@ PROFILE_NAME_MAX_LENGTH = 100
 INSTITUTIONAL_ID_MAX_LENGTH = 30
 DEPARTMENT_MAX_LENGTH = 100
 COLLEGE_MAX_LENGTH = 100
+ACADEMIC_RANK_MAX_LENGTH = 50
+OFFICE_LOCATION_MAX_LENGTH = 100
+OFFICE_HOURS_MAX_LENGTH = 255
+QUALIFICATIONS_MAX_LENGTH = 500
 
 
 class AdminPosition(enum.StrEnum):
@@ -291,12 +295,19 @@ class FacultyProfile(Base):
         String(COLLEGE_MAX_LENGTH), default=None
     )
     department: Mapped[str] = mapped_column(String(DEPARTMENT_MAX_LENGTH))
-    academic_rank: Mapped[str | None] = mapped_column(String(50), default=None)
+    academic_rank: Mapped[str | None] = mapped_column(
+        String(ACADEMIC_RANK_MAX_LENGTH), default=None
+    )
     employment_type: Mapped[str] = mapped_column(
         String(30), default="full_time", server_default="full_time"
     )
-    office_location: Mapped[str | None] = mapped_column(String(100), default=None)
-    office_hours: Mapped[str | None] = mapped_column(String(255), default=None)
+    office_location: Mapped[str | None] = mapped_column(
+        String(OFFICE_LOCATION_MAX_LENGTH), default=None
+    )
+    office_hours: Mapped[str | None] = mapped_column(
+        String(OFFICE_HOURS_MAX_LENGTH), default=None
+    )
+    qualifications: Mapped[str | None] = mapped_column(Text, default=None)
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true"
     )

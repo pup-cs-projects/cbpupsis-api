@@ -10,7 +10,11 @@ import pytest
 from pydantic import SecretStr
 
 from cbpupsis_core.config import settings
-from cbpupsis_shared.domains.billing.provider import GatewayState, XenditGateway
+from cbpupsis_shared.domains.billing.provider import (
+    GatewayCustomer,
+    GatewayState,
+    XenditGateway,
+)
 
 
 @pytest.mark.asyncio
@@ -38,7 +42,12 @@ async def test_ac_fin_002_xendit_session_uses_exact_decimal_and_basic_auth(
         result = await XenditGateway(client).create_session(
             merchant_reference="cbp-reference",
             amount=Decimal("10.50"),
-            customer_email="student@example.com",
+            customer=GatewayCustomer(
+                reference_id="1234567890abcdef",
+                email="student@example.com",
+                given_names="María-Jane",
+                surname="Dela Cruz",
+            ),
         )
 
     assert result.session_id == "ps-1"
@@ -46,6 +55,15 @@ async def test_ac_fin_002_xendit_session_uses_exact_decimal_and_basic_auth(
     assert captured["body"]["amount"] == Decimal("10.50")
     assert captured["body"]["reference_id"] == "cbp-reference"
     assert captured["body"]["allow_save_payment_method"] == "DISABLED"
+    assert captured["body"]["customer"] == {
+        "reference_id": "1234567890abcdef",
+        "type": "INDIVIDUAL",
+        "email": "student@example.com",
+        "individual_detail": {
+            "given_names": "Maria Jane",
+            "surname": "Dela Cruz",
+        },
+    }
     assert not {"card", "pan", "cvv", "expiry"} & captured["body"].keys()
 
 

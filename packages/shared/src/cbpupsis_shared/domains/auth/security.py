@@ -217,7 +217,20 @@ def decode_token(
 
     if claims.get("type") != expected_type:
         raise InvalidAuthTokenError
+    if "development_mfa_skipped" in claims and not session_mfa_satisfied(claims):
+        raise InvalidAuthTokenError
     return claims
+
+
+def session_mfa_satisfied(claims: dict[str, Any]) -> bool:
+    """Accept real MFA, or an explicitly marked development-only exception."""
+    if "development_mfa_skipped" in claims:
+        return (
+            claims["development_mfa_skipped"] is True
+            and claims.get("mfa") is False
+            and settings.development_mfa_skip_for(str(claims.get("role", "")))
+        )
+    return claims.get("mfa") is True
 
 
 def generate_one_time_token() -> tuple[str, str]:

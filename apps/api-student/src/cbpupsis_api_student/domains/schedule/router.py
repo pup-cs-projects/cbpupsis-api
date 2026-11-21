@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Path, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_api_student.domains.schedule import service
@@ -19,6 +19,7 @@ from cbpupsis_shared.domains.iam.dependencies import require_permission
 async def private_response(request: Request) -> None:
     """Include authorization and validation errors in the no-store policy."""
     request.state.private_response = True
+    request.state.safe_error_metadata = True
 
 
 router = APIRouter(
@@ -127,7 +128,7 @@ ERROR_RESPONSES = {
 
 
 @router.get(
-    "/students/me/schedule",
+    "",
     response_model=ScheduleRead,
     summary="Read My Course Schedule",
     description=READ_DESCRIPTION,
@@ -153,7 +154,7 @@ async def read_schedule(
 
 
 @router.get(
-    "/students/me/schedule/export",
+    "/export",
     summary="Export My Course Schedule",
     description="""
 Download the signed-in student's complete officially enrolled schedule as a PDF
@@ -182,8 +183,9 @@ synchronization.
 
 **Download and failures:** 200 returns the file bytes, not JSON, with attachment
 filename `course-schedule.pdf` or `course-schedule.ics`. The entire file is
-buffered before responding. Generation has a ten-second deadline; failures
+buffered before responding. Generation has a ten-second deadline; timeouts
 return 503 `SERVICE_UNAVAILABLE` with `Retry-After: 30`, never a partial attachment.
+Unexpected errors reach the global handler as an opaque 500.
 Responses are private and use `Cache-Control: private, no-store`.
 """,
     response_class=Response,
@@ -236,55 +238,4 @@ async def export_schedule(
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",
         },
-    )
-
-
-@router.get(
-    "/students/{student_number}/schedule",
-    response_model=ScheduleRead,
-    summary="Read My Schedule by Student Number",
-    description=(
-        READ_DESCRIPTION
-        + """
-
-**Explicit ownership check:** `student_number` must exactly match the signed-in
-student's institutional number. A different student's number and a nonexistent
-number both return the same 404 `RESOURCE_NOT_FOUND`; this endpoint cannot look
-up other students. Prefer `/api/v1/students/me/schedule` when the client does not
-need to send an explicit identifier. Term selectors, filtering and totals behave
-identically to that self route.
-"""
-    ),
-    responses={
-        **ERROR_RESPONSES,
-        200: {
-            "description": "The caller's schedule after verifying the supplied number."
-        },
-    },
-)
-async def read_identified_schedule(
-    student_number: Annotated[
-        str,
-        Path(
-            description=(
-                "Your own institutional student number; must match the bearer session."
-            ),
-            examples=["2021-00123-MN-0"],
-        ),
-    ],
-    response: Response,
-    user: Student,
-    db: Database,
-    year: Year = None,
-    semester: Semester = None,
-    q: Filter = "",
-) -> ScheduleRead:
-    response.headers["Cache-Control"] = "private, no-store"
-    return await service.read_schedule(
-        db,
-        student_id=user.id,
-        student_number=student_number,
-        year=year,
-        semester=semester,
-        q=q,
     )
