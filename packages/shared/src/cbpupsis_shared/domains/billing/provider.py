@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
@@ -26,6 +27,14 @@ class GatewayCreateResult:
 
 
 @dataclass(frozen=True)
+class GatewayCustomer:
+    reference_id: str
+    email: str
+    given_names: str
+    surname: str | None = None
+
+
+@dataclass(frozen=True)
 class GatewayStatusResult:
     state: GatewayState
     gateway_reference: str | None = None
@@ -44,7 +53,7 @@ class GatewayTimedOut(Exception):
 
 class PaymentGateway(Protocol):
     async def create_session(
-        self, *, merchant_reference: str, amount: Decimal, customer_email: str
+        self, *, merchant_reference: str, amount: Decimal, customer: GatewayCustomer
     ) -> GatewayCreateResult: ...
 
     async def get_status(
@@ -71,6 +80,19 @@ def _reason(response: httpx.Response) -> str:
             if isinstance(value, str) and value.strip():
                 return value.strip()[:255]
     return f"Xendit returned HTTP {response.status_code}"
+
+
+def _xendit_name(value: str, *, fallback: str = "") -> str:
+    """Fit a stored name to Xendit's alphanumeric, 50-character fields."""
+    ascii_value = (
+        unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    )
+    cleaned = " ".join(
+        "".join(
+            character if character.isalnum() else " " for character in ascii_value
+        ).split()
+    )
+    return cleaned[:50] or fallback
 
 
 class XenditGateway:
@@ -102,8 +124,14 @@ class XenditGateway:
                 await client.aclose()
 
     async def create_session(
-        self, *, merchant_reference: str, amount: Decimal, customer_email: str
+        self, *, merchant_reference: str, amount: Decimal, customer: GatewayCustomer
     ) -> GatewayCreateResult:
+        individual_detail = {
+            "given_names": _xendit_name(customer.given_names, fallback="Student")
+        }
+        surname = _xendit_name(customer.surname or "")
+        if surname:
+            individual_detail["surname"] = surname
         payload = {
             "reference_id": merchant_reference,
             "session_type": "PAY",
@@ -111,9 +139,10 @@ class XenditGateway:
             "currency": "PHP",
             "country": "PH",
             "customer": {
-                "reference_id": merchant_reference,
+                "reference_id": customer.reference_id,
                 "type": "INDIVIDUAL",
-                "email": customer_email,
+                "email": customer.email,
+                "individual_detail": individual_detail,
             },
             "success_return_url": settings.xendit_success_return_url,
             "cancel_return_url": settings.xendit_cancel_return_url,

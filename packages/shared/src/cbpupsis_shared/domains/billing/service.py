@@ -38,6 +38,7 @@ from cbpupsis_shared.domains.billing.exceptions import (
 )
 from cbpupsis_shared.domains.billing.overdue import stage_overdue
 from cbpupsis_shared.domains.billing.provider import (
+    GatewayCustomer,
     GatewayRejected,
     GatewayState,
     GatewayTimedOut,
@@ -48,7 +49,7 @@ from cbpupsis_shared.domains.billing.schemas import (
     FeeStructureSaveRequest,
     HoldRead,
     InstallmentItemRead,
-    PaymentStatusRead,
+    PaymentDetailRead,
     ProgramTuitionRateRead,
     ReconciliationResult,
     StudentBillingAccountRead,
@@ -403,6 +404,18 @@ async def create_payment(
     if existing is not None:
         return _saved_result(existing)
 
+    profile = await users_client.get_user_profile(db, student_id)
+    if profile is not None:
+        given_names = " ".join(
+            part for part in (profile.first_name, profile.middle_name) if part
+        )
+        surname = profile.last_name or None
+    else:
+        user = await users_client.get_user(db, student_id)
+        name_parts = (user.full_name or "Student").strip().rsplit(" ", 1)
+        given_names = name_parts[0]
+        surname = name_parts[1] if len(name_parts) > 1 else None
+
     account = await repository.lock_outstanding_account(db, student_id)
     if account is None:
         raise AmountExceedsBalanceError
@@ -442,7 +455,12 @@ async def create_payment(
         created = await gateway.create_session(
             merchant_reference=merchant_reference,
             amount=amount,
-            customer_email=customer_email,
+            customer=GatewayCustomer(
+                reference_id=payment_id.hex,
+                email=customer_email,
+                given_names=given_names,
+                surname=surname,
+            ),
         )
     except GatewayTimedOut:
         body = _error_body(
@@ -489,11 +507,11 @@ async def create_payment(
 
 async def read_payment(
     db: AsyncSession, *, student_id: uuid.UUID, payment_id: uuid.UUID
-) -> PaymentStatusRead:
+) -> PaymentDetailRead:
     payment = await repository.get_student_payment(db, student_id, payment_id)
     if payment is None:
         raise ResourceNotFoundError
-    return PaymentStatusRead(
+    return PaymentDetailRead(
         paymentId=payment.id,
         state=payment.payment_status,
         amount=f"{payment.amount:.2f}",
@@ -545,7 +563,9 @@ async def _settle_locked(db: AsyncSession, payment, *, source: str) -> bool:
             "amount": f"{payment.amount:.2f}",
             "actor": source,
             "timestamp": occurred.isoformat(),
-            "clientIp": payment.initiated_ip,
+            "clientIp": (
+                str(payment.initiated_ip) if payment.initiated_ip is not None else None
+            ),
         },
     )
     return True
