@@ -122,6 +122,9 @@ async def refresh(
         ),
         "sid": token_claims["sid"],
     }
+    # Rotation must not promote a development exception into verified MFA.
+    if token_claims.get("development_mfa_skipped") is True:
+        claims.update(mfa=False, development_mfa_skipped=True)
     return await issue_pair(
         db,
         user_id,

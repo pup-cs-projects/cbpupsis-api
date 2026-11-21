@@ -104,12 +104,12 @@ async def read(
         content = await asyncio.wait_for(
             asyncio.to_thread(exports.render_pdf, dto), timeout=10
         )
-        if not content.startswith(b"%PDF-"):
-            raise ValueError
-    except Exception as exc:
+    except TimeoutError as exc:
         # Renderer is an external boundary; log only type, never contents/traceback.
         logger.warning("cor.render_failed", extra={"error_type": type(exc).__name__})
         raise CertificateUnavailable from None
+    if not content.startswith(b"%PDF-"):
+        raise CertificateUnavailable
     return Response(
         content,
         media_type="application/pdf",

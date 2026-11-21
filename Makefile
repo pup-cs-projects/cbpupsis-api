@@ -132,6 +132,9 @@ digests:  ## Stage the periodic digests (what the scheduler runs)
 prune:  ## Delete rows past their retention window (what the scheduler runs)
 	$(RUN_ADMIN) python -m scripts.prune_retention
 
+expire-incompletes:  ## Convert expired INC grades to 5.00 (daily scheduler job)
+	$(RUN_ADMIN) python -m scripts.expire_incompletes
+
 worker:  ## Run the outbox worker in the foreground, for debugging
 	$(COMPOSE) run --rm worker
 

@@ -12,6 +12,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cbpupsis_database.models.sections import CourseSection, SectionSchedule
 
 
+async def ids_for_courses(db: AsyncSession, course_ids):
+    """Resolve already-authorized courses to their section identifiers.
+
+    SQL::
+
+        SELECT id FROM course_sections WHERE course_id IN (:course_ids);
+    """
+    if not course_ids:
+        return []
+    return list(
+        await db.scalars(
+            select(CourseSection.id).where(CourseSection.course_id.in_(course_ids))
+        )
+    )
+
+
 async def schedule_sections(db: AsyncSession, ids: list[uuid.UUID]):
     """Read section metadata and meeting slots in two bounded queries.
 
@@ -202,6 +218,24 @@ async def list_course_sections_for_faculty(
         .offset(offset)
     )
     return list(result.all()), total or 0
+
+
+async def list_all_course_sections_for_faculty(
+    db: AsyncSession, faculty_id: uuid.UUID
+) -> list[CourseSection]:
+    """Return every course section assigned to ``faculty_id``.
+
+    SQL::
+
+        SELECT * FROM course_sections WHERE faculty_id = :faculty_id
+        ORDER BY section_name, id;
+    """
+    result = await db.scalars(
+        select(CourseSection)
+        .where(CourseSection.faculty_id == faculty_id)
+        .order_by(CourseSection.section_name, CourseSection.id)
+    )
+    return list(result.all())
 
 
 def add_course_section(

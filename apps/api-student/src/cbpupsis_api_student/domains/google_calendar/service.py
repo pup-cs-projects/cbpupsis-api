@@ -483,8 +483,6 @@ async def run_due(db, provider):
     except asyncio.CancelledError:
         await db.rollback()
         raise
-    except Exception:
-        error = "sourceUnavailable"
     await db.rollback()
     try:
         delay = (
