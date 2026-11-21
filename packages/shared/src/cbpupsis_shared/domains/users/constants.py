@@ -12,6 +12,9 @@ import enum
 import re
 
 from cbpupsis_database.models.users import (
+    ACADEMIC_RANK_MAX_LENGTH as ACADEMIC_RANK_MAX_LENGTH,
+)
+from cbpupsis_database.models.users import (
     AVATAR_URL_MAX_LENGTH as AVATAR_URL_MAX_LENGTH,
 )
 from cbpupsis_database.models.users import (
@@ -33,16 +36,32 @@ from cbpupsis_database.models.users import (
     LOCALE_MAX_LENGTH as LOCALE_MAX_LENGTH,
 )
 from cbpupsis_database.models.users import (
+    OFFICE_HOURS_MAX_LENGTH as OFFICE_HOURS_MAX_LENGTH,
+)
+from cbpupsis_database.models.users import (
+    OFFICE_LOCATION_MAX_LENGTH as OFFICE_LOCATION_MAX_LENGTH,
+)
+from cbpupsis_database.models.users import (
     PHONE_NUMBER_MAX_LENGTH as PHONE_NUMBER_MAX_LENGTH,
 )
 from cbpupsis_database.models.users import (
     PROFILE_NAME_MAX_LENGTH as PROFILE_NAME_MAX_LENGTH,
 )
 from cbpupsis_database.models.users import (
+    QUALIFICATIONS_MAX_LENGTH as QUALIFICATIONS_MAX_LENGTH,
+)
+from cbpupsis_database.models.users import (
     TIMEZONE_MAX_LENGTH as TIMEZONE_MAX_LENGTH,
 )
 from cbpupsis_database.models.users import (
     AdminPosition as AdminPosition,
+)
+from cbpupsis_shared.domains.iam.constants import (
+    ADVISOR_GROUP,
+    CHAIR_GROUP,
+    DEAN_GROUP,
+    FINANCE_GROUP,
+    REGISTRAR_GROUP,
 )
 
 
@@ -55,6 +74,7 @@ class AccountRole(enum.StrEnum):
     admin_finance = "admin_finance"
     admin_chairperson = "admin_chairperson"
     admin_dean = "admin_dean"
+    admin_advisor = "admin_advisor"
 
 
 #: The Admin position each Admin account role carries.
@@ -63,6 +83,16 @@ ADMIN_ROLE_POSITIONS: dict[AccountRole, AdminPosition] = {
     AccountRole.admin_finance: AdminPosition.finance,
     AccountRole.admin_chairperson: AdminPosition.chairperson,
     AccountRole.admin_dean: AdminPosition.dean,
+    AccountRole.admin_advisor: AdminPosition.advisor,
+}
+
+#: The IAM group matching each Admin position (BR-AUTH-005).
+POSITION_GROUPS: dict[AdminPosition, str] = {
+    AdminPosition.advisor: ADVISOR_GROUP,
+    AdminPosition.chairperson: CHAIR_GROUP,
+    AdminPosition.dean: DEAN_GROUP,
+    AdminPosition.registrar: REGISTRAR_GROUP,
+    AdminPosition.finance: FINANCE_GROUP,
 }
 
 #: Positions whose data reach is the whole institution, so they hold neither a
@@ -80,6 +110,7 @@ ROLE_REQUIRED_FIELDS: dict[AccountRole, tuple[str, ...]] = {
     AccountRole.admin_finance: (),
     AccountRole.admin_chairperson: ("department",),
     AccountRole.admin_dean: ("college",),
+    AccountRole.admin_advisor: (),
 }
 
 YEAR_LEVEL_MIN = 1
@@ -90,6 +121,8 @@ READ_ALL_USER = "ReadAllUser"
 #: Deliberately does NOT cover deletion, which stays self-service and
 #: password-confirmed — see users/service.py::delete_own_account.
 MANAGE_USER = "ManageUser"
+READ_PROFILE = "ReadProfile"
+UPDATE_PROFILE = "UpdateProfile"
 
 
 #: E.164: a leading +, then 8-15 digits, first non-zero.

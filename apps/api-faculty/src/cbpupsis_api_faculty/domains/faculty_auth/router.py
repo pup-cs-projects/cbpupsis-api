@@ -40,22 +40,28 @@ def _device(request: Request) -> str:
 
 
 @router.post(
-    "/login", response_model=FacultyLoginChallenge, operation_id="faculty_login"
+    "/login",
+    response_model=FacultyLoginChallenge | FacultyTokenPair,
+    operation_id="faculty_login",
 )
 @rate_limit("login")
 async def faculty_login(
     request: Request,
+    response: Response,
     data: FacultyLoginRequest,
     db: AsyncSession = Depends(get_db),
-) -> FacultyLoginChallenge:
-    """Verify employee id and password; returns only an MFA challenge."""
-    return await service.login_faculty(
+) -> FacultyLoginChallenge | FacultyTokenPair:
+    """Require MFA, except with the explicit development-only skip setting."""
+    result = await service.login_faculty(
         db,
         employee_id=data.employee_id,
         password=data.password,
         ip_address=client_ip_or_none(request),
         device_info=_device(request),
     )
+    if isinstance(result, FacultyTokenPair):
+        set_refresh_cookie(response, result.refresh_token, role=ROLE_FACULTY)
+    return result
 
 
 @router.post(

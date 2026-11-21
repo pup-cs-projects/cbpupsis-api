@@ -1,0 +1,2 @@
+# Preserve the actual downloaded ICS bytes, including CRLF and folded lines.
+*.ics -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
