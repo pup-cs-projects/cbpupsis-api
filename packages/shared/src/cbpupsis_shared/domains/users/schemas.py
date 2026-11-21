@@ -56,6 +56,18 @@ class UserBase(BaseModel):
     full_name: str | None = Field(default=None, max_length=FULL_NAME_MAX_LENGTH)
 
 
+class RecordIdentity(BaseModel):
+    student_number: str
+    full_name: str
+
+
+class ScheduleIdentity(BaseModel):
+    """Student identity for a private, caller-owned schedule."""
+
+    student_number: str
+    full_name: str
+
+
 class UserProfileFields(BaseModel):
     """The editable profile fields, with their validation.
 
@@ -200,6 +212,92 @@ class FacultyProfileRead(BaseModel):
     department: str
     college: str | None = None
     is_active: bool
+
+
+class UserProfileRead(BaseModel):
+    """A user's personal details, demographics, and contact addresses."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: uuid.UUID
+    first_name: str
+    middle_name: str | None = None
+    last_name: str
+    birthdate: date | None = None
+    gender: str | None = None
+    civil_status: str | None = None
+    personal_email: str | None = None
+    institutional_email: str | None = None
+    phone_number: str | None = None
+    avatar_url: str | None = None
+    home_address: str | None = None
+    current_address: str | None = None
+    profile_completed: bool = False
+    email_notifications: bool = True
+    updated_at: datetime | None = None
+
+
+class StudentProfileRead(BaseModel):
+    """A student's academic identity, program, curriculum, and enrollment status."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: uuid.UUID
+    student_number: str
+    program_id: uuid.UUID
+    curriculum_id: uuid.UUID | None = None
+    year_level: int
+    section: str | None = None
+    enrollment_status: str
+    fhe_qualified: bool = True
+    fhe_forfeited: bool = False
+    fhe_forfeiture_reason: str | None = None
+    is_graduating_senior: bool = False
+    has_financial_hold: bool = False
+    has_academic_hold: bool = False
+
+
+class AvatarRead(BaseModel):
+    """A stored profile picture and the account it belongs to."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    content_type: str
+    content: bytes
+
+
+class EmergencyContactRead(BaseModel):
+    """One emergency contact belonging to a user."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    contact_name: str
+    relationship: str
+    phone_number: str
+    email: str | None = None
+    address: str | None = None
+    is_primary: bool = False
+
+
+class StudentDashboardIdentity(BaseModel):
+    """The identity block the student dashboard renders."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: uuid.UUID
+    student_number: str
+    display_name: str
+    program_name: str
+    year_level: int
+    enrollment_status: str
+    curriculum_id: uuid.UUID | None = None
+    avatar_url: str | None = None
+    has_financial_hold: bool = False
+    has_academic_hold: bool = False
 
 
 class AccountCreate(BaseModel):

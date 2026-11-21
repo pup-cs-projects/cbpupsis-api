@@ -39,6 +39,7 @@ from cbpupsis_shared.domains.auth.constants import ROLE_ADMIN, ROLE_SUPERADMIN
 from cbpupsis_shared.domains.auth.dependencies import (
     CurrentUser,
     clear_refresh_cookie,
+    refresh_credentials,
     require_superadmin_session,
     set_refresh_cookie,
 )
@@ -113,7 +114,9 @@ async def verify_superadmin(
 
 @superadmin_auth_router.post("/refresh", response_model=SuperadminTokenPair)
 async def refresh_superadmin(
-    data: RefreshRequest, response: Response, db: AsyncSession = Depends(get_db)
+    response: Response,
+    data: RefreshRequest = Depends(refresh_credentials),
+    db: AsyncSession = Depends(get_db),
 ) -> SuperadminTokenPair:
     pair = await service.refresh_superadmin(db, data)
     set_refresh_cookie(response, pair.refresh_token, role=ROLE_SUPERADMIN)
@@ -239,8 +242,8 @@ async def confirm_webauthn(
 
 @router.post("/refresh", response_model=AdminTokenPair)
 async def refresh_admin(
-    data: RefreshRequest,
     response: Response,
+    data: RefreshRequest = Depends(refresh_credentials),
     db: AsyncSession = Depends(get_db),
 ) -> AdminTokenPair:
     """Rotate an Admin session and renew its cookies."""

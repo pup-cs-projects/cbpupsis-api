@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1
+#
+# Staging image for the outbox worker. Identical build to
+# docker/worker/Dockerfile.prod, because staging only tells you something if it
+# is the artifact you intend to ship. The one difference is the label, so an
+# image in a registry can be traced back to the pipeline that produced it.
+#
+# Build from the PROJECT ROOT:
+#   docker build -f docker/worker/Dockerfile.staging -t worker:staging .
+
+# ---------- build stage ----------
+FROM public.ecr.aws/lambda/python:3.12 AS build
+
+COPY --from=ghcr.io/astral-sh/uv:0.9.9 /uv /bin/
+
+WORKDIR /build
+
+COPY pyproject.toml uv.lock ./
+COPY packages/core ./packages/core
+COPY packages/database ./packages/database
+COPY packages/shared ./packages/shared
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv export --frozen --no-dev --no-editable --no-hashes \
+      --package cbpupsis-shared --format requirements-txt -o requirements.txt && \
+    uv pip install --no-deps --compile-bytecode --python python3.12 \
+      --target /build/task -r requirements.txt
+
+# ---------- runtime stage ----------
+FROM public.ecr.aws/lambda/python:3.12 AS runtime
+
+ARG GIT_SHA=unknown
+LABEL org.opencontainers.image.revision="${GIT_SHA}" \
+      org.opencontainers.image.title="worker" \
+      env="staging"
+
+COPY --from=build /build/task ${LAMBDA_TASK_ROOT}
+
+CMD ["cbpupsis_shared.worker.lambda_handler"]

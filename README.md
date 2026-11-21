@@ -8,7 +8,7 @@ administration and reporting.
 | | |
 |---|---|
 | Requirements | [docs/project-specs/SRS.md](docs/project-specs/SRS.md) |
-| Board | [CBPUPSIS API](https://github.com/orgs/pup-cs-projects/projects/2) |
+| Board | [CBPUPSIS](https://github.com/orgs/pup-cs-projects/projects/4) |
 | Web client | [cbpupsis-client](https://github.com/pup-cs-projects/cbpupsis-client) |
 | How to contribute | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
@@ -66,6 +66,7 @@ paths. No `make` on Windows? `CONTRIBUTING.md` lists the plain commands.
 | Apply migrations | `make migrate` |
 | Create a migration | `make migrate-create MSG="add enrollments table"` |
 | Seed permissions and groups | `make seed` |
+| Seed degree programs (needed to create students) | `make seed-programs` |
 | Run the HTTP suite | `make seed-e2e && make e2e` |
 | List every target | `make help` |
 

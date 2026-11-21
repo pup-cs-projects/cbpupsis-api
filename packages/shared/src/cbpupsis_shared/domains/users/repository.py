@@ -27,20 +27,99 @@ import uuid
 from collections.abc import Collection
 from datetime import date, datetime
 
-from sqlalchemy import func, select, union_all
+from sqlalchemy import delete, func, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.models.users import (
     AdminProfile,
+    EmergencyContact,
     FacultyProfile,
     StudentProfile,
     User,
+    UserAvatar,
     UserProfile,
 )
 
 #: The base of every user lookup: soft-deleted rows excluded once, here, so no
 #: query can forget it. A ``Select`` is immutable, so sharing one is safe.
 LIVE_USERS = select(User).where(User.deleted_at.is_(None))
+
+
+async def get_record_identity(db: AsyncSession, student_id: uuid.UUID):
+    """Read identity only for the already-authenticated owner's active account.
+
+    SQL::
+
+        SELECT s.student_number, u.full_name, p.first_name, p.last_name
+        FROM users u JOIN student_profiles s ON s.user_id = u.id
+        LEFT JOIN user_profiles p ON p.user_id = u.id
+        WHERE u.id = :student_id AND u.deleted_at IS NULL AND u.is_active;
+    """
+    result = await db.execute(
+        select(
+            StudentProfile.student_number,
+            User.full_name,
+            UserProfile.first_name,
+            UserProfile.last_name,
+        )
+        .join(StudentProfile, StudentProfile.user_id == User.id)
+        .outerjoin(UserProfile, UserProfile.user_id == User.id)
+        .where(
+            User.id == student_id, User.deleted_at.is_(None), User.is_active.is_(True)
+        )
+    )
+    return result.one_or_none()
+
+
+async def schedule_identity(db: AsyncSession, user_id: uuid.UUID):
+    """Read only the caller's institutional identity.
+
+    SQL::
+
+        SELECT sp.student_number, u.full_name, p.first_name, p.last_name
+        FROM users u JOIN student_profiles sp ON sp.user_id = u.id
+        LEFT JOIN user_profiles p ON p.user_id = u.id
+        WHERE u.id = :user_id AND u.deleted_at IS NULL AND u.is_active = true;
+    """
+    return (
+        await db.execute(
+            select(
+                StudentProfile.student_number,
+                User.full_name,
+                UserProfile.first_name,
+                UserProfile.last_name,
+            )
+            .join(StudentProfile, StudentProfile.user_id == User.id)
+            .outerjoin(UserProfile, UserProfile.user_id == User.id)
+            .where(
+                User.id == user_id, User.deleted_at.is_(None), User.is_active.is_(True)
+            )
+        )
+    ).first()
+
+
+async def schedule_names(db: AsyncSession, ids: list[uuid.UUID]):
+    """Batch-read live faculty display names without exposing user records.
+
+    SQL::
+
+        SELECT u.id, u.full_name, p.first_name, p.last_name
+        FROM users u LEFT JOIN user_profiles p ON p.user_id = u.id
+        WHERE u.id IN (:ids) AND u.deleted_at IS NULL AND u.is_active = true;
+    """
+    if not ids:
+        return []
+    return (
+        await db.execute(
+            select(
+                User.id, User.full_name, UserProfile.first_name, UserProfile.last_name
+            )
+            .outerjoin(UserProfile, UserProfile.user_id == User.id)
+            .where(
+                User.id.in_(ids), User.deleted_at.is_(None), User.is_active.is_(True)
+            )
+        )
+    ).all()
 
 
 async def get_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
@@ -563,3 +642,177 @@ async def list_taken_admin_employee_ids(
         return []
     column = AdminProfile.employee_id
     return list(await db.scalars(select(column).where(column.in_(employee_ids))))
+
+
+async def get_user_profile(db: AsyncSession, user_id: uuid.UUID) -> UserProfile | None:
+    """Return a user's personal-details profile, or ``None``.
+
+    SQL::
+
+        SELECT * FROM user_profiles WHERE user_id = :user_id
+    """
+    return await db.get(UserProfile, user_id, populate_existing=True)
+
+
+def update_user_profile(profile: UserProfile, **fields: object) -> UserProfile:
+    """Stage changes onto a loaded ``UserProfile`` row.
+
+    On commit, using the supplied fields::
+
+        UPDATE user_profiles SET personal_email = :personal_email, ...
+        WHERE user_id = :user_id
+    """
+    for name, value in fields.items():
+        setattr(profile, name, value)
+    return profile
+
+
+async def get_student_profile(
+    db: AsyncSession, user_id: uuid.UUID
+) -> StudentProfile | None:
+    """Return a user's student profile, or ``None``.
+
+    SQL::
+
+        SELECT * FROM student_profiles WHERE user_id = :user_id
+    """
+    return await db.get(StudentProfile, user_id, populate_existing=True)
+
+
+async def list_emergency_contacts(
+    db: AsyncSession, user_id: uuid.UUID
+) -> list[EmergencyContact]:
+    """Return all emergency contacts belonging to ``user_id``, primary first.
+
+    SQL::
+
+        SELECT * FROM emergency_contacts
+        WHERE user_id = :user_id
+        ORDER BY is_primary DESC, id ASC
+    """
+    result = await db.scalars(
+        select(EmergencyContact)
+        .where(EmergencyContact.user_id == user_id)
+        .order_by(EmergencyContact.is_primary.desc(), EmergencyContact.id.asc())
+    )
+    return list(result.all())
+
+
+async def get_emergency_contact(
+    db: AsyncSession, contact_id: uuid.UUID
+) -> EmergencyContact | None:
+    """Return one emergency contact by primary key, or ``None``.
+
+    SQL::
+
+        SELECT * FROM emergency_contacts WHERE id = :contact_id
+    """
+    return await db.get(EmergencyContact, contact_id, populate_existing=True)
+
+
+def add_emergency_contact(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    contact_name: str,
+    relationship: str,
+    phone_number: str,
+    email: str | None = None,
+    address: str | None = None,
+    is_primary: bool = False,
+) -> EmergencyContact:
+    """Stage a new emergency contact row.
+
+    On commit::
+
+        INSERT INTO emergency_contacts (id, user_id, contact_name, relationship,
+                                        phone_number, email, address, is_primary)
+        VALUES (:id, :user_id, :contact_name, :relationship, :phone_number,
+                :email, :address, :is_primary)
+    """
+    contact = EmergencyContact(
+        user_id=user_id,
+        contact_name=contact_name,
+        relationship=relationship,
+        phone_number=phone_number,
+        email=email,
+        address=address,
+        is_primary=is_primary,
+    )
+    db.add(contact)
+    return contact
+
+
+def update_emergency_contact(
+    contact: EmergencyContact, **fields: object
+) -> EmergencyContact:
+    """Stage changes onto a loaded ``EmergencyContact`` row.
+
+    On commit, using the supplied fields::
+
+        UPDATE emergency_contacts SET contact_name = :contact_name, ...
+        WHERE id = :contact_id
+    """
+    for name, value in fields.items():
+        setattr(contact, name, value)
+    return contact
+
+
+async def delete_emergency_contact(db: AsyncSession, contact: EmergencyContact) -> None:
+    """Stage deletion of a loaded ``EmergencyContact`` row.
+
+    On commit::
+
+        DELETE FROM emergency_contacts WHERE id = :contact_id
+    """
+    await db.delete(contact)
+
+
+async def replace_avatar(
+    db: AsyncSession, *, user_id: uuid.UUID, content: bytes, content_type: str
+) -> UserAvatar:
+    """Stage ``user_id``'s profile picture, replacing any earlier one.
+
+    On commit::
+
+        DELETE FROM user_avatars WHERE user_id = :user_id
+        INSERT INTO user_avatars (id, user_id, content_type, content)
+        VALUES (:id, :user_id, :content_type, :content)
+    """
+    await db.execute(delete(UserAvatar).where(UserAvatar.user_id == user_id))
+    avatar = UserAvatar(user_id=user_id, content=content, content_type=content_type)
+    db.add(avatar)
+    return avatar
+
+
+async def get_avatar(db: AsyncSession, avatar_id: uuid.UUID) -> UserAvatar | None:
+    """Return one stored profile picture by id, or ``None``.
+
+    SQL::
+
+        SELECT * FROM user_avatars WHERE id = :avatar_id
+    """
+    return await db.get(UserAvatar, avatar_id)
+
+
+async def get_student_by_student_number(
+    db: AsyncSession, student_number: str
+) -> StudentProfile | None:
+    """Return a student profile by student number.
+
+    SQL::
+
+        SELECT student_profiles.user_id, student_profiles.student_number,
+               student_profiles.program_id, student_profiles.curriculum_id,
+               student_profiles.year_level, student_profiles.section,
+               student_profiles.enrollment_status, student_profiles.fhe_qualified,
+               student_profiles.fhe_forfeited, student_profiles.fhe_forfeiture_reason,
+               student_profiles.is_graduating_senior,
+               student_profiles.has_financial_hold,
+               student_profiles.has_academic_hold
+        FROM student_profiles
+        WHERE student_profiles.student_number = :student_number
+    """
+    return await db.scalar(
+        select(StudentProfile).where(StudentProfile.student_number == student_number)
+    )

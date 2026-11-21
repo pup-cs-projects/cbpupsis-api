@@ -103,7 +103,7 @@ class TestPasswordStep:
             f"/api/v1/sections/{uuid.uuid4()}/roster",
             "/api/v1/users/me",
         ):
-            assert (await client.get(path, headers=headers)).status_code == 401
+            assert (await client.get(path, headers=headers)).status_code == 403
 
     async def test_ac_102_1_email_password_cannot_skip_mfa(
         self, client: AsyncClient, faculty
@@ -145,7 +145,7 @@ class TestEnumerationParity:
             body_a.pop("request_id")
             body_b.pop("request_id")
             assert body_a == body_b
-            assert body_a["code"] == "AUTH_FAILED"
+            assert body_a["code"] == "AUTH_INVALID_CREDENTIALS"
         fifth_unknown = await client.post(f"{AUTH}/login", json=unknown)
         fifth_known = await client.post(f"{AUTH}/login", json=known)
         assert fifth_unknown.status_code == fifth_known.status_code == 423
@@ -401,4 +401,4 @@ async def test_an_expired_temporary_password_is_refused_at_the_password_step(
     assert response.status_code == 401
     assert response.json()["code"] == "AUTH_TEMPORARY_PASSWORD_EXPIRED"
     wrong = await _login(client, "Wrong-Password-123!")
-    assert wrong.json()["code"] == "AUTH_FAILED"
+    assert wrong.json()["code"] == "AUTH_INVALID_CREDENTIALS"

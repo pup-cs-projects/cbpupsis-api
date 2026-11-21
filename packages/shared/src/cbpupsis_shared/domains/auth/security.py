@@ -346,8 +346,8 @@ def create_challenge_token(
     return token, challenge, jti
 
 
-def decode_challenge_token(token: str, *, role: str) -> dict[str, Any]:
-    """Validate a role's MFA challenge without ever accepting it as a session."""
+def decode_challenge_token(token: str, *, role: str | None = None) -> dict[str, Any]:
+    """Validate an MFA challenge token without ever accepting it as a session."""
     try:
         claims: dict[str, Any] = jwt.decode(
             token,
@@ -356,7 +356,11 @@ def decode_challenge_token(token: str, *, role: str) -> dict[str, Any]:
         )
     except jwt.InvalidTokenError as exc:
         raise InvalidAuthTokenError from exc
-    if claims.get("type") != f"{role}_mfa_challenge":
+    token_type = str(claims.get("type", ""))
+    if role is not None:
+        if token_type != f"{role}_mfa_challenge":
+            raise InvalidAuthTokenError
+    elif not token_type.endswith("_mfa_challenge"):
         raise InvalidAuthTokenError
     return claims
 

@@ -1,19 +1,18 @@
-"""Outbound email: an ``EmailSender`` protocol with SES, console, and mail-catcher
-backends.
+"""Outbound email: an ``EmailSender`` protocol with Resend, console, and
+mail-catcher backends.
 
 Three decisions worth stating, because each prevents a specific production bug:
 
 - **Sending never fails the request.** :func:`send_email` catches and logs. A user
   who registered but whose address bounced must still exist; rolling back their
-  signup because SES was briefly unavailable turns a delivery problem into a data
-  problem.
-- **boto3 is synchronous**, so every call is pushed onto a worker thread with
-  ``asyncio.to_thread``. Calling it directly from an async endpoint would block
-  the event loop for the whole round-trip to SES, stalling every other request
-  the process is serving.
-- **No sender identity configured means the console backend.** Development and
-  tests therefore need no AWS credentials and cannot email a real person by
-  accident — the failure mode of a shared staging database pointed at real SES.
+  signup because Resend was briefly unavailable turns a delivery problem into a
+  data problem.
+- **Resend is called with an async HTTP client**, so a send never blocks the
+  event loop for the round-trip, stalling every other request the process is
+  serving. The SMTP mail catcher is synchronous and runs on a worker thread.
+- **No sender and API key configured means the console backend.** Development
+  and tests therefore need no key and cannot email a real person by accident —
+  the failure mode of a shared staging database pointed at a real provider.
 - **A development mail catcher wins over both.** With ``DEV_SMTP_HOST`` set
   (development only, enforced by settings), every message goes to Mailpit,
   where a developer reads it whole. The console backend never prints bodies,
@@ -32,12 +31,33 @@ from email.message import EmailMessage
 from functools import lru_cache
 from typing import Protocol, runtime_checkable
 
+import httpx
+
 from cbpupsis_core.config import settings
 
 logger = logging.getLogger(__name__)
 
 #: The sender address on caught development mail. Never a deliverable domain.
 DEV_FROM_EMAIL = "no-reply@cbpupsis.localhost"
+
+#: Resend's send endpoint (https://resend.com/docs/api-reference/emails/send-email).
+RESEND_URL = "https://api.resend.com/emails"
+#: Long enough for a slow response, short enough that a hung call does not hold
+#: a request (or a worker batch) for long. The outbox retries a failed send.
+RESEND_TIMEOUT_SECONDS = 10.0
+
+
+class EmailDeliveryError(Exception):
+    """The provider refused or failed a send.
+
+    Carries the HTTP status and the provider's error name only: its message can
+    echo the request, and the request carries the one-time link.
+    """
+
+    def __init__(self, status: int, name: str | None) -> None:
+        super().__init__(f"HTTP {status} {name or ''}".strip())
+        self.status = status
+        self.name = name
 
 
 @runtime_checkable
@@ -86,54 +106,59 @@ class MailCatcherSender:
         await asyncio.to_thread(self.send_blocking, to, subject, body)
 
 
-class SESEmailSender:
-    """Send through AWS SES using boto3.
+class ResendEmailSender:
+    """Send through Resend's HTTP API.
 
-    The client is built once and reused: boto3 client construction resolves
-    credentials and loads service models, which is far too expensive to repeat
-    per message.
+    A client per send rather than one per process: the API, the outbox worker,
+    and tests each run their own event loop, and an ``httpx.AsyncClient`` is
+    bound to the loop it was first used on. Mail volume is far too low for the
+    extra connection to matter.
     """
 
     def __init__(
         self,
         *,
+        api_key: str,
         from_email: str,
-        region: str,
-        configuration_set: str | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        # Imported lazily so the dependency is only required when SES is
-        # actually configured — tests and local runs never import boto3.
-        import boto3  # noqa: PLC0415 - see the comment above
-
-        self._client = boto3.client("ses", region_name=region)
+        self._api_key = api_key
         self._from_email = from_email
-        self._configuration_set = configuration_set
-
-    def send_blocking(self, to: str, subject: str, body: str) -> None:
-        """Blocking SES call, run on a worker thread by :meth:`send`."""
-        kwargs = {
-            "Source": self._from_email,
-            "Destination": {"ToAddresses": [to]},
-            "Message": {
-                "Subject": {"Data": subject, "Charset": "UTF-8"},
-                "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
-            },
-        }
-        if self._configuration_set is not None:
-            kwargs["ConfigurationSetName"] = self._configuration_set
-        self._client.send_email(**kwargs)
+        # Tests pass a mock transport; production uses the network.
+        self._transport = transport
 
     async def send(self, *, to: str, subject: str, body: str) -> None:
-        """Deliver via SES without blocking the event loop."""
-        await asyncio.to_thread(self.send_blocking, to, subject, body)
+        """Deliver one plain-text message; raise EmailDeliveryError on refusal."""
+        async with httpx.AsyncClient(
+            transport=self._transport, timeout=RESEND_TIMEOUT_SECONDS
+        ) as client:
+            response = await client.post(
+                RESEND_URL,
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                json={
+                    "from": self._from_email,
+                    "to": [to],
+                    "subject": subject,
+                    "text": body,
+                },
+            )
+        if response.is_success:
+            return
+        try:
+            name = response.json().get("name")
+        except ValueError:
+            name = None
+        raise EmailDeliveryError(
+            response.status_code, name if isinstance(name, str) else None
+        )
 
 
 @lru_cache
 def get_email_sender() -> EmailSender:
     """Return the configured sender, built once per process.
 
-    A development mail catcher, when configured, wins over everything; then SES;
-    then the console backend whenever no verified SES identity is set.
+    A development mail catcher, when configured, wins over everything; then
+    Resend; then the console backend whenever no sender and key are set.
     """
     if settings.dev_smtp_host is not None:
         logger.info(
@@ -145,16 +170,16 @@ def get_email_sender() -> EmailSender:
             host=settings.dev_smtp_host, port=settings.dev_smtp_port
         )
     if not settings.email_enabled:
-        logger.info("No ses_from_email configured; using the console email backend")
+        logger.info("No email_from configured; using the console email backend")
         return ConsoleEmailSender()
 
     # Narrowed by settings.email_enabled, which is exactly this check, so this
     # only informs the type checker and is never a runtime guard.
-    assert settings.ses_from_email is not None  # nosec B101
-    return SESEmailSender(
-        from_email=settings.ses_from_email,
-        region=settings.aws_region,
-        configuration_set=settings.ses_configuration_set,
+    assert settings.email_from is not None  # nosec B101
+    assert settings.resend_api_key is not None  # nosec B101
+    return ResendEmailSender(
+        api_key=settings.resend_api_key.get_secret_value(),
+        from_email=settings.email_from,
     )
 
 

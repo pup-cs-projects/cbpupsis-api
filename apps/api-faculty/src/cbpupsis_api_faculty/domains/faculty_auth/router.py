@@ -26,6 +26,7 @@ from cbpupsis_shared.domains.auth.constants import ROLE_FACULTY
 from cbpupsis_shared.domains.auth.dependencies import (
     CurrentUser,
     clear_refresh_cookie,
+    refresh_credentials,
     set_refresh_cookie,
 )
 from cbpupsis_shared.domains.auth.schemas import RefreshRequest
@@ -119,7 +120,9 @@ async def faculty_mfa_verify(
     "/refresh", response_model=FacultyTokenPair, operation_id="faculty_refresh"
 )
 async def faculty_refresh(
-    data: RefreshRequest, response: Response, db: AsyncSession = Depends(get_db)
+    response: Response,
+    data: RefreshRequest = Depends(refresh_credentials),
+    db: AsyncSession = Depends(get_db),
 ) -> FacultyTokenPair:
     """Rotate the faculty session's refresh token."""
     pair = await service.refresh_faculty(db, data)

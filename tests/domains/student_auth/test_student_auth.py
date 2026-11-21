@@ -149,7 +149,7 @@ class TestCredentialIndistinguishability:
         bodies = []
         for response in responses:
             assert response.status_code == 401
-            assert response.json()["code"] == "AUTH_FAILED"
+            assert response.json()["code"] == "AUTH_INVALID_CREDENTIALS"
             body = response.json()
             body.pop("request_id", None)
             bodies.append(body)
@@ -327,6 +327,29 @@ class TestSessionIdleTimeout:
         assert (
             await client.get("/api/v1/auth/student/me", headers=headers)
         ).status_code == 401
+
+    async def test_refresh_restores_the_session_from_the_cookie_alone(
+        self, client: AsyncClient, student_user: dict[str, object]
+    ) -> None:
+        # A reloaded web client holds no token; only the HttpOnly cookie survives.
+        pair = (await client.post(LOGIN, json=_body(student_user))).json()
+        restored = await client.post(
+            "/api/v1/auth/student/refresh",
+            headers={"Cookie": f"refresh_token={pair['refresh_token']}"},
+        )
+        assert restored.status_code == 200, restored.text
+        assert "refresh_token=" in restored.headers["set-cookie"]
+        headers = {"Authorization": f"Bearer {restored.json()['access_token']}"}
+        assert (
+            await client.get("/api/v1/auth/student/me", headers=headers)
+        ).status_code == 200
+
+    async def test_refresh_with_neither_body_nor_cookie_is_refused(
+        self, client: AsyncClient
+    ) -> None:
+        response = await client.post("/api/v1/auth/student/refresh")
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Not authenticated"
 
 
 class TestUnknownClientAddress:

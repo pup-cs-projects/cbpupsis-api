@@ -1,5 +1,13 @@
 # FastAPI Modular-Monolith Template
 
+## Student grades and transcript (US-STU-004)
+
+The student app serves private grade reads and a paginated cumulative transcript
+with a complete unofficial PDF export. Decimal averages, ownership refusals,
+empty states and dependency boundaries are defined in
+[the student grades contract](STUDENT-GRADES.md). Producer workflows and deployed
+performance require separate integration validation.
+
 ## Superadmin authentication and overrides (US-AUTH-004)
 
 All paths below have prefix `/api/v1`. Superadmin is distinct from Admin. Admin
@@ -314,7 +322,7 @@ packages/                    # the shared kernel; every app depends on it
     exceptions.py            #     AppError hierarchy + handlers
     logging.py               #     JSON logs, request-id correlation
     pagination.py            #     Page[T] envelope
-    emails/                  #     EmailSender protocol, SES, console, and mail-catcher backends, bodies
+    emails/                  #     EmailSender protocol, Resend, console, and mail-catcher backends, bodies
     middleware/              #     correlation-id, request logging, CORS; @rate_limit
 
   database/src/cbpupsis_database/
@@ -722,15 +730,19 @@ and uniquely indexed, so several deletions would otherwise collide, and
 | Setting | Backend | Where the message goes |
 |---|---|---|
 | `DEV_SMTP_HOST` (development only) | `MailCatcherSender` | The compose stack's Mailpit; read it whole at <http://localhost:8025> |
-| `SES_FROM_EMAIL` | `SESEmailSender` | Real inboxes, through AWS SES |
+| `EMAIL_FROM` and `RESEND_API_KEY` | `ResendEmailSender` | Real inboxes, through Resend |
 | neither | `ConsoleEmailSender` | Nowhere: logs the recipient and subject only, never the body |
 
-Development and tests therefore need no AWS credentials and cannot mail a real
+Development and tests therefore need no provider key and cannot mail a real
 person by accident. The console backend never prints a body, because bodies carry
 reset links and temporary passwords; Mailpit is how you read them locally. Settings
-refuse `DEV_SMTP_HOST` unless `ENVIRONMENT=development`, because it wins over SES and
-would swallow real mail anywhere else. SMTP and boto3 are synchronous, so every send
-goes through `asyncio.to_thread`; calling them directly would block the event loop.
+refuse `DEV_SMTP_HOST` unless `ENVIRONMENT=development`, because it wins over Resend and
+would swallow real mail anywhere else. Resend is called with an async HTTP client;
+SMTP is synchronous, so the mail catcher sends through `asyncio.to_thread`. A Resend
+refusal raises `EmailDeliveryError` with only the status and Resend's error name,
+never its message, which can echo the reset link. Settings refuse `EMAIL_FROM`
+without `RESEND_API_KEY` (or the reverse), because half a configuration would quietly
+fall back to the console backend.
 
 **Sending never fails a request.** A user who registered but whose email bounced
 must still exist, so `send_email` logs the failure and returns `False`.
@@ -920,6 +932,21 @@ build-and-run cycle. The image never copies it; `.dockerignore` excludes it and
 each build creates its own.
 
 ## Conventions worth keeping
+
+Student schedule reads and exports follow the
+[US-STU-003 contract](STUDENT-SCHEDULE.md), including weekly contact-hour totals,
+snake_case fields, private documents, and durable calendar revisions. Schedule
+JSON is a direct object, consistent with existing resource endpoints. This
+user-approved naming alignment replaces the earlier draft's camelCase fields;
+see the schedule guide's client migration notes before updating a consumer.
+Use `/api/v1/students/me/schedule` and `/api/v1/students/me/schedule/export`;
+the earlier draft's deprecated `/api/v1/student/schedule` URLs were removed and
+now return 404. Scalar documents term selection, filtering, ownership, empty
+states, weekly totals, download formats and failure/retry behavior on these routes.
+
+The optional [Google Calendar connection](GOOGLE-CALENDAR.md) adds student-owned
+OAuth, per-term dedicated calendars and a separate student reconciliation worker.
+It is disabled by default and does not replace manual exports or SIS sign-in.
 
 - Money is `Numeric`/`Decimal`, never `float`.
 - Timestamps are timezone-aware, stored UTC.

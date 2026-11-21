@@ -14,9 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cbpupsis_api_faculty.domains.faculty_auth.dependencies import (
     require_faculty_session,
 )
-from cbpupsis_api_faculty.domains.sections import service
-from cbpupsis_api_faculty.domains.sections.constants import READ_COURSE_SECTION
-from cbpupsis_api_faculty.domains.sections.schemas import (
+from cbpupsis_api_faculty.domains.faculty_sections import service
+from cbpupsis_api_faculty.domains.faculty_sections.schemas import (
     CourseSectionRead,
     CourseSectionRosterRead,
 )
@@ -24,6 +23,7 @@ from cbpupsis_core.pagination import Page
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.auth.dependencies import CurrentUser
 from cbpupsis_shared.domains.iam.dependencies import require_permission
+from cbpupsis_shared.domains.sections.constants import READ_COURSE_SECTION
 
 router = APIRouter(dependencies=[Depends(require_permission(READ_COURSE_SECTION))])
 

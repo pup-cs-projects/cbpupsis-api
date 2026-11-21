@@ -68,7 +68,7 @@ async def test_ac_104_1_password_is_only_a_challenge(client, superadmin_account)
             "/api/v1/superadmin/me",
             headers={"Authorization": f"Bearer {response.json()['challenge_token']}"},
         )
-    ).status_code == 401
+    ).status_code == 403
 
 
 async def test_ac_104_2_encrypted_enrollment_and_single_use(

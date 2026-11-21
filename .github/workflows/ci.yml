@@ -1,15 +1,20 @@
 # Fast checks on every push and PR: the pre-commit hooks, the test suite with
 # coverage, and a dependency audit. The end-to-end HTTP suite is separate
 # (e2e.yml) because it needs Docker, Postgres, and seeded accounts.
+#
+# Pushes to staging and main run these same jobs as the first stage of
+# deploy.yml (workflow_call), so a release is never deployed untested and never
+# tested twice.
 
 name: ci
 
 on:
   push:
-    branches: [main, dev]
+    branches: [dev]
   pull_request:
-    branches: [main, dev]
+    branches: [main, staging, dev]
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -94,5 +99,7 @@ jobs:
         # an unrelated PR; it shows in the run summary and is triaged as an issue.
         continue-on-error: true
         run: |
-          uv export --no-emit-project --no-dev --format requirements-txt > requirements.txt
+          # Editable workspace packages cannot be installed with hashes.
+          # Their resolved third-party dependencies remain in this export.
+          uv export --no-emit-workspace --no-dev --format requirements-txt > requirements.txt
           uvx pip-audit --requirement requirements.txt --strict

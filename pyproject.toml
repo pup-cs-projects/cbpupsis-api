@@ -29,6 +29,7 @@ dev = [
     "pytest-cov",     # coverage, reported in CI
     "pre-commit",     # git hooks; see .pre-commit-config.yaml
     "ruff",
+    "pypdf",
 ]
 
 [tool.uv]

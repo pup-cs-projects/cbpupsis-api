@@ -2,27 +2,29 @@
 
 Three properties matter more than delivery itself, because each one breaks
 something outside email when it is wrong: the console fallback (so tests and dev
-never need AWS credentials), the failure isolation (so a bounce cannot undo a
-signup), and the off-thread SES call (so a slow SES cannot stall the event loop).
+never need a provider key), the failure isolation (so a bounce cannot undo a
+signup), and the Resend request itself (sender, recipient, and an error that
+never echoes the message).
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
 
+import httpx
 import pytest
 from httpx import AsyncClient
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.config import Settings
 from cbpupsis_core.emails import (
     ConsoleEmailSender,
+    EmailDeliveryError,
     EmailSender,
     MailCatcherSender,
-    SESEmailSender,
+    ResendEmailSender,
     get_email_sender,
     send_email,
 )
@@ -37,56 +39,64 @@ def _clear_sender_cache():
     get_email_sender.cache_clear()
 
 
+def _resend_configured(monkeypatch, *, api_key: str | None = "re_test_key") -> None:
+    monkeypatch.setattr(
+        "cbpupsis_core.emails.sender.settings.email_from",
+        "CBPUPSIS <no-reply@example.com>",
+    )
+    monkeypatch.setattr(
+        "cbpupsis_core.emails.sender.settings.resend_api_key",
+        None if api_key is None else SecretStr(api_key),
+    )
+
+
 class TestSenderSelection:
-    def test_console_backend_when_ses_is_unconfigured(self, monkeypatch) -> None:
-        """The default in development and tests: no credentials, no real mail."""
-        monkeypatch.setattr("cbpupsis_core.emails.sender.settings.ses_from_email", None)
+    def test_console_backend_when_resend_is_unconfigured(self, monkeypatch) -> None:
+        """The default in development and tests: no key, no real mail."""
+        monkeypatch.setattr("cbpupsis_core.emails.sender.settings.email_from", None)
+        monkeypatch.setattr("cbpupsis_core.emails.sender.settings.resend_api_key", None)
         assert isinstance(get_email_sender(), ConsoleEmailSender)
 
-    def test_ses_backend_when_configured(self, monkeypatch) -> None:
-        monkeypatch.setattr(
-            "cbpupsis_core.emails.sender.settings.ses_from_email",
-            "no-reply@example.com",
-        )
-        monkeypatch.setattr(
-            "cbpupsis_core.emails.sender.settings.aws_region", "us-east-1"
-        )
-
-        constructed: dict[str, object] = {}
-
-        class FakeBoto3:
-            @staticmethod
-            def client(service: str, region_name: str):
-                constructed["service"] = service
-                constructed["region"] = region_name
-                return object()
-
-        monkeypatch.setitem(__import__("sys").modules, "boto3", FakeBoto3)
-
-        sender = get_email_sender()
-        assert isinstance(sender, SESEmailSender)
-        assert constructed == {"service": "ses", "region": "us-east-1"}
+    def test_resend_backend_when_configured(self, monkeypatch) -> None:
+        _resend_configured(monkeypatch)
+        monkeypatch.setattr("cbpupsis_core.emails.sender.settings.dev_smtp_host", None)
+        assert isinstance(get_email_sender(), ResendEmailSender)
 
     def test_the_sender_is_cached(self, monkeypatch) -> None:
-        """boto3 client construction resolves credentials and loads service
-        models — far too expensive to repeat per message."""
-        monkeypatch.setattr("cbpupsis_core.emails.sender.settings.ses_from_email", None)
+        monkeypatch.setattr("cbpupsis_core.emails.sender.settings.email_from", None)
+        monkeypatch.setattr("cbpupsis_core.emails.sender.settings.resend_api_key", None)
         assert get_email_sender() is get_email_sender()
 
-    def test_both_backends_satisfy_the_protocol(self) -> None:
+    def test_every_backend_satisfies_the_protocol(self) -> None:
         assert isinstance(ConsoleEmailSender(), EmailSender)
         assert isinstance(MailCatcherSender(host="mailpit", port=1025), EmailSender)
-
-    def test_the_mail_catcher_wins_over_ses(self, monkeypatch) -> None:
-        """Development with a catcher must never reach a real inbox."""
-        monkeypatch.setattr(
-            "cbpupsis_core.emails.sender.settings.ses_from_email",
-            "no-reply@example.com",
+        assert isinstance(
+            ResendEmailSender(api_key="re_x", from_email="a@example.com"), EmailSender
         )
+
+    def test_the_mail_catcher_wins_over_resend(self, monkeypatch) -> None:
+        """Development with a catcher must never reach a real inbox."""
+        _resend_configured(monkeypatch)
         monkeypatch.setattr(
             "cbpupsis_core.emails.sender.settings.dev_smtp_host", "mailpit"
         )
         assert isinstance(get_email_sender(), MailCatcherSender)
+
+
+class TestResendSettings:
+    def test_sender_without_a_key_is_refused(self) -> None:
+        """Half a configuration would silently drop every email."""
+        with pytest.raises(ValidationError, match="go together"):
+            Settings(email_from="no-reply@example.com", resend_api_key=None)
+
+    def test_key_without_a_sender_is_refused(self) -> None:
+        with pytest.raises(ValidationError, match="go together"):
+            Settings(email_from=None, resend_api_key="re_test_key")
+
+    def test_blank_values_mean_unset(self) -> None:
+        """EMAIL_FROM= in an env file switches delivery off, it does not half-set it."""
+        settings = Settings(email_from="", resend_api_key="")
+        assert settings.email_enabled is False
 
 
 class TestMailCatcher:
@@ -148,7 +158,7 @@ class TestSendEmailNeverRaises:
 
         class ExplodingSender:
             async def send(self, *, to: str, subject: str, body: str) -> None:
-                raise RuntimeError("SES is down")
+                raise RuntimeError("Resend is down")
 
         monkeypatch.setattr(
             "cbpupsis_core.emails.sender.get_email_sender", lambda: ExplodingSender()
@@ -174,7 +184,7 @@ class TestSendEmailNeverRaises:
 
         class ExplodingSender:
             async def send(self, *, to: str, subject: str, body: str) -> None:
-                raise RuntimeError("SES is down")
+                raise RuntimeError("Resend is down")
 
         monkeypatch.setattr(
             "cbpupsis_core.emails.sender.get_email_sender", lambda: ExplodingSender()
@@ -184,83 +194,76 @@ class TestSendEmailNeverRaises:
         assert "SECRET-TOKEN-VALUE" not in caplog.text
 
 
-class TestSESDoesNotBlockTheEventLoop:
-    async def test_the_blocking_call_runs_off_the_loop(self, monkeypatch) -> None:
-        """boto3 is synchronous. Called directly from an async endpoint it would
-        block every other request in the process for the whole SES round-trip,
-        so it must go through asyncio.to_thread."""
-        loop_thread = asyncio.get_running_loop().run_in_executor
-        assert loop_thread is not None
-
-        import threading
-
-        calling_thread: dict[str, int] = {}
-
-        class FakeClient:
-            def send_email(self, **kwargs):
-                calling_thread["id"] = threading.get_ident()
-
-        class FakeBoto3:
-            @staticmethod
-            def client(service: str, region_name: str):
-                return FakeClient()
-
-        monkeypatch.setitem(__import__("sys").modules, "boto3", FakeBoto3)
-
-        sender = SESEmailSender(from_email="a@example.com", region="us-east-1")
-        await sender.send(to="b@example.com", subject="S", body="B")
-
-        assert calling_thread["id"] != threading.get_ident(), (
-            "SES was called on the event loop thread; it must run via asyncio.to_thread"
+class TestResendDelivery:
+    @staticmethod
+    def _sender(handler) -> ResendEmailSender:
+        return ResendEmailSender(
+            api_key="re_test_key",
+            from_email="CBPUPSIS <no-reply@example.com>",
+            transport=httpx.MockTransport(handler),
         )
 
-    async def test_passes_the_expected_ses_payload(self, monkeypatch) -> None:
+    async def test_posts_the_expected_payload(self) -> None:
         captured: dict[str, object] = {}
 
-        class FakeClient:
-            def send_email(self, **kwargs):
-                captured.update(kwargs)
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["url"] = str(request.url)
+            captured["auth"] = request.headers["Authorization"]
+            captured["json"] = __import__("json").loads(request.content)
+            return httpx.Response(200, json={"id": "email-1"})
 
-        class FakeBoto3:
-            @staticmethod
-            def client(service: str, region_name: str):
-                return FakeClient()
-
-        monkeypatch.setitem(__import__("sys").modules, "boto3", FakeBoto3)
-
-        sender = SESEmailSender(
-            from_email="no-reply@example.com",
-            region="us-east-1",
-            configuration_set="my-config-set",
+        await self._sender(handler).send(
+            to="user@example.com", subject="Subject", body="Body"
         )
-        await sender.send(to="user@example.com", subject="Subject", body="Body")
 
-        assert captured["Source"] == "no-reply@example.com"
-        assert captured["Destination"] == {"ToAddresses": ["user@example.com"]}
-        assert captured["ConfigurationSetName"] == "my-config-set"
-        assert captured["Message"]["Subject"]["Data"] == "Subject"
-        assert captured["Message"]["Body"]["Text"]["Data"] == "Body"
+        assert captured["url"] == "https://api.resend.com/emails"
+        assert captured["auth"] == "Bearer re_test_key"
+        assert captured["json"] == {
+            "from": "CBPUPSIS <no-reply@example.com>",
+            "to": ["user@example.com"],
+            "subject": "Subject",
+            "text": "Body",
+        }
 
-    async def test_configuration_set_is_omitted_when_unset(self, monkeypatch) -> None:
-        """SES rejects an empty ConfigurationSetName, so the key must be absent
-        rather than present-and-None."""
-        captured: dict[str, object] = {}
+    async def test_a_refusal_raises_with_status_and_name_only(self) -> None:
+        """Resend's message can echo the request, which carries the one-time link."""
 
-        class FakeClient:
-            def send_email(self, **kwargs):
-                captured.update(kwargs)
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                422,
+                json={
+                    "statusCode": 422,
+                    "name": "validation_error",
+                    "message": "Invalid body: SECRET-TOKEN-VALUE",
+                },
+            )
 
-        class FakeBoto3:
-            @staticmethod
-            def client(service: str, region_name: str):
-                return FakeClient()
+        with pytest.raises(EmailDeliveryError) as raised:
+            await self._sender(handler).send(to="a@example.com", subject="S", body="B")
+        assert raised.value.status == 422
+        assert raised.value.name == "validation_error"
+        assert "SECRET-TOKEN-VALUE" not in str(raised.value)
 
-        monkeypatch.setitem(__import__("sys").modules, "boto3", FakeBoto3)
+    async def test_a_non_json_error_still_raises(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(502, text="Bad Gateway")
 
-        sender = SESEmailSender(from_email="no-reply@example.com", region="us-east-1")
-        await sender.send(to="user@example.com", subject="S", body="B")
+        with pytest.raises(EmailDeliveryError) as raised:
+            await self._sender(handler).send(to="a@example.com", subject="S", body="B")
+        assert raised.value.status == 502
+        assert raised.value.name is None
 
-        assert "ConfigurationSetName" not in captured
+    async def test_send_email_reports_a_refusal_as_false(self, monkeypatch) -> None:
+        """send_email never raises; the outbox turns False into a retry."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(429, json={"name": "rate_limit_exceeded"})
+
+        monkeypatch.setattr(
+            "cbpupsis_core.emails.sender.get_email_sender",
+            lambda: self._sender(handler),
+        )
+        assert await send_email(to="a@example.com", subject="S", body="B") is False
 
 
 class TestEmailFailureDoesNotBreakTheRequest:
@@ -272,7 +275,7 @@ class TestEmailFailureDoesNotBreakTheRequest:
 
         class ExplodingSender:
             async def send(self, *, to: str, subject: str, body: str) -> None:
-                raise RuntimeError("SES is down")
+                raise RuntimeError("Resend is down")
 
         monkeypatch.setattr(
             "cbpupsis_core.emails.sender.get_email_sender", lambda: ExplodingSender()
@@ -300,7 +303,7 @@ class TestEmailFailureDoesNotBreakTheRequest:
     ) -> None:
         class ExplodingSender:
             async def send(self, *, to: str, subject: str, body: str) -> None:
-                raise RuntimeError("SES is down")
+                raise RuntimeError("Resend is down")
 
         monkeypatch.setattr(
             "cbpupsis_core.emails.sender.get_email_sender", lambda: ExplodingSender()
