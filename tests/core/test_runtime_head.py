@@ -22,3 +22,12 @@ def test_expected_head_is_the_single_migration_head() -> None:
     config.set_main_option("script_location", str(MIGRATIONS))
     heads = ScriptDirectory.from_config(config).get_heads()
     assert heads == [EXPECTED_HEAD]
+
+
+def test_student_holds_runtime_acl_grants_required_crud() -> None:
+    migration = (
+        MIGRATIONS / "versions" / "c189_student_holds_runtime_acl.py"
+    ).read_text(encoding="utf-8")
+    assert (
+        'f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE student_holds TO {quoted}"'
+    ) in migration

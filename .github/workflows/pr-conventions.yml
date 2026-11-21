@@ -1,6 +1,7 @@
 # Checks the conventions a squash merge depends on. The PR title becomes the
-# commit on dev, so it must follow Conventional Commits; the branch name and
-# base branch must match CONTRIBUTING.md. Releases flow dev -> staging -> main,
+# commit on its base branch, so it must follow Conventional Commits; the branch
+# name and base branch must match CONTRIBUTING.md (story -> frNNN -> dev).
+# Releases flow dev -> staging -> main,
 # and a merge into staging or main deploys (deploy.yml).
 #
 # The organization is on the GitHub Free plan with private repositories, so
@@ -51,12 +52,19 @@ jobs:
         env:
           HEAD_REF: ${{ github.head_ref }}
           BASE_REF: ${{ github.base_ref }}
+          # Story branches in this repository start with api-; the client uses web-.
+          SIDE: api
         run: |
           fail() { echo "::error::$1"; exit 1; }
+          fix='(bugfix|style|docs)/[a-z0-9][a-z0-9._-]*'
           case "$BASE_REF" in
+            fr[0-9][0-9][0-9])
+              echo "$HEAD_REF" | grep -Eq "^(${SIDE}-us-[a-z]+-[0-9]{3}|${SIDE}-${BASE_REF}-[a-z0-9][a-z0-9-]*|${fix})$" \
+                || fail "Branch '$HEAD_REF' cannot target $BASE_REF. Use ${SIDE}-us-<module>-<nnn> (a story under this FR), ${SIDE}-${BASE_REF}-<name>, or bugfix/, style/, docs/."
+              ;;
             dev)
-              echo "$HEAD_REF" | grep -Eq '^((feature|bugfix|hotfix)/[a-z0-9][a-z0-9._-]*|dependabot/.+)$' \
-                || fail "Branch '$HEAD_REF' must be feature/<name>, bugfix/<name>, or hotfix/<name> (lowercase, hyphens)."
+              echo "$HEAD_REF" | grep -Eq "^(fr[0-9]{3}|${fix}|hotfix/[a-z0-9][a-z0-9._-]*|dependabot/.+)$" \
+                || fail "Branch '$HEAD_REF' cannot target dev. Story branches target their FR branch (frNNN); only frNNN, bugfix/, style/, docs/, or hotfix/ target dev."
               ;;
             staging)
               echo "$HEAD_REF" | grep -Eq '^(dev|hotfix/[a-z0-9][a-z0-9._-]*)$' \
@@ -67,7 +75,7 @@ jobs:
                 || fail "Only staging (a release tested on staging) or a hotfix/ branch may target main. Retarget this PR to dev."
               ;;
             *)
-              fail "PRs target dev. This one targets '$BASE_REF'."
+              fail "PRs target an FR branch (frNNN) or dev. This one targets '$BASE_REF'."
               ;;
           esac
           echo "ok: $HEAD_REF -> $BASE_REF"

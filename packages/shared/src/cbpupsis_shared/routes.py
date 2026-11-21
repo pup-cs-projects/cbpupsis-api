@@ -12,6 +12,7 @@ from cbpupsis_shared.domains.audit.router import router as audit_router
 from cbpupsis_shared.domains.auth.router import router as auth_router
 from cbpupsis_shared.domains.iam.router import router as iam_router
 from cbpupsis_shared.domains.notifications.router import router as notifications_router
+from cbpupsis_shared.domains.reports.router import router as reports_router
 from cbpupsis_shared.domains.users.router import management_router
 from cbpupsis_shared.domains.users.router import router as users_router
 
@@ -24,6 +25,7 @@ USER_MANAGEMENT = RouterMount(management_router, "/users", "users")
 NOTIFICATIONS = RouterMount(notifications_router, "/notifications", "notifications")
 IAM = RouterMount(iam_router, "/iam", "iam")
 AUDIT = RouterMount(audit_router, "/audit", "audit")
+REPORTS = RouterMount(reports_router, "/admin/reports", "admin-reports")
 
 #: Served by every app: your account recovery and password change, your own
 #: profile, your own notifications. Never anything another role administers.

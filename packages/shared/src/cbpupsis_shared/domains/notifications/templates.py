@@ -17,6 +17,10 @@ from cbpupsis_shared.domains.notifications.channels import RenderedNotification
 #: message rather than raising: a missing template must not stop a security
 #: notice from going out, and an ugly notification beats a silent one.
 MESSAGES_BY_EVENT: dict[str, tuple[str, str]] = {
+    "enrollment.waiver_decided": (
+        "Your waiver request was reviewed",
+        "A decision was recorded on your prerequisite waiver request.",
+    ),
     "item.created": (
         "New item created",
         "An item you own was created successfully.",
@@ -44,6 +48,19 @@ MESSAGES_BY_EVENT: dict[str, tuple[str, str]] = {
         "Your periodic summary",
         "Here is what happened since your last summary.",
     ),
+    "enrollment.confirmed": (
+        "Enrollment submitted",
+        "Your selected course sections have been reserved and are pending "
+        "finalization.",
+    ),
+    "enrollment.overload_decided": (
+        "Overload request decided",
+        "A College Dean has decided your overload request.",
+    ),
+    "enrollment.add_drop_decided": (
+        "Add and drop request decided",
+        "Your add and drop request has been decided.",
+    ),
 }
 
 
@@ -52,6 +69,14 @@ def render(event: Event) -> RenderedNotification:
     title, body = MESSAGES_BY_EVENT.get(
         event.name, ("Notification", f"Something happened: {event.name}")
     )
+    if event.name in {"enrollment.overload_decided", "enrollment.add_drop_decided"}:
+        entity = "overload" if "overload" in event.name else "add and drop"
+        state = str(event.payload.get("state", "DECIDED")).replace("_", " ").title()
+        remarks = event.payload.get("remarks")
+        title = f"{entity.capitalize()} request {state.lower()}"
+        body = f"Your {entity} request was {state.lower()}."
+        if remarks:
+            body += f" Remarks: {remarks}"
     return RenderedNotification(
         notification_type=event.name,
         title=title,

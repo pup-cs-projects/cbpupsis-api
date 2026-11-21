@@ -28,7 +28,11 @@ from cbpupsis_core.exceptions import ConflictError
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.models.iam import Group, Permission, Policy
 from cbpupsis_shared.domains.iam import repository
-from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
+from cbpupsis_shared.domains.iam.constants import (
+    ADMIN_GROUP,
+    ADMIN_POSITION_POLICIES,
+    SUPERADMIN_GROUP,
+)
 from cbpupsis_shared.domains.iam.exceptions import (
     GroupNotFoundError,
     PermissionNotFoundError,
@@ -264,6 +268,25 @@ async def stage_new_members(
                 )
             group_ids[group_name] = group_id
         repository.add_user_group(db, user_id, group_ids[group_name])
+
+
+async def stage_admin_position_policies(
+    db: AsyncSession, assignments: Sequence[tuple[uuid.UUID, str]]
+) -> None:
+    """Stage direct policies that differ between Admin positions."""
+    wanted = {
+        policy_name
+        for _user_id, position in assignments
+        for policy_name in ADMIN_POSITION_POLICIES.get(position, ())
+    }
+    policy_ids = await repository.policy_ids_by_names(db, wanted)
+    for user_id, position in assignments:
+        for policy_name in ADMIN_POSITION_POLICIES.get(position, ()):
+            policy_id = policy_ids.get(policy_name)
+            if policy_id is not None and not await repository.exists_user_policy(
+                db, user_id, policy_id
+            ):
+                repository.add_user_policy(db, user_id, policy_id)
 
 
 async def remove_user_from_group(
