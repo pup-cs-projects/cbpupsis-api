@@ -18,7 +18,7 @@ from cbpupsis_shared.domains.auth.constants import (
     ONE_TIME_TOKEN_MAX_LENGTH,
     PASSWORD_MAX_LENGTH,
     PASSWORD_MIN_LENGTH,
-    RESET_PASSWORD_MIN_LENGTH,
+    PASSWORD_REQUIRED_RULES,
 )
 
 
@@ -112,7 +112,10 @@ class ForgotPasswordRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    email: Any = Field(json_schema_extra={"type": "string", "format": "email"})
+    identifier: Any = Field(
+        json_schema_extra={"type": "string"},
+        description="Email address, student number, or employee ID.",
+    )
 
 
 class ForgotPasswordResponse(BaseModel):
@@ -151,9 +154,7 @@ class ChangePasswordRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     current_password: str = Field(max_length=PASSWORD_MAX_LENGTH)
-    new_password: str = Field(
-        min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH
-    )
+    new_password: str = Field(max_length=PASSWORD_MAX_LENGTH)
 
 
 class VerifyResetTokenRequest(BaseModel):
@@ -165,11 +166,16 @@ class VerifyResetTokenRequest(BaseModel):
     verify_only: Literal[True]
 
 
-class ResetTokenVerificationResponse(BaseModel):
+class PasswordPolicyResponse(BaseModel):
+    """Password complexity requirements enforced by reset and password change."""
+
+    minimumLength: int = PASSWORD_MIN_LENGTH
+    requiredRules: list[str] = Field(
+        default_factory=lambda: list(PASSWORD_REQUIRED_RULES)
+    )
+
+
+class ResetTokenVerificationResponse(PasswordPolicyResponse):
     """Policy information for a valid reset link; does not consume the token."""
 
     valid: bool = True
-    minimumLength: int = RESET_PASSWORD_MIN_LENGTH
-    requiredRules: list[str] = Field(
-        default_factory=lambda: ["uppercase", "lowercase", "digit", "symbol"]
-    )

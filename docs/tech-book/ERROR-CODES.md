@@ -10,8 +10,24 @@ Add the row in the same commit as the code that raises it.
 
 | | |
 |---|---|
-| **Last updated** | 2026-11-06 |
-| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications`, `curriculum`, `sections`, and `enrollment` in `packages/shared`; `items` and `student_profile` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The `student_auth` and `faculty_auth` domains raise the shared `auth` classes and add none of their own. |
+| **Last updated** | 2026-11-18 |
+| **Source** | `cbpupsis_core/exceptions.py`, `cbpupsis_core/middleware/rate_limit.py` (in `packages/core`), and each domain's `exceptions.py`: `auth`, `users`, `iam`, `notifications`, `curriculum`, `sections`, `grading`, and `enrollment` in `packages/shared`; `items` and `student_profile` in `apps/api-student`; `admin_auth`, `superadmin_ops`, and `user_import` in `apps/api-admin`. The `student_auth` and `faculty_auth` domains raise the shared `auth` classes and add none of their own. |
+
+## Correction of Entry (US-FAC-002)
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 403 | `CORRECTION_WINDOW_CLOSED` | Filing after the configured actual regular-semester deadline; `windowClosedAt` is returned. |
+| 403 | `APPROVAL_SAME_ACTOR` | The filer or a previous actor attempted another step. |
+| 409 | `APPROVAL_OUT_OF_ORDER` | Wrong position/action for the current pending step, or a terminal request. |
+| 409 | `VERSION_CONFLICT` | Stale correction version or changed source grade; no mutation applied. |
+| 422 | `DECISION_REMARKS_REQUIRED` | Rejection requires nonblank remarks. |
+| 413 | `FILE_TOO_LARGE` | Grading sheet exceeds 10 MiB. |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | Actual document content is not a valid PDF, JPEG, or PNG. |
+| 503 | `GRADE_RECORD_UNAVAILABLE` | Required calendar/source record is unavailable; no fixed-day window is substituted. |
+
+Existing session/MFA, permission, opaque 404, and validation contracts also apply.
+See [GRADE-CORRECTIONS.md](GRADE-CORRECTIONS.md).
 
 ## Certificate of Registration (US-ENRL-003)
 
@@ -80,6 +96,23 @@ the standard 403 missing-permission response.
 | 422 | `DECISION_REMARKS_REQUIRED` | A Chairperson or Dean rejected an add/drop request without non-blank remarks. |
 | 404 | `RESOURCE_NOT_FOUND` | Student attempting to read another student's request, or admin reviewing a request outside their department/college scope (anti-probing). |
 | 403 | — | Registrar attempting to mutate/decide an add/drop request lacks the required permission (`require_permission(APPROVE_ADD_DROP)`). |
+
+## Faculty grade submission (US-FAC-001, US-FAC-003)
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 409 | `GRADES_LOCKED` | The section's grades have already been finalized and locked. Any later draft save or finalize is refused. |
+| 409 | `GRADE_MODE_LOCKED` | Changing a section's or course's grading mode while it has marks for the term is refused. |
+| 409 | `VERSION_CONFLICT` | The supplied draft or finalize `version` does not match the current section version (`currentVersion` is returned). Nothing is saved. |
+| 403 | `GRADE_DEADLINE_PASSED` | Final submission was attempted after the term's grade submission deadline (`deadline` is returned). Contact a Department Chair or the Registrar's Office for an administrative override. |
+| 422 | `GRADE_MODE_MISMATCH` | A submitted mark does not fit the section's grading mode (for example, a number or `INC` on a `PASS_FAIL` section, or `PASS`/`FAIL` on a `NUMERIC` section). Returns `gradingMode` and `allowedMarks`. Nothing is saved. |
+| 422 | `VALIDATION_ERROR` | One or more marks are outside the valid grading scale (1.00 to 5.00 in 0.25 steps excluding invalid increments, or `INC`), missing on finalize, or target a non-enrolled row; or on Incomplete completion filing when the proposed mark is outside 1.00 to 3.00 or the completion form file id is missing. |
+| 409 | `INC_COMPLETION_WINDOW_CLOSED` | Filing or deciding a completion for an Incomplete grade that has already expired to `5.00` or passed its 365-day completion window. The mark remains `5.00`. |
+| 409 | `INC_COMPLETION_PENDING` | A completion request for this Incomplete grade is already pending College Dean review. |
+| 409 | `INC_ALREADY_COMPLETED` | This Incomplete grade has already been completed and endorsed. |
+| 409 | `REQUEST_ALREADY_DECIDED` | An Incomplete completion request has already been endorsed or rejected. |
+| 422 | `DECISION_REMARKS_REQUIRED` | A College Dean rejected an Incomplete completion without non-blank remarks. |
+| 404 | `RESOURCE_NOT_FOUND` | The section or Incomplete record does not exist or is outside the signed-in faculty member's sections or the College Dean's own college (byte-identical apart from `request_id`). |
 
 ## Student account and payments (US-FIN-001)
 
@@ -209,11 +242,13 @@ Every table has the same columns. A blank **Code** means the error carries no
 | 404 | `RESOURCE_NOT_FOUND` | Resource not found. | The record is absent or outside the caller's reach: an Admin position's scope, or a course section not assigned to the faculty member. Identical for both cases. | `auth/exceptions.py` |
 | 503 | `SERVICE_UNAVAILABLE` | The schedule is temporarily unavailable. Please retry shortly. | Student schedule/export data is invalid or exceeds its generation bounds, or document generation/database access fails or exceeds the ten-second export deadline. No partial attachment; `Retry-After: 30` and private/no-store. | `schedule/exceptions.py` in `apps/api-student` |
 | 400 | `INVALID_EMAIL_ADDRESS` | Enter a valid email address. | A reset request contains a malformed email. | `auth/service/passwords.py` |
+| 400 | `AUTH_CURRENT_PASSWORD_INCORRECT` | Current password is incorrect | The current password supplied to `POST /auth/change-password` did not match. Uses 400 rather than 401 so clients do not mistake it for an expired session. | `auth/service/passwords.py` |
+| 401 | `AUTH_RESET_TOKEN_INVALID` | Invalid or expired token | An unknown or inactive-user password reset token (or invalid email verification token) was submitted. | `auth/service/passwords.py`, `auth/service/verification.py` |
 | 410 | `AUTH_RESET_TOKEN_EXPIRED` | The password reset link has expired; request a new one | A reset token older than its TTL was submitted. | `auth/service/passwords.py` |
 | 410 | `AUTH_RESET_TOKEN_USED` | The password reset link has already been used; request a new one | An already-redeemed reset token was submitted. | `auth/service/passwords.py` |
 | 422 | `AUTH_ID_FORMAT_INVALID` | Invalid Student ID format. | A student number fails `YYYY-NNNNN-XX-N`. Rejected before any lookup or password hash. | `auth/exceptions.py` (raised by `student_auth/service.py`) |
 | 422 | `AUTH_ID_FORMAT_INVALID` | Invalid employee ID format. Expected format: YYYY-NNNNN-XX-N | An employee id fails the same format. Rejected before any lookup or password hash. | `auth/exceptions.py` (raised by `faculty_auth/service.py`) |
-| 422 | `AUTH_PASSWORD_TOO_WEAK` | Password does not meet complexity requirements: ... | A new password failed complexity requirements, or a password change tried to keep the temporary password (`unmet_rules: ["different from the temporary password"]`). Extra field `unmet_rules`. | `auth/service/passwords.py` |
+| 422 | `AUTH_PASSWORD_TOO_WEAK` | Password does not meet complexity requirements: ... | A new password on `POST /auth/reset-password` or `POST /auth/change-password` failed complexity requirements, or a password change tried to keep the temporary password (`unmet_rules: ["different from the temporary password"]`). Extra field `unmet_rules`. | `auth/service/passwords.py` |
 | 423 | `AUTH_ACCOUNT_LOCKED` | Account temporarily locked after repeated sign-in failures | **The 5th failed password or MFA step in 15 minutes answers 423 itself, for every role**, and every further step answers 423 until the lock ends (15 minutes). Correct credentials are refused during the lock, and refused attempts do not extend it. An identifier that matches no account locks the same way. Extra field `retry_after_seconds`; `Retry-After` header. A security notice is sent to the account through the outbox. | `auth/service/lockout.py` |
 | 429 | `rate_limited` | Too many requests. Please try again in N seconds. | A rate limit was exceeded on a sign-in or `/resend-verification`. `Retry-After` header. | `core/exceptions.py` |
 | 429 | `RATE_LIMIT_EXCEEDED` | Too many requests. Try again later or use a link already sent to you. | A reset request exceeded the IP or shared address allowance. `Retry-After` header. | `auth/service/passwords.py`, `core/exceptions.py` |
@@ -395,7 +430,7 @@ them must move to the rows above.
 | --- | --- | --- |
 | 400 | `GOOGLE_CALENDAR_INVALID_STATE` | Start authorization again; state expired, was replayed, or belongs to another student/session. |
 | 409 | `GOOGLE_CALENDAR_CONFLICT` | Inspect connection status; connect first, wait for active sync/revocation, or respect the ten-term limit. |
-| 503 | `GOOGLE_CALENDAR_UNAVAILABLE` | Integration is disabled/misconfigured or Google authorization failed; retry after 30 seconds, or contact the operator. No provider payload or credential is returned. |
+| 503 | `GOOGLE_CALENDAR_UNAVAILABLE` | Integration is disabled/misconfigured, Google authorization/identity verification failed, or callback exceeded 25 seconds. Retry-After: 30; a failed callback requires fresh authorization, not replay of the consumed state/code. No provider payload or credential is returned. |
 
 Google endpoints redact validation inputs. Background `last_error` is a sanitized
 status, not a new HTTP error envelope: see [the integration guide](GOOGLE-CALENDAR.md).

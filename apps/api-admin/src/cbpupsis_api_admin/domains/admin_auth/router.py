@@ -151,15 +151,25 @@ def _set_admin_cookies(response: Response, pair: AdminTokenPair) -> None:
     set_refresh_cookie(response, pair.refresh_token, role=ROLE_ADMIN)
 
 
-@router.post("/login", response_model=AdminLoginChallenge)
+@router.post("/login", response_model=AdminLoginChallenge | AdminTokenPair)
 @rate_limit("login")
 async def login_admin(
     request: Request,
+    response: Response,
     data: AdminLoginRequest,
     db: AsyncSession = Depends(get_db),
-) -> AdminLoginChallenge:
-    """Verify credentials and issue no session until MFA completes."""
-    return await service.login_admin(db, email=data.email, password=data.password)
+) -> AdminLoginChallenge | AdminTokenPair:
+    """Require MFA, except with the explicit development-only skip setting."""
+    result = await service.login_admin(
+        db,
+        email=data.email,
+        password=data.password,
+        ip_address=client_ip_or_none(request),
+        device_info=_device(request),
+    )
+    if isinstance(result, AdminTokenPair):
+        _set_admin_cookies(response, result)
+    return result
 
 
 @router.post("/mfa/verify", response_model=AdminTokenPair)

@@ -19,17 +19,15 @@ success envelope. Errors retain the existing application envelope.
 
 | Method | Path | Parameters / result |
 |---|---|---|
-| GET | `/students/me/grades` | Optional paired `year` and `semester`; one term |
-| GET | `/students/me/transcript` | `page=1`, `limit=20` (1 through 100); term blocks |
-| GET | `/students/me/transcript/export` | Complete in-memory PDF, unaffected by JSON pagination |
-| GET | `/students/{student_number}/grades` | Identified self-read only; foreign/missing identifiers both return 404 |
+| GET | `/student/grades` | Optional paired `year` and `semester`; one term |
+| GET | `/student/transcript` | `page=1`, `limit=20` (1 through 100); term blocks |
+| GET | `/student/transcript/export` | Complete in-memory PDF, unaffected by JSON pagination |
 
-Use `/students/me/...` for frontend self-service. `me` resolves to the live
-authenticated student, not a client-supplied identifier. These parent-story
-paths are the single public contract; the earlier, unpublished `/student/...`
-paths are not retained as aliases or redirects. The identified grades path is
-kept only for the parent acceptance contract and does not grant staff access or
-allow another student's records to be read.
+These singular paths are the only public contract (#147). The student resolves
+from the live authenticated session, not a client-supplied identifier. The former
+plural paths and student-number endpoint are removed and return 404, with no
+aliases or redirects. Permissions and response behavior are unchanged.
+Coordinate release with [client #63](https://github.com/pup-cs-projects/cbpupsis-client/issues/63).
 
 An omitted term selector means the most recent term with published final marks,
 ordered by term start date, end date, then UUID descending. It does not mean the
