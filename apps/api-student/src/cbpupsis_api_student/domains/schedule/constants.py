@@ -1,0 +1,8 @@
+"""Schedule authorization and resource bounds."""
+
+READ_SCHEDULE = "ReadSchedule"
+EXPORT_TIMEOUT_SECONDS = 10
+MAX_COURSES = 100
+MAX_MEETINGS = 1000
+MAX_TERM_DAYS = 731
+MAX_EVENT_HISTORY = 10000

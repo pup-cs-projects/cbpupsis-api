@@ -1,6 +1,7 @@
 # Checks the conventions a squash merge depends on. The PR title becomes the
 # commit on dev, so it must follow Conventional Commits; the branch name and
-# base branch must match CONTRIBUTING.md.
+# base branch must match CONTRIBUTING.md. Releases flow dev -> staging -> main,
+# and a merge into staging or main deploys (deploy.yml).
 #
 # The organization is on the GitHub Free plan with private repositories, so
 # branch protection cannot mark these checks as required. They still turn the
@@ -57,9 +58,13 @@ jobs:
               echo "$HEAD_REF" | grep -Eq '^((feature|bugfix|hotfix)/[a-z0-9][a-z0-9._-]*|dependabot/.+)$' \
                 || fail "Branch '$HEAD_REF' must be feature/<name>, bugfix/<name>, or hotfix/<name> (lowercase, hyphens)."
               ;;
-            main)
+            staging)
               echo "$HEAD_REF" | grep -Eq '^(dev|hotfix/[a-z0-9][a-z0-9._-]*)$' \
-                || fail "Only dev (a release) or a hotfix/ branch may target main. Retarget this PR to dev."
+                || fail "Only dev (a release candidate) or a hotfix/ branch may target staging. Retarget this PR to dev."
+              ;;
+            main)
+              echo "$HEAD_REF" | grep -Eq '^(staging|hotfix/[a-z0-9][a-z0-9._-]*)$' \
+                || fail "Only staging (a release tested on staging) or a hotfix/ branch may target main. Retarget this PR to dev."
               ;;
             *)
               fail "PRs target dev. This one targets '$BASE_REF'."

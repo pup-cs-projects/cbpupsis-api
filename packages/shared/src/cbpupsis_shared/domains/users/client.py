@@ -21,31 +21,70 @@ from cbpupsis_shared.domains.users import service
 from cbpupsis_shared.domains.users.schemas import (
     AccountCreate,
     AdminProfileRead,
+    AvatarRead,
+    EmergencyContactRead,
     FacultyProfileRead,
+    ScheduleIdentity,
+    StudentProfileRead,
+    UserProfileRead,
     UserRead,
 )
-from cbpupsis_shared.domains.users.service import AccountProblem, SignInSubject
+from cbpupsis_shared.domains.users.service import (
+    AccountProblem,
+    SignInSubject,
+    record_identity,
+)
 
 __all__ = [
     "AccountProblem",
+    "AvatarRead",
+    "EmergencyContactRead",
     "SignInSubject",
+    "StudentProfileRead",
+    "UserProfileRead",
     "admin_scope",
     "find_account_problems",
     "get_active_user",
     "get_admin_profile",
+    "get_avatar",
     "get_email_sign_in",
+    "get_emergency_contact",
     "get_faculty_profile",
     "get_faculty_sign_in",
     "get_session_version",
+    "get_student_by_number",
+    "get_student_profile",
     "get_student_sign_in",
     "get_user",
+    "get_user_profile",
     "invalidate_role_sessions",
+    "list_emergency_contacts",
     "lock_active_user",
     "lock_role_subject",
+    "record_identity",
     "save_admin_profile",
+    "schedule_identity",
+    "schedule_names",
     "stage_admin_deactivation_override",
+    "stage_create_emergency_contact",
+    "stage_delete_emergency_contact",
+    "stage_replace_avatar",
+    "stage_update_emergency_contact",
+    "stage_update_user_profile",
     "user_exists",
 ]
+
+
+async def schedule_identity(
+    db: AsyncSession, user_id: uuid.UUID
+) -> ScheduleIdentity | None:
+    return await service.schedule_identity(db, user_id)
+
+
+async def schedule_names(
+    db: AsyncSession, ids: list[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    return await service.schedule_names(db, ids)
 
 
 async def get_user(db: AsyncSession, user_id: uuid.UUID) -> UserRead:
@@ -112,6 +151,83 @@ async def get_faculty_profile(
     return await service.get_faculty_profile(db, user_id)
 
 
+async def get_user_profile(
+    db: AsyncSession, user_id: uuid.UUID
+) -> UserProfileRead | None:
+    return await service.get_user_profile(db, user_id)
+
+
+async def get_student_profile(
+    db: AsyncSession, user_id: uuid.UUID
+) -> StudentProfileRead | None:
+    return await service.get_student_profile(db, user_id)
+
+
+async def stage_update_user_profile(
+    db: AsyncSession, user_id: uuid.UUID, **fields: object
+) -> UserProfileRead:
+    return await service.stage_update_user_profile(db, user_id, **fields)
+
+
+async def stage_replace_avatar(
+    db: AsyncSession, user_id: uuid.UUID, *, content: bytes, content_type: str
+) -> AvatarRead:
+    return await service.stage_replace_avatar(
+        db, user_id, content=content, content_type=content_type
+    )
+
+
+async def get_avatar(db: AsyncSession, avatar_id: uuid.UUID) -> AvatarRead | None:
+    return await service.get_avatar(db, avatar_id)
+
+
+async def list_emergency_contacts(
+    db: AsyncSession, user_id: uuid.UUID
+) -> list[EmergencyContactRead]:
+    return await service.list_emergency_contacts(db, user_id)
+
+
+async def get_emergency_contact(
+    db: AsyncSession, contact_id: uuid.UUID
+) -> EmergencyContactRead | None:
+    return await service.get_emergency_contact(db, contact_id)
+
+
+async def stage_create_emergency_contact(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    contact_name: str,
+    relationship: str,
+    phone_number: str,
+    email: str | None = None,
+    address: str | None = None,
+    is_primary: bool = False,
+) -> EmergencyContactRead:
+    return await service.stage_create_emergency_contact(
+        db,
+        user_id=user_id,
+        contact_name=contact_name,
+        relationship=relationship,
+        phone_number=phone_number,
+        email=email,
+        address=address,
+        is_primary=is_primary,
+    )
+
+
+async def stage_update_emergency_contact(
+    db: AsyncSession, contact_id: uuid.UUID, **fields: object
+) -> EmergencyContactRead | None:
+    return await service.stage_update_emergency_contact(db, contact_id, **fields)
+
+
+async def stage_delete_emergency_contact(
+    db: AsyncSession, contact_id: uuid.UUID
+) -> EmergencyContactRead | None:
+    return await service.stage_delete_emergency_contact(db, contact_id)
+
+
 async def get_admin_profile(
     db: AsyncSession, user_id: uuid.UUID
 ) -> AdminProfileRead | None:
@@ -159,3 +275,10 @@ async def find_account_problems(
     """Check new accounts against each other and existing accounts."""
     problems, _program_ids = await service.find_account_problems(db, accounts)
     return problems
+
+
+async def get_student_by_number(
+    db: AsyncSession, student_number: str
+) -> StudentProfileRead | None:
+    """Return a student profile by student number, or None."""
+    return await service.get_student_by_number(db, student_number)

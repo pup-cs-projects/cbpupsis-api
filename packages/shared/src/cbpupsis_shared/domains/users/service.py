@@ -56,9 +56,45 @@ from cbpupsis_shared.domains.users.exceptions import (
 from cbpupsis_shared.domains.users.schemas import (
     AccountCreate,
     AdminProfileRead,
+    AvatarRead,
+    EmergencyContactRead,
     FacultyProfileRead,
+    RecordIdentity,
+    ScheduleIdentity,
+    StudentProfileRead,
+    UserProfileRead,
 )
 from cbpupsis_shared.outbox import publish_transactional
+
+
+async def record_identity(db: AsyncSession, student_id: uuid.UUID):
+    row = await repository.get_record_identity(db, student_id)
+    if row is None:
+        return None
+    name = row.full_name or " ".join(filter(None, [row.first_name, row.last_name]))
+    return RecordIdentity(student_number=row.student_number, full_name=name)
+
+
+async def schedule_identity(
+    db: AsyncSession, user_id: uuid.UUID
+) -> ScheduleIdentity | None:
+    row = await repository.schedule_identity(db, user_id)
+    if row is None:
+        return None
+    number, full_name, first, last = row
+    return ScheduleIdentity(
+        student_number=number,
+        full_name=full_name or " ".join(part for part in (first, last) if part),
+    )
+
+
+async def schedule_names(
+    db: AsyncSession, ids: list[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    return {
+        user_id: full or " ".join(part for part in (first, last) if part)
+        for user_id, full, first, last in await repository.schedule_names(db, ids)
+    }
 
 
 async def get_by_id(db: AsyncSession, user_id: uuid.UUID) -> User:
@@ -625,6 +661,152 @@ async def get_faculty_profile(
     return None if profile is None else FacultyProfileRead.model_validate(profile)
 
 
+async def get_user_profile(
+    db: AsyncSession, user_id: uuid.UUID
+) -> UserProfileRead | None:
+    """Return a user's personal-details profile, or ``None``."""
+    profile = await repository.get_user_profile(db, user_id)
+    return None if profile is None else UserProfileRead.model_validate(profile)
+
+
+async def get_student_profile(
+    db: AsyncSession, user_id: uuid.UUID
+) -> StudentProfileRead | None:
+    """Return a user's student profile, or ``None``."""
+    profile = await repository.get_student_profile(db, user_id)
+    return None if profile is None else StudentProfileRead.model_validate(profile)
+
+
+async def stage_update_user_profile(
+    db: AsyncSession, user_id: uuid.UUID, **fields: object
+) -> UserProfileRead:
+    """Stage changes onto ``user_id``'s personal-details profile without committing."""
+    profile = await repository.get_user_profile(db, user_id)
+    if profile is None:
+        user = await get_by_id(db, user_id)
+        parts = (user.full_name or "Student Account").split(" ", 1)
+        profile = repository.add_user_profile(
+            db,
+            user_id=user_id,
+            first_name=parts[0],
+            last_name=parts[1] if len(parts) > 1 else "",
+            birthdate=None,
+        )
+    repository.update_user_profile(profile, updated_at=datetime.now(UTC), **fields)
+    await db.flush()
+    return UserProfileRead.model_validate(profile)
+
+
+async def stage_replace_avatar(
+    db: AsyncSession, user_id: uuid.UUID, *, content: bytes, content_type: str
+) -> AvatarRead:
+    """Stage ``user_id``'s profile picture, replacing any earlier one."""
+    avatar = await repository.replace_avatar(
+        db, user_id=user_id, content=content, content_type=content_type
+    )
+    await db.flush()
+    return AvatarRead.model_validate(avatar)
+
+
+async def get_avatar(db: AsyncSession, avatar_id: uuid.UUID) -> AvatarRead | None:
+    """Return one stored profile picture as a DTO, or ``None``."""
+    row = await repository.get_avatar(db, avatar_id)
+    return None if row is None else AvatarRead.model_validate(row)
+
+
+async def list_emergency_contacts(
+    db: AsyncSession, user_id: uuid.UUID
+) -> list[EmergencyContactRead]:
+    """Return ``user_id``'s emergency contacts, primary first."""
+    rows = await repository.list_emergency_contacts(db, user_id)
+    return [EmergencyContactRead.model_validate(row) for row in rows]
+
+
+async def get_emergency_contact(
+    db: AsyncSession, contact_id: uuid.UUID
+) -> EmergencyContactRead | None:
+    """Return one emergency contact as a DTO, or ``None``."""
+    row = await repository.get_emergency_contact(db, contact_id)
+    return None if row is None else EmergencyContactRead.model_validate(row)
+
+
+async def stage_create_emergency_contact(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    contact_name: str,
+    relationship: str,
+    phone_number: str,
+    email: str | None = None,
+    address: str | None = None,
+    is_primary: bool = False,
+) -> EmergencyContactRead:
+    """Stage a new emergency contact while maintaining exactly one primary."""
+    existing = await repository.list_emergency_contacts(db, user_id)
+    has_primary = any(c.is_primary for c in existing)
+    make_primary = is_primary or not existing or not has_primary
+    if make_primary:
+        for other in existing:
+            if other.is_primary:
+                repository.update_emergency_contact(other, is_primary=False)
+    contact = repository.add_emergency_contact(
+        db,
+        user_id=user_id,
+        contact_name=contact_name,
+        relationship=relationship,
+        phone_number=phone_number,
+        email=email,
+        address=address,
+        is_primary=make_primary,
+    )
+    await db.flush()
+    return EmergencyContactRead.model_validate(contact)
+
+
+async def stage_update_emergency_contact(
+    db: AsyncSession, contact_id: uuid.UUID, **fields: object
+) -> EmergencyContactRead | None:
+    """Stage changes onto an emergency contact while maintaining one primary."""
+    contact = await repository.get_emergency_contact(db, contact_id)
+    if contact is None:
+        return None
+    existing = await repository.list_emergency_contacts(db, contact.user_id)
+    others = [c for c in existing if c.id != contact.id]
+    if "is_primary" in fields:
+        if fields["is_primary"]:
+            for other in others:
+                if other.is_primary:
+                    repository.update_emergency_contact(other, is_primary=False)
+        elif contact.is_primary:
+            if others:
+                repository.update_emergency_contact(others[0], is_primary=True)
+            else:
+                fields["is_primary"] = True
+    repository.update_emergency_contact(contact, **fields)
+    await db.flush()
+    return EmergencyContactRead.model_validate(contact)
+
+
+async def stage_delete_emergency_contact(
+    db: AsyncSession, contact_id: uuid.UUID
+) -> EmergencyContactRead | None:
+    """Stage deletion of an emergency contact, promoting a remaining one if needed."""
+    contact = await repository.get_emergency_contact(db, contact_id)
+    if contact is None:
+        return None
+    snapshot = EmergencyContactRead.model_validate(contact)
+    user_id = contact.user_id
+    was_primary = contact.is_primary
+    await repository.delete_emergency_contact(db, contact)
+    await db.flush()
+    if was_primary:
+        remaining = await repository.list_emergency_contacts(db, user_id)
+        if remaining and not any(c.is_primary for c in remaining):
+            repository.update_emergency_contact(remaining[0], is_primary=True)
+            await db.flush()
+    return snapshot
+
+
 async def has_role_sign_in(db: AsyncSession, user_id: uuid.UUID) -> bool:
     """Return whether the account signs in through a student or faculty route."""
     return await repository.exists_role_profile(db, user_id)
@@ -905,3 +1087,13 @@ def _stage_profiles(db: AsyncSession, user_id: uuid.UUID, item: NewAccount) -> N
             department=department,
             college=college,
         )
+
+
+async def get_student_by_number(
+    db: AsyncSession, student_number: str
+) -> StudentProfileRead | None:
+    """Return a student profile by institutional number as a DTO, or None."""
+    profile = await repository.get_student_by_student_number(db, student_number)
+    if profile is None:
+        return None
+    return StudentProfileRead.model_validate(profile)

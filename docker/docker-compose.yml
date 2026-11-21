@@ -68,6 +68,17 @@ services:
       - "8001:8001"
     depends_on: *app-depends
 
+  google-calendar-worker:
+    <<: *workspace
+    profiles: [google-calendar]
+    env_file: ../env/student/env.${ENV_FILE:-dev}
+    build:
+      context: ..
+      dockerfile: docker/student/Dockerfile.dev
+    depends_on: *app-depends
+    command: python -m cbpupsis_api_student.calendar_worker
+    restart: unless-stopped
+
   api-faculty:
     <<: *workspace
     env_file: ../env/faculty/env.${ENV_FILE:-dev}

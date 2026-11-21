@@ -10,26 +10,96 @@ Only this domain reads or writes this table; other domains go through
 
 from __future__ import annotations
 
+import base64
 import enum
+import hashlib
+import secrets
 import uuid
 from datetime import date, datetime
+from typing import Any
 
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy import (
     Boolean,
-    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     SmallInteger,
     String,
     Text,
+    TypeDecorator,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from cbpupsis_core.config import settings
 from cbpupsis_database.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
+
+_PII_PREFIX = "enc:v1:"
+_PII_AAD = b"cbpupsis-pii-v1"
+
+
+def _pii_key() -> bytes:
+    """Return a 256-bit (32-byte) AES key derived from the application secret."""
+    secret = settings.jwt_secret.get_secret_value()
+    return hashlib.sha256(f"cbpupsis:pii-at-rest:v1:{secret}".encode()).digest()
+
+
+def encrypt_pii(plaintext: str) -> str:
+    """Encrypt ``plaintext`` with AES-256-GCM and return a tagged envelope."""
+    nonce = secrets.token_bytes(12)
+    ciphertext = AESGCM(_pii_key()).encrypt(nonce, plaintext.encode("utf-8"), _PII_AAD)
+    encoded = base64.urlsafe_b64encode(nonce + ciphertext).decode("ascii")
+    return f"{_PII_PREFIX}{encoded}"
+
+
+def decrypt_pii(envelope: str) -> str:
+    """Decrypt an AES-256-GCM envelope; pass legacy plaintext through."""
+    if not envelope.startswith(_PII_PREFIX):
+        return envelope
+    raw = base64.urlsafe_b64decode(envelope[len(_PII_PREFIX) :])
+    return AESGCM(_pii_key()).decrypt(raw[:12], raw[12:], _PII_AAD).decode("utf-8")
+
+
+class EncryptedString(TypeDecorator[str]):
+    """Transparent AES-256-GCM encryption at rest for string contact fields."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value: str | None, dialect: Any) -> str | None:
+        if value is None:
+            return None
+        return encrypt_pii(value)
+
+    def process_result_value(self, value: str | None, dialect: Any) -> str | None:
+        if value is None:
+            return None
+        return decrypt_pii(value)
+
+
+class EncryptedDate(TypeDecorator[date]):
+    """Transparent AES-256-GCM encryption at rest for ``birthdate``."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value: date | str | None, dialect: Any) -> str | None:
+        if value is None:
+            return None
+        iso = value.isoformat() if isinstance(value, date) else str(value)
+        return encrypt_pii(iso)
+
+    def process_result_value(
+        self, value: date | str | None, dialect: Any
+    ) -> date | None:
+        if value is None or isinstance(value, date):
+            return value
+        return date.fromisoformat(decrypt_pii(value))
+
 
 EMAIL_MAX_LENGTH = 320
 FULL_NAME_MAX_LENGTH = 255
@@ -159,15 +229,15 @@ class UserProfile(Base):
         String(PROFILE_NAME_MAX_LENGTH), default=None
     )
     last_name: Mapped[str] = mapped_column(String(PROFILE_NAME_MAX_LENGTH))
-    birthdate: Mapped[date | None] = mapped_column(Date, default=None)
+    birthdate: Mapped[date | None] = mapped_column(EncryptedDate, default=None)
     gender: Mapped[str | None] = mapped_column(String(20), default=None)
     civil_status: Mapped[str | None] = mapped_column(String(30), default=None)
-    personal_email: Mapped[str | None] = mapped_column(String(255), default=None)
+    personal_email: Mapped[str | None] = mapped_column(EncryptedString, default=None)
     institutional_email: Mapped[str | None] = mapped_column(String(255), default=None)
-    phone_number: Mapped[str | None] = mapped_column(String(25), default=None)
+    phone_number: Mapped[str | None] = mapped_column(EncryptedString, default=None)
     avatar_url: Mapped[str | None] = mapped_column(Text, default=None)
-    home_address: Mapped[str | None] = mapped_column(Text, default=None)
-    current_address: Mapped[str | None] = mapped_column(Text, default=None)
+    home_address: Mapped[str | None] = mapped_column(EncryptedString, default=None)
+    current_address: Mapped[str | None] = mapped_column(EncryptedString, default=None)
     profile_completed: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
@@ -289,11 +359,28 @@ class EmergencyContact(UUIDMixin, Base):
     )
     contact_name: Mapped[str] = mapped_column(String(150))
     relationship: Mapped[str] = mapped_column(String(50))
-    phone_number: Mapped[str] = mapped_column(String(25))
-    email: Mapped[str | None] = mapped_column(String(255), default=None)
-    address: Mapped[str | None] = mapped_column(Text, default=None)
+    phone_number: Mapped[str] = mapped_column(EncryptedString)
+    email: Mapped[str | None] = mapped_column(EncryptedString, default=None)
+    address: Mapped[str | None] = mapped_column(EncryptedString, default=None)
     is_primary: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
 
     __table_args__ = (Index("idx_fk_emergency_contacts_user_id", "user_id"),)
+
+
+class UserAvatar(UUIDMixin, TimestampMixin, Base):
+    """A user's current profile picture, stored after content inspection.
+
+    Kept in the database rather than in process memory or on local disk: the
+    apps run as several short-lived instances, so bytes held by one instance
+    are gone for the next request. One row per user; an upload replaces it.
+    """
+
+    __tablename__ = "user_avatars"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True
+    )
+    content_type: Mapped[str] = mapped_column(String(32))
+    content: Mapped[bytes] = mapped_column(LargeBinary)

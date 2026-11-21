@@ -7,6 +7,7 @@ dependencies = [
     "cbpupsis-core",
     "sqlalchemy[asyncio]",
     "asyncpg",
+    "cryptography>=46.0.0",
 ]
 
 [tool.uv.sources]

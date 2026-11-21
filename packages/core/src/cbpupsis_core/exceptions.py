@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
 from cbpupsis_core.config import settings
+from cbpupsis_core.logging import request_log_path
 from cbpupsis_core.middleware import retry_after_seconds
 
 logger = logging.getLogger(__name__)
@@ -167,7 +168,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             "request.rate_limited",
             extra={
                 "method": request.method,
-                "path": request.url.path,
+                "path": request_log_path(request),
                 "limit": str(exc.limit.limit),
             },
         )
@@ -200,11 +201,22 @@ def register_exception_handlers(app: FastAPI) -> None:
         # jsonable_encoder because error context can hold values json cannot
         # serialise directly (Decimal from a numeric constraint, bytes from a
         # malformed body).
+        redact = getattr(request.state, "redact_validation_errors", False)
+        errors = exc.errors()
+        if redact:
+            errors = [
+                {
+                    key: value
+                    for key, value in error.items()
+                    if key not in {"input", "ctx", "url"}
+                }
+                for error in errors
+            ]
         content: dict[str, object] = {
-            "detail": jsonable_encoder(exc.errors()),
+            "detail": jsonable_encoder(errors),
             "request_id": request_id_of(request),
         }
-        if settings.debug:
+        if settings.debug and not redact:
             content["body"] = jsonable_encoder(exc.body)
         return JSONResponse(
             status_code=422,  # UNPROCESSABLE_CONTENT; the constant was renamed
@@ -222,7 +234,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.exception(
             "Unhandled error on %s %s (request_id=%s)",
             request.method,
-            request.url.path,
+            request_log_path(request),
             request_id_of(request),
             exc_info=exc,
         )
@@ -232,4 +244,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "detail": "Internal server error",
                 "request_id": request_id_of(request),
             },
+            headers={"Cache-Control": "private, no-store"}
+            if getattr(request.state, "private_response", False)
+            else None,
         )

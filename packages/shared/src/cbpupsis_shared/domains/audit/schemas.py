@@ -11,7 +11,7 @@ import uuid
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, field_serializer
+from pydantic import BaseModel, ConfigDict, IPvAnyAddress, field_serializer
 
 
 class AuditEntryRead(BaseModel):
@@ -43,7 +43,7 @@ class SignInAttemptRead(BaseModel):
     id: uuid.UUID
     attempted_id: str
     user_id: uuid.UUID | None
-    ip_address: str | None
+    ip_address: IPvAnyAddress | None
     user_agent: str | None
     success: bool
     failure_reason: str | None
@@ -55,13 +55,21 @@ class SignInAttemptRead(BaseModel):
         """Same rendering as :class:`AuditEntryRead`."""
         return render_in_utc8(value)
 
-    @field_serializer("ip_address")
-    def serialize_ip_address(self, value: object) -> str | None:
-        return None if value is None else str(value)
-
 
 def render_in_utc8(value: datetime) -> str:
     """Render a stored UTC instant as ISO 8601 in UTC+8; a naive value is UTC."""
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return value.astimezone(timezone(timedelta(hours=8))).isoformat()
+
+
+class StudentRecentActivityRead(BaseModel):
+    """A recent sign-in or security audit event shown on the dashboard."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    occurred_at: str
+    type: str
+    severity: str
+    description: str

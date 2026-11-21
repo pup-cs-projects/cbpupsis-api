@@ -66,7 +66,7 @@ class IdentifierSignInFailedError(AuthError, UnauthorizedError):
     constant, never a message describing which check failed.
     """
 
-    code = "AUTH_FAILED"
+    code = "AUTH_INVALID_CREDENTIALS"
 
     def __init__(self, message: str) -> None:
         super().__init__(message)

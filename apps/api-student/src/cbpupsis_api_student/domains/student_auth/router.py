@@ -20,6 +20,7 @@ from cbpupsis_shared.domains.auth.constants import ROLE_STUDENT
 from cbpupsis_shared.domains.auth.dependencies import (
     CurrentUser,
     clear_refresh_cookie,
+    refresh_credentials,
     set_refresh_cookie,
 )
 from cbpupsis_shared.domains.auth.schemas import RefreshRequest
@@ -50,7 +51,9 @@ async def student_login(
     "/refresh", response_model=StudentTokenPair, operation_id="student_refresh"
 )
 async def student_refresh(
-    data: RefreshRequest, response: Response, db: AsyncSession = Depends(get_db)
+    response: Response,
+    data: RefreshRequest = Depends(refresh_credentials),
+    db: AsyncSession = Depends(get_db),
 ) -> StudentTokenPair:
     """Rotate the student session's refresh token."""
     pair = await service.refresh_student(db, data)
