@@ -4,18 +4,21 @@ import asyncio
 import logging
 import threading
 import time
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
+from datetime import time as local_time
 from decimal import Decimal
 from io import BytesIO
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from icalendar import Calendar
 from pypdf import PdfReader
 from sqlalchemy import delete, func, select, update
 
 from cbpupsis_api_student.domains.schedule import exports, service
 from cbpupsis_api_student.domains.schedule.constants import READ_SCHEDULE
-from cbpupsis_database.models.academics import AcademicTerm
+from cbpupsis_core.logging import JsonFormatter
+from cbpupsis_database.models.academics import AcademicEvent, AcademicTerm
 from cbpupsis_database.models.enrollment import StudentCourseEnrollment, TermEnrollment
 from cbpupsis_database.models.iam import PolicyPermission
 from cbpupsis_database.models.schedule import ScheduleExportState
@@ -26,12 +29,11 @@ from cbpupsis_shared.domains.auth.security import hash_password
 from main import app
 from tests.domains.schedule.helpers import NUMBER, PASSWORD, seed_schedule
 
-URL = "/api/v1/students/me/schedule"
+URL = "/api/v1/student/schedule"
 GUARDED_PATHS = [
     URL,
     f"{URL}/export?format=pdf",
     f"{URL}/export?format=ics",
-    f"/api/v1/students/{NUMBER}/schedule",
 ]
 
 
@@ -57,27 +59,23 @@ async def setup(db, client, grant, password_hash):
     return data
 
 
+@pytest.fixture
+async def handler_client(client):
+    """Share dependency overrides but observe global-handler 500 responses."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as ac:
+        yield ac
+
+
 def events(response):
     assert response.status_code == 200, response.text
     return Calendar.from_ical(response.content).walk("VEVENT")
 
 
-@pytest.mark.parametrize("suffix", ["", "/export?format=pdf", "/export?format=ics"])
-@pytest.mark.parametrize("authenticated", [False, True])
-async def test_removed_schedule_aliases_return_404(
-    client, setup, suffix, authenticated
-):
-    response = await client.get(
-        f"/api/v1/student/schedule{suffix}",
-        headers=setup.headers if authenticated else {},
-    )
-    assert response.status_code == 404
-    assert "location" not in response.headers
-
-
-@pytest.mark.parametrize("path", [URL, f"/api/v1/students/{NUMBER}/schedule"])
-async def test_ac_103_1_fields_and_ac_103_4_computed_totals(client, setup, path):
-    response = await client.get(path, headers=setup.headers)
+async def test_ac_103_1_fields_and_ac_103_4_computed_totals(client, setup):
+    response = await client.get(URL, headers=setup.headers)
     assert response.status_code == 200, response.text
     body = response.json()
     assert set(body) == {
@@ -240,7 +238,129 @@ async def test_ac_103_6_recurrence_timezone_holidays_and_distinct_meetings(
         assert NUMBER not in str(event["uid"])
 
 
-async def test_ac_103_7_own_identifier_works_foreign_and_absent_are_identical(
+async def test_ac_stu_003_6_calendar_client_fixture_tzid_until_exdate_sequence(
+    client, setup, db, tmp_path
+):
+    """#156 wire regression and import fixtures, not calendar-client acceptance."""
+    # Keep one lecture in CS001 and one lab in CS002, so dropping CS001 leaves
+    # an independently observable series. Start midweek to exercise alignment.
+    await db.execute(
+        delete(SectionSchedule).where(
+            SectionSchedule.id.in_([setup.meeting_ids[1], setup.meeting_ids[2]])
+        )
+    )
+    await db.execute(
+        update(AcademicTerm)
+        .where(AcademicTerm.id == setup.term_id)
+        .values(start_date=date(2026, 8, 4))
+    )
+    await db.execute(
+        update(AcademicEvent)
+        .where(AcademicEvent.academic_term_id == setup.term_id)
+        .values(start_date=date(2026, 8, 17), end_date=date(2026, 8, 17))
+    )
+    await db.commit()
+
+    async def exported(filename):
+        response = await client.get(
+            f"{URL}/export", params={"format": "ics"}, headers=setup.headers
+        )
+        parsed = events(response)
+        assert response.headers["content-type"].startswith("text/calendar")
+        assert response.headers["content-disposition"] == (
+            'attachment; filename="course-schedule.ics"'
+        )
+        assert response.headers["cache-control"] == "private, no-store"
+        assert len(parsed) == 2
+        assert len({str(event["uid"]) for event in parsed}) == 2
+        assert NUMBER.encode() not in response.content
+        (tmp_path / filename).write_bytes(response.content)
+        return {str(event["summary"]).split(":", 1)[0]: event for event in parsed}
+
+    first = await exported("01-before-drop.ics")
+    assert set(first) == {"CS001", "CS002"}
+    expected = {
+        "CS001": (
+            date(2026, 8, 10),
+            local_time(8),
+            local_time(10),
+            "MO",
+            date(2026, 12, 14),
+        ),
+        "CS002": (
+            date(2026, 8, 5),
+            local_time(13),
+            local_time(16),
+            "WE",
+            date(2026, 12, 16),
+        ),
+    }
+    for code, event in first.items():
+        start_date, start_time, end_time, weekday, last_date = expected[code]
+        start = datetime.combine(start_date, start_time, exports.MANILA)
+        assert event["dtstart"].params["TZID"] == "Asia/Manila"
+        assert event["dtend"].params["TZID"] == "Asia/Manila"
+        assert event.decoded("dtstart") == start
+        assert event.decoded("dtend") == datetime.combine(
+            start_date, end_time, exports.MANILA
+        )
+        assert event["rrule"]["FREQ"] == ["WEEKLY"]
+        assert event["rrule"]["BYDAY"] == [weekday]
+        until = event["rrule"]["UNTIL"][0]
+        assert until == datetime(2026, 12, 18, 15, 59, 59, tzinfo=UTC)
+        assert b"UNTIL=20261218T155959Z" in event.to_ical()
+        assert int(event["sequence"]) == 1
+        assert event["status"] == "CONFIRMED"
+        excluded = set()
+        if code == "CS001":
+            exdate = event["exdate"]
+            assert exdate.params["TZID"] == "Asia/Manila"
+            excluded = {item.dt for item in exdate.dts}
+            assert excluded == {datetime(2026, 8, 17, 8, tzinfo=exports.MANILA)}
+        else:
+            assert "exdate" not in event
+        # Enumerate this explicitly weekly rule; these are wire expectations,
+        # not evidence that an external importer actually honors EXDATE/UNTIL.
+        occurrences = []
+        occurrence = start
+        while occurrence <= until:
+            if occurrence not in excluded:
+                occurrences.append(occurrence)
+            occurrence += timedelta(weeks=1)
+        assert occurrences[0] == start
+        assert occurrences[-1].date() == last_date
+        assert all(
+            date(2026, 8, 4) <= item.date() <= date(2026, 12, 18)
+            for item in occurrences
+        )
+        assert all(item.date() != date(2026, 8, 17) for item in occurrences)
+
+    unchanged = await exported("02-unchanged.ics")
+    for code, event in unchanged.items():
+        assert event.to_ical() == first[code].to_ical()
+
+    # Synthetic committed drop, not an invocation of the approval workflow.
+    await db.execute(
+        update(StudentCourseEnrollment)
+        .where(StudentCourseEnrollment.id == setup.registration_ids[0])
+        .values(status="dropped")
+    )
+    await db.commit()
+    dropped = await exported("03-after-drop.ics")
+    assert set(dropped) == set(first)
+    assert dropped["CS001"]["status"] == "CANCELLED"
+    assert dropped["CS002"]["status"] == "CONFIRMED"
+    for code, event in dropped.items():
+        assert event["uid"] == first[code]["uid"]
+        assert int(event["sequence"]) == 2
+        for field in ("dtstart", "dtend", "rrule"):
+            assert event[field].to_ical() == first[code][field].to_ical()
+        if code == "CS001":
+            assert event["exdate"].to_ical() == first[code]["exdate"].to_ical()
+    print(f"Issue #156 synthetic import files: {tmp_path}")
+
+
+async def test_ac_stu_003_7_foreign_and_absent_identified_routes_return_404(
     client, setup, db, password_hash
 ):
     foreign = User(email="foreign@example.com", password_hash=password_hash)
@@ -260,20 +380,16 @@ async def test_ac_103_7_own_identifier_works_foreign_and_absent_are_identical(
         )
     )
     await db.commit()
-    assert (
-        await client.get(f"/api/v1/students/{NUMBER}/schedule", headers=setup.headers)
-    ).status_code == 200
     bodies = []
-    for number in ("2021-00999-MN-1", "not-a-real-student"):
+    for number in (NUMBER, "2021-00999-MN-1", "not-a-real-student"):
         response = await client.get(
             f"/api/v1/students/{number}/schedule", headers=setup.headers
         )
         assert response.status_code == 404
         body = response.json()
-        assert body["code"] == "RESOURCE_NOT_FOUND"
         body.pop("request_id", None)
         bodies.append(body)
-    assert bodies[0] == bodies[1]
+    assert bodies[0] == bodies[1] == bodies[2]
 
 
 async def test_ac_103_8_drop_readd_stable_uids_monotonic_sequence_and_tombstones(
@@ -366,21 +482,47 @@ async def test_invalid_export_format_is_422(client, setup):
 
 
 @pytest.mark.parametrize("format", ["pdf", "ics"])
-async def test_partial_generation_failure_returns_only_503_and_rolls_back(
-    client, setup, db, monkeypatch, format
+async def test_unexpected_export_failure_reaches_global_handler_and_rolls_back(
+    handler_client, setup, db, monkeypatch, caplog, format
 ):
+    private_values = (
+        "private-student-data-must-not-be-logged",
+        NUMBER,
+        str(setup.student_id),
+        "Ana Peña",
+    )
+
     def fail(*args):
-        raise RuntimeError("private-student-data-must-not-be-logged")
+        raise RuntimeError(" ".join(private_values))
 
     monkeypatch.setattr(
         exports, "render_pdf" if format == "pdf" else "render_calendar", fail
     )
-    response = await client.get(f"{URL}/export?format={format}", headers=setup.headers)
-    assert response.status_code == 503
-    assert response.json()["code"] == "SERVICE_UNAVAILABLE"
-    assert response.headers["retry-after"] == "30"
+    response = await handler_client.get(
+        f"{URL}/export?format={format}", headers=setup.headers
+    )
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Internal server error"
+    assert response.json()["request_id"]
+    assert "retry-after" not in response.headers
+    assert response.headers["cache-control"] == "private, no-store"
     assert "content-disposition" not in response.headers
-    assert "private-student" not in response.text
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "cbpupsis_core.exceptions"
+        and record.getMessage() == "request.unexpected_error"
+    ]
+    assert len(records) == 1
+    assert records[0].error_type == "RuntimeError"
+    assert records[0].levelno == logging.ERROR
+    assert records[0].exc_info is None and records[0].stack_info is None
+    logs = "\n".join(JsonFormatter().format(record) for record in caplog.records)
+    for value in private_values:
+        assert value not in logs
+        assert value not in caplog.text
+        assert value not in response.text
+    assert not db.in_transaction()
     assert await db.scalar(select(func.count()).select_from(ScheduleExportState)) == 0
 
 
@@ -482,6 +624,5 @@ async def test_ac_103_7_request_logs_do_not_contain_student_identifiers(
     assert records
     assert all(NUMBER not in str(record.__dict__) for record in records)
     assert {record.path for record in records} == {
-        "/students/{student_number}/schedule",
         "<unmatched>",
     }

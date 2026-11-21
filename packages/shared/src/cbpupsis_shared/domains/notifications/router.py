@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cbpupsis_core.middleware import client_ip_or_none
 from cbpupsis_core.pagination import Page
 from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.auth.dependencies import CurrentUser, get_current_user
@@ -83,6 +84,7 @@ async def get_preferences(
 
 @router.put("/preferences", status_code=status.HTTP_204_NO_CONTENT)
 async def set_preference(
+    request: Request,
     data: NotificationPreferenceUpdate,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -94,6 +96,7 @@ async def set_preference(
         notification_type=data.notification_type,
         channel=data.channel,
         enabled=data.enabled,
+        ip_address=client_ip_or_none(request),
     )
 
 

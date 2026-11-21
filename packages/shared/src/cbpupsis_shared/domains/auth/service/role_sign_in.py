@@ -8,6 +8,7 @@ so the student and faculty images never import them.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -43,6 +44,8 @@ from cbpupsis_shared.domains.auth.service.passwords import check_password
 from cbpupsis_shared.domains.auth.service.sessions import as_utc
 from cbpupsis_shared.domains.auth.service.tokens import issue_role_session
 from cbpupsis_shared.domains.users import service as users_service
+
+logger = logging.getLogger(__name__)
 
 
 def record_attempt(
@@ -217,6 +220,20 @@ async def complete_sign_in(
     commit: bool = True,
 ) -> TokenPair:
     """Record the completed sign-in, clear its lockout state, open the session."""
+    development_skip = (claims or {}).get("development_mfa_skipped") is True
+    if development_skip:
+        if mfa or not settings.development_mfa_skip_for(role):
+            raise InvalidAuthTokenError
+        audit_client.stage(
+            db,
+            action="auth.development_mfa_skipped",
+            actor_id=user_id,
+            target_type="user",
+            target_id=str(user_id),
+            prior_state=None,
+            new_state={"role": role, "mfa": False},
+        )
+        logger.warning("auth.development_mfa_skipped", extra={"role": role})
     record_attempt(
         db,
         attempted_id=attempted_id,
@@ -225,7 +242,7 @@ async def complete_sign_in(
         device_info=device_info,
         mfa_used=mfa,
     )
-    if mfa:
+    if mfa or development_skip:
         await retire_mfa_challenge(db, user_id)
     await clear_sign_in_failures(db, user_id)
     return await issue_role_session(

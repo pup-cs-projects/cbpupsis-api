@@ -33,6 +33,7 @@ from cbpupsis_shared.domains.auth.security import (
     decode_token,
     lockout_subject,
     require_session_version,
+    session_mfa_satisfied,
 )
 from cbpupsis_shared.domains.users.schemas import AccountCreate
 
@@ -73,6 +74,7 @@ __all__ = [
     "retire_mfa_challenge",
     "revoke_all_sessions",
     "revoke_refresh_token",
+    "session_mfa_satisfied",
     "stage_revoke_all_sessions",
     "stage_webauthn_factor",
     "validate_session_version",

@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from pydantic import ValidationError
 from sqlalchemy.exc import DBAPIError
 
+from cbpupsis_core import logged
 from cbpupsis_core.config import settings
 from cbpupsis_shared.domains.academics import client as academics
 from cbpupsis_shared.domains.audit import client as audit
@@ -273,6 +274,7 @@ async def _create(
     return _metadata(row)
 
 
+@logged("enrollment.issue_certificate", fields=("student_id", "term_id"))
 async def issue_certificate(db, student_id, term_id, *, client_ip=None):
     """HTTP boundary owns one commit; lock parent first for race-safe retries."""
     # Finish only authentication/IAM reads before the business transaction.
