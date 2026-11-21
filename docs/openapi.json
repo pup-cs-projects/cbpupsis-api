@@ -3075,7 +3075,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaymentStatusRead"
+                  "$ref": "#/components/schemas/PaymentDetailRead"
                 }
               }
             }
@@ -3179,22 +3179,6 @@
                 }
               ],
               "title": "X-Callback-Token"
-            }
-          },
-          {
-            "name": "webhook-id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Webhook-Id"
             }
           }
         ],
@@ -15602,37 +15586,7 @@
         ],
         "title": "PaymentCreated"
       },
-      "PaymentRead": {
-        "properties": {
-          "date": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Date"
-          },
-          "amount": {
-            "type": "string",
-            "pattern": "^\\d+\\.\\d{2}$",
-            "title": "Amount"
-          },
-          "reference": {
-            "type": "string",
-            "title": "Reference"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          }
-        },
-        "type": "object",
-        "required": [
-          "date",
-          "amount",
-          "reference",
-          "status"
-        ],
-        "title": "PaymentRead"
-      },
-      "PaymentStatusRead": {
+      "PaymentDetailRead": {
         "properties": {
           "paymentId": {
             "type": "string",
@@ -15699,7 +15653,37 @@
           "amount",
           "createdAt"
         ],
-        "title": "PaymentStatusRead"
+        "title": "PaymentDetailRead"
+      },
+      "PaymentRead": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Amount"
+          },
+          "reference": {
+            "type": "string",
+            "title": "Reference"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "amount",
+          "reference",
+          "status"
+        ],
+        "title": "PaymentRead"
       },
       "PermissionCreate": {
         "properties": {
