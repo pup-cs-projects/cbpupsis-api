@@ -1,0 +1,122 @@
+# API conventions
+
+| | |
+|---|---|
+| **Last updated** | 2026-10-16 |
+| **Related** | [API-GUIDE.md](API-GUIDE.md) · [ERROR-CODES.md](ERROR-CODES.md) · [TEST-NOTES.md](TEST-NOTES.md) · [WRITING-ISSUES.md](WRITING-ISSUES.md) · [CONTRIBUTING.md](../../CONTRIBUTING.md) |
+
+The rules every change to `cbpupsis-api` follows. [API-GUIDE.md](API-GUIDE.md) explains the
+reasoning behind the scaffold in depth; this page is the short version you keep open while
+working.
+
+## Product context
+
+- **Requirements:** [SRS.md](../project-specs/SRS.md). Cite functional requirement ids
+  (`FR1` to `FR24`; there is no FR3), use-case ids (`UC-STU-001`), or sections (`SRS 4.2`) in
+  issues, PRs, and design notes.
+- **Users:** students (15,000+), faculty (30 to 80), system administrators (3 to 5),
+  superadministrators (1 to 2). They become IAM groups; permission names still follow the fixed
+  vocabulary below.
+- **Team:** three backend developers here, two frontend developers on `cbpupsis-client`, and a
+  product owner who owns the backlog and merges.
+- **Backlog:** org project board "CBPUPSIS API" (project 2).
+  [BACKLOG.md](../project-specs/BACKLOG.md) maps epics to SRS requirements, and
+  [WRITING-ISSUES.md](WRITING-ISSUES.md) explains how to write and file issues.
+- **Data privacy:** student records are personal information under RA 10173. Never log names,
+  student numbers, grades, or balances; never commit real records; fixtures use fake data.
+
+## Known gaps between the SRS and this scaffold
+
+The API started from the team's FastAPI template, which makes choices the SRS does not. Each
+gap has a `type: decision` issue. **Do not resolve one silently in code.** Build features
+against the scaffold as it is until the decision closes.
+
+| Topic | SRS says | Scaffold does today |
+|---|---|---|
+| Compute | AWS Lambda behind API Gateway (SRS 2.4) | One container image per app (student, faculty, admin), each buildable alone; `main.py` can also run all three in one process; no deploy workflow until decided |
+| Background work | Lambda has no long-running process | Outbox worker runs as its own process (`python -m cbpupsis_shared.worker`) |
+| Database | Aurora PostgreSQL, PostgreSQL 16 (SRS 2.4, 5.3) | Config written for Neon (pooled and direct URLs); local compose pinned to `postgres:16` |
+| Authentication | Institutional LDAP or Active Directory with local fallback; Cognito also mentioned (FR1, SRS 2.6) | Self-contained email and password with JWT |
+| Login identifier | Student number `YYYY-NNNNN-XX-N` or employee id (FR1) | Email address |
+| Sessions | Lockout after 5 failures in 15 minutes; 30-minute inactivity timeout; HttpOnly cookies (FR1, SRS 4.2) | Every role: lockout on the 5th failure in 15 minutes; a server-side session ended after 15 idle minutes (`SESSION_IDLE_TIMEOUT_MINUTES`); 15-minute access token and 30-day rotating refresh token, sent in the response body **and** as an HttpOnly `refresh_token` cookie until cookie-versus-body is decided |
+| Password hashing | bcrypt with 12+ rounds "or equivalent" (SRS 4.2) | bcrypt at `BCRYPT_ROUNDS` (12 or more) for new hashes; existing argon2 hashes still verify |
+| Account creation | Admin creates accounts with a system temporary password (FR19, UC-ADM-002) | Superadmin only, single or CSV, forced expiring temporary password, no self-registration (product owner decision) |
+
+## Code
+
+- **Three apps over a shared kernel, in one uv workspace.** `apps/api-student`,
+  `apps/api-faculty`, and `apps/api-admin` each build and run as their own service. The kernel
+  under `packages/` is shared: `core` (settings, logging, errors, events, middleware, email),
+  then `database` (the base, the session, every model), then `shared` (the cross-role domains,
+  the outbox, the worker, the app factory), and `migrations` (the one Alembic history). Each
+  kernel package imports only the ones before it.
+- **An app never imports another app, and the kernel never imports an app.** Anything two apps
+  need goes in `packages/shared`. `main.py` at the root is the only module that imports every
+  app, to run all three in one process.
+- **The kernel owns every table.** Models live only in
+  `packages/database/src/cbpupsis_database/models/<domain>.py`, one module per domain, and every
+  migration lives in `packages/migrations`. No app defines a model, and no table is defined
+  twice.
+- **Organize by domain, not by file type.** Apart from its models, a feature's code lives in
+  one folder: `apps/api-<role>/src/cbpupsis_api_<role>/domains/<name>/` when one app owns it,
+  or `packages/shared/src/cbpupsis_shared/domains/<name>/` when every app needs it. Its tests
+  live in `tests/domains/<name>/`. Domain names are unique across the workspace.
+- **Five layers per domain:** `models` (in the kernel), then `schemas`, then `repository`, then
+  `service`, then `router` (in the domain folder). All SQL lives in `repository.py` (returns ORM
+  rows, raises nothing). `service.py` holds every rule and never calls `session.execute`.
+  Routers stay thin. A domain that owns no table (a role sign-in built on other domains'
+  clients) has neither a models module nor a repository, and a models module that defines
+  no table of its own (a re-export facade) fails `tests/core/test_architecture.py`.
+- **Domains talk through each other's `service.py`**, via `client.py`, never by importing
+  another domain's models or repository. A domain imports only its own models module
+  (`cbpupsis_database.models.<own>`). Cross-domain ids are bare UUIDs without a foreign key.
+- **The layering is enforced** by `tests/core/test_architecture.py`. Add a test there when you
+  add a convention.
+- **Every public repository function documents its SQL** in a `SQL::` docstring block.
+- **Each domain owns its errors** in `exceptions.py`, and each new error gets a row in
+  [ERROR-CODES.md](ERROR-CODES.md) in the same commit.
+- **Authorization has two levels:** `require_permission` on the endpoint and an ownership check
+  in the service. Enforcing only the first is an IDOR bug.
+- **Reads are a boundary.** A list scopes to the caller unless they hold `ReadAll<X>`, and
+  someone else's record answers 404, not 403.
+- **Permission vocabulary is fixed:** `Create/Read/Update/Delete<X>` for own records,
+  `ReadAll/Moderate/Manage<X>` across ownership, and business verbs for real transitions
+  (`SubmitGrade`, `ApproveAddDrop`). Enforced by `tests/core/test_permission_naming.py`.
+- **Administrative changes are audited by emitting an event.** Choose the in-process bus or the
+  transactional outbox by what losing the event costs: a payment receipt or a grade notice goes
+  through the outbox.
+- **Money is `Decimal`/`Numeric`, never float.** Timestamps are timezone-aware UTC.
+- **Imports at the top of the module** (ruff `E402` and `PLC0415`).
+- **Secrets come from the environment.** API docs and `/openapi.json` are development-only.
+- **Every model change gets a migration.** Read the autogenerated file: a column rename is
+  emitted as drop and add, which loses data.
+
+## Verifying
+
+```bash
+uv run pytest tests/domains/<name> -q   # the tests covering your change, while working
+uv run pytest -q                        # the whole suite, before a PR
+uv run pre-commit run --all-files       # ruff check, ruff format, bandit, file hygiene
+cd bruno && npm test                    # HTTP suite; needs make up, make seed, make seed-e2e
+```
+
+**Ruff is the only linter and formatter.** Never add black, flake8, or isort beside it. Slow or
+network-bound checks (tests, coverage, `pip-audit`) belong in CI, not pre-commit.
+
+`pytest` owns rules and edge cases; `bruno/` owns journeys and the wire contract. Neither
+replaces the other. When reporting results in a PR, say plainly what you ran and what you did
+not.
+
+## Workflow
+
+- **Base branch is `dev`.** Branches are `feature/<name>`, `bugfix/<name>`, `hotfix/<name>`.
+  Commits and PR titles follow Conventional Commits. Maintainers squash and merge. Details in
+  [CONTRIBUTING.md](../../CONTRIBUTING.md).
+- **No attribution trailers** (`Co-Authored-By`, "Generated with") in commits or PRs.
+- **No em dashes** in anything written for this project: issues, PRs, commit messages, and docs.
+  Use a colon, a comma, or parentheses.
+- **An API contract change is announced**, not discovered: tick the Risk box in the PR and file a
+  linked task in the client repo ([WRITING-ISSUES.md](WRITING-ISSUES.md)).
+- **Personal tooling stays personal.** Editor settings and AI assistant configuration are
+  gitignored and never committed.
+- The pre-commit hook refuses commits directly on `main` or `dev`. Branch first.

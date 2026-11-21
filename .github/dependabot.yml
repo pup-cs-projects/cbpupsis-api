@@ -1,0 +1,36 @@
+# Weekly dependency updates, opened against dev like any other change.
+# Minor and patch bumps are grouped into one PR per ecosystem so they do not
+# bury the board; majors arrive one at a time because they need reading.
+
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      python-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: docker
+    directory: /docker
+    target-branch: dev
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope

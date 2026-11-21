@@ -1,0 +1,39 @@
+name: Epic
+description: A module-sized body of work. Maintainers only.
+title: "EP-NN: "
+labels: ["type: epic"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+    validations:
+      required: true
+  - type: input
+    id: srs
+    attributes:
+      label: SRS scope
+      placeholder: "FR7, FR17, UC-STU-002"
+    validations:
+      required: true
+  - type: textarea
+    id: in-scope
+    attributes:
+      label: In scope
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+  - type: textarea
+    id: depends-on
+    attributes:
+      label: Depends on
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      value: |
+        - [ ] Every story in this epic is closed
+        - [ ]

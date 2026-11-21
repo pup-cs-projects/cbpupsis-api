@@ -1,0 +1,71 @@
+# syntax=docker/dockerfile:1
+#
+# Staging image for the faculty app. Identical build to docker/faculty/Dockerfile.prod
+# (same stages, same --no-dev, same non-root user) because staging only tells
+# you something if it is the artifact you intend to ship.
+#
+# What differs is CONFIGURATION, injected at runtime, not baked here:
+#   ENVIRONMENT=staging   keeps API docs closed (the gate is development-only)
+#   LOG_LEVEL=DEBUG       more detail than production, since nobody is paged
+#   LOG_JSON=true         same structured logs as production
+#
+# The one build-time difference is the label, so an image in a registry can be
+# traced back to the pipeline that produced it.
+#
+# Build from the PROJECT ROOT:
+#   docker build -f docker/faculty/Dockerfile.staging -t api-faculty:staging .
+#
+# If you find yourself adding anything else here, ask whether it belongs in
+# configuration instead. A staging image that differs from production is a
+# staging environment that cannot vouch for a release.
+
+# ---------- build stage ----------
+FROM python:3.12-slim AS build
+
+COPY --from=ghcr.io/astral-sh/uv:0.9.9 /uv /uvx /bin/
+
+WORKDIR /app
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-workspace --no-dev --package cbpupsis-api-faculty
+
+COPY packages/core ./packages/core
+COPY packages/database ./packages/database
+COPY packages/shared ./packages/shared
+COPY apps/api-faculty ./apps/api-faculty
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --package cbpupsis-api-faculty
+
+# ---------- runtime stage ----------
+FROM python:3.12-slim AS runtime
+
+ARG GIT_SHA=unknown
+LABEL org.opencontainers.image.revision="${GIT_SHA}" \
+      org.opencontainers.image.title="api-faculty" \
+      env="staging"
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+RUN groupadd -g 1001 appgroup && \
+    useradd -u 1001 -g appgroup -m -d /app -s /bin/false appuser
+
+WORKDIR /app
+
+COPY --from=build --chown=appuser:appgroup /app /app
+
+USER appuser
+
+EXPOSE 8002
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8002/health', timeout=2).status == 200 else 1)"
+
+CMD ["uvicorn", "cbpupsis_api_faculty.main:app", \
+     "--host", "0.0.0.0", "--port", "8002", \
+     "--proxy-headers", "--forwarded-allow-ips", "*"]

@@ -1,0 +1,28 @@
+meta {
+  name: 06-users-journey
+  seq: 7
+}
+
+docs {
+  The self-service profile surface: reading your own record, partial updates,
+  and the input validation that guards what a client will later render.
+
+  Nothing here deactivates or deletes the seeded accounts. Both endpoints exist
+  and both are destructive — `POST /users/me/deactivate` revokes every session,
+  `DELETE /users/me` scrubs the row — so exercising them against `e2e-owner`
+  would break every folder that runs afterwards and leave the database needing a
+  reseed. Their refusal paths are safe to test and are covered here; their
+  success paths belong to pytest, where a transaction rolls back.
+
+  The edge cases worth having on the wire rather than only in pytest:
+
+  - **PATCH partial semantics.** Omitting a field must leave it unchanged while
+    sending `null` clears it. That distinction only exists because the router
+    passes `exclude_unset=True`, and it is visible only when a real JSON body
+    with a real absent key crosses the boundary — a Python call cannot express
+    "absent" and "None" as different things without effort.
+  - **`extra="forbid"`.** A client typo (`displayName` for `display_name`) must
+    be a 422, not a silently dropped write the user believes succeeded.
+  - **Scheme validation on `avatar_url`.** A stored `javascript:` URL is stored
+    XSS the moment a frontend renders it into an href.
+}

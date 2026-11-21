@@ -1,0 +1,20 @@
+[project]
+name = "cbpupsis-migrations"
+version = "0.1.0"
+description = "The single Alembic history for every table in cbpupsis_database"
+requires-python = ">=3.12"
+dependencies = [
+    "cbpupsis-core",
+    "cbpupsis-database",
+    "alembic",
+    "sqlalchemy[asyncio]",
+]
+
+[tool.uv]
+# Not a wheel: Alembic loads env.py and versions/ from this directory through
+# alembic.ini, so nothing here is imported by name.
+package = false
+
+[tool.uv.sources]
+cbpupsis-core = { workspace = true }
+cbpupsis-database = { workspace = true }

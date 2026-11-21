@@ -1,0 +1,14 @@
+# Files that MUST keep LF endings regardless of the checkout platform.
+# core.autocrlf=true on Windows otherwise rewrites them to CRLF, which breaks
+# them on Linux: make passes the CR into recipe lines, and a shebang followed by
+# CR is not a valid interpreter path.
+
+* text=auto
+
+Makefile    text eol=lf
+*.mk        text eol=lf
+*.sh        text eol=lf
+*.bru       text eol=lf
+Dockerfile* text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf

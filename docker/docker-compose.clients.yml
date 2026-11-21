@@ -1,0 +1,127 @@
+# The four web clients, layered on docker-compose.yml by `make up` in dev when the
+# cbpupsis-client checkout sits beside this repo (leave them out with `make up clients=0`).
+#
+#   client-student     http://localhost:3000  ->  api-student  http://localhost:8001
+#   client-faculty     http://localhost:3001  ->  api-faculty  http://localhost:8002
+#   client-admin       http://localhost:3002  ->  api-admin    http://localhost:8003
+#   client-superadmin  http://localhost:3003  ->  api-admin    http://localhost:8003
+#
+# Each client runs its Vite dev server against the app that serves it, and each app is
+# told to accept that client's origin. The browser makes the API calls, so the URLs are
+# the host's localhost ports, not compose service names.
+#
+# CLIENT_DIR is the client checkout, relative to this file. The Makefile exports it.
+# The checkout is an npm workspace: each portal is apps/<portal>.
+
+x-client-env: &client-env
+  # npm ci runs the `prepare` script, and husky would rewrite the HOST repo's
+  # core.hooksPath through the bind mount.
+  HUSKY: "0"
+  # File events do not cross a Windows or macOS bind mount; the apps' vite.config.ts
+  # switches to polling when this is set.
+  VITE_WATCH_POLLING: "1"
+
+x-client-volumes: &client-volumes
+  - ${CLIENT_DIR:-../../cbpupsis-client}:/client
+  # The client is one npm workspace with one node_modules at its root. The host's copy
+  # holds binaries for the host OS (esbuild, rollup), which do not run here, so a named
+  # volume shadows it.
+  - client-modules:/client/node_modules
+
+# Each portal is a workspace in apps/<portal>; it starts once the install has finished.
+x-client: &client
+  image: node:22-alpine
+  working_dir: /client
+  depends_on:
+    client-install:
+      condition: service_completed_successfully
+  command:
+    - sh
+    - -c
+    - exec npm run dev --workspace "apps/$$APP" -- --host 0.0.0.0 --port "$$PORT" --strictPort
+  volumes: *client-volumes
+
+services:
+  # Installs the whole client workspace once, and again only when package-lock.json
+  # changes; a full `npm ci` on every start would cost a minute.
+  client-install:
+    image: node:22-alpine
+    working_dir: /client
+    environment: *client-env
+    command:
+      - sh
+      - -c
+      - >-
+        lock="$$(md5sum package-lock.json)";
+        [ "$$lock" = "$$(cat node_modules/.lock-md5 2>/dev/null)" ] ||
+        { npm ci --no-audit --no-fund && echo "$$lock" > node_modules/.lock-md5; }
+    volumes: *client-volumes
+
+  client-student:
+    <<: *client
+    environment:
+      <<: *client-env
+      APP: student
+      PORT: "3000"
+      VITE_API_BASE_URL: http://localhost:8001/api/v1
+    ports:
+      - "3000:3000"
+
+  client-faculty:
+    <<: *client
+    environment:
+      <<: *client-env
+      APP: faculty
+      PORT: "3001"
+      VITE_API_BASE_URL: http://localhost:8002/api/v1
+    ports:
+      - "3001:3001"
+
+  client-admin:
+    <<: *client
+    environment:
+      <<: *client-env
+      APP: admin
+      PORT: "3002"
+      VITE_API_BASE_URL: http://localhost:8003/api/v1
+    ports:
+      - "3002:3002"
+
+  client-superadmin:
+    <<: *client
+    environment:
+      <<: *client-env
+      APP: superadmin
+      PORT: "3003"
+      VITE_API_BASE_URL: http://localhost:8003/api/v1
+    ports:
+      - "3003:3003"
+
+  # `environment` wins over each app's env_file, so these apply without editing the
+  # gitignored env files. They replace CORS_ORIGINS rather than extend it.
+  api-student:
+    environment:
+      CORS_ORIGINS: '["http://localhost:3000"]'
+
+  api-faculty:
+    environment:
+      CORS_ORIGINS: '["http://localhost:3001"]'
+
+  api-admin:
+    environment:
+      CORS_ORIGINS: '["http://localhost:3002", "http://localhost:3003"]'
+      # Security keys bind to the page's origin, so the admin client's must match.
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_ORIGIN: http://localhost:3002
+
+  # The worker renders every account email, so it is the service that needs each
+  # role's portal: links open the client that can sign that account in.
+  worker:
+    environment:
+      FRONTEND_BASE_URL_STUDENT: http://localhost:3000
+      FRONTEND_BASE_URL_FACULTY: http://localhost:3001
+      FRONTEND_BASE_URL_ADMIN: http://localhost:3002
+      FRONTEND_BASE_URL_SUPERADMIN: http://localhost:3003
+
+volumes:
+  client-modules:

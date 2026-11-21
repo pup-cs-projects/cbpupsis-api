@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Requirements (SRS)
+    url: https://github.com/pup-cs-projects/cbpupsis-api/blob/dev/docs/project-specs/SRS.md
+    about: Check the Software Requirements Specification before filing a story.
+  - name: How we write issues
+    url: https://github.com/pup-cs-projects/cbpupsis-api/blob/dev/CONTRIBUTING.md#8-writing-issues
+    about: Titles, labels, and acceptance criteria conventions.

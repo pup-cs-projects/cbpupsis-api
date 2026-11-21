@@ -1,0 +1,28 @@
+meta {
+  name: 07-session-lifecycle
+  seq: 8
+}
+
+docs {
+  A session from login to logout, driven as its own isolated session so nothing
+  here disturbs the `owner` tokens the rest of the collection depends on.
+
+  This folder exists for a class of bug the unit suite structurally cannot
+  reach: **state that is individually correct but wrong in sequence.** Every
+  endpoint involved passes its own test. What breaks is the composition —
+
+  - a refresh token that still works after logout,
+  - a rotated token whose predecessor stays valid, so a stolen one never expires,
+  - a logout that revokes one session and silently ends all of them.
+
+  Each is only visible across several requests that share accumulated state,
+  which is exactly what this suite is for and what a service-level test would
+  have to hand-build (and could then hand-build wrongly).
+
+  **On access tokens after logout.** Logout revokes the *refresh* token; a JWT
+  access token stays valid until it expires, because it is verified by signature
+  with no database lookup. That is a deliberate trade — stateless verification
+  in exchange for a short window where a logged-out access token still works —
+  and request 05 pins it as intended behavior rather than leaving the next
+  reader to discover it and file a bug.
+}
