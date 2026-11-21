@@ -34,6 +34,7 @@ from cbpupsis_shared.domains.auth.dependencies import (
     get_current_user,
     require_superadmin_session,
 )
+from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.iam.dependencies import require_permission
 from cbpupsis_shared.domains.users import service as users_service
 from cbpupsis_shared.domains.users.constants import MANAGE_USER, READ_ALL_USER
@@ -47,7 +48,7 @@ from cbpupsis_shared.domains.users.schemas import (
 #: Your own account. Every app serves it: any role reads and edits only itself.
 router = APIRouter()
 #: Other people's accounts: create, list, read, deactivate, reactivate, reissue.
-#: Only the admin app serves it, beside ``/users/import``, because only a
+#: Only the admin app serves it, beside ``/admin/users/import``, because only a
 #: Superadmin may call any of it. ``tests/core/test_architecture.py`` fails if
 #: the student or faculty app mounts a Superadmin-only route.
 management_router = APIRouter()
@@ -89,14 +90,23 @@ async def reissue_temporary_password(
     await auth_client.reissue_temporary_password(db, actor_id=user.id, user_id=user_id)
 
 
+async def _attach_iam(db: AsyncSession, user_id: uuid.UUID, dto: UserRead) -> UserRead:
+    group = await iam_service.get_user_primary_group(db, user_id)
+    permissions = sorted(await iam_service.get_effective_permissions(db, user_id))
+    dto.group = group
+    dto.permissions = permissions
+    dto.page_permissions = permissions
+    return dto
+
+
 @router.get("/me", response_model=UserRead)
 async def read_me(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> UserRead:
-    """Return the authenticated user's own profile."""
+    """Return the authenticated user's own profile, group, and permissions."""
     record = await users_service.get_by_id(db, user.id)
-    return UserRead.model_validate(record)
+    return await _attach_iam(db, user.id, UserRead.model_validate(record))
 
 
 @router.patch("/me", response_model=UserRead)
@@ -115,7 +125,7 @@ async def update_me(
     record = await users_service.update_profile(
         db, user.id, **data.model_dump(exclude_unset=True)
     )
-    return UserRead.model_validate(record)
+    return await _attach_iam(db, user.id, UserRead.model_validate(record))
 
 
 @router.post("/me/complete-onboarding", response_model=UserRead)
@@ -129,7 +139,7 @@ async def complete_onboarding(
     Idempotent: calling it again keeps the original completion timestamp.
     """
     record = await users_service.complete_onboarding(db, user.id)
-    return UserRead.model_validate(record)
+    return await _attach_iam(db, user.id, UserRead.model_validate(record))
 
 
 @router.post("/me/deactivate", status_code=status.HTTP_204_NO_CONTENT)

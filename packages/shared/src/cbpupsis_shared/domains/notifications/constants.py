@@ -62,6 +62,9 @@ class NotificationTypeSpec:
 #: type is opt-outable — the same "declare it as data" approach the IAM seed
 #: takes with permissions.
 NOTIFICATION_TYPES: dict[str, NotificationTypeSpec] = {
+    "billing.account_overdue": NotificationTypeSpec(
+        default_channels=(Channel.EMAIL, Channel.IN_APP)
+    ),
     "enrollment.waiver_decided": NotificationTypeSpec(
         default_channels=(Channel.IN_APP,), optional=False
     ),
@@ -90,6 +93,24 @@ NOTIFICATION_TYPES: dict[str, NotificationTypeSpec] = {
     ),
     "enrollment.add_drop_decided": NotificationTypeSpec(
         default_channels=(Channel.IN_APP,)
+    ),
+    "grading.grades_finalized": NotificationTypeSpec(
+        default_channels=(Channel.EMAIL, Channel.IN_APP), optional=False
+    ),
+    "faculty.roster_updated": NotificationTypeSpec(
+        default_channels=(Channel.EMAIL, Channel.IN_APP)
+    ),
+    "faculty.deadline_reminder": NotificationTypeSpec(
+        default_channels=(Channel.EMAIL, Channel.IN_APP)
+    ),
+    "faculty.system_announcement": NotificationTypeSpec(
+        default_channels=(Channel.EMAIL, Channel.IN_APP)
+    ),
+    "grading.inc_completion_decided": NotificationTypeSpec(
+        default_channels=(Channel.EMAIL, Channel.IN_APP), optional=False
+    ),
+    "grading.inc_expired": NotificationTypeSpec(
+        default_channels=(Channel.EMAIL, Channel.IN_APP), optional=False
     ),
 }
 

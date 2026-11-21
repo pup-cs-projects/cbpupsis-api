@@ -355,12 +355,26 @@ async def role_groups(db: AsyncSession) -> None:
     """Create the groups seed_iam gives each account role, if missing."""
     from cbpupsis_shared.domains.iam.constants import (
         ADMIN_GROUP,
+        ADVISOR_GROUP,
+        CHAIR_GROUP,
+        DEAN_GROUP,
         FACULTY_GROUP,
+        FINANCE_GROUP,
+        REGISTRAR_GROUP,
         STUDENT_GROUP,
     )
 
     existing = {group.name for group in (await iam_service.list_groups(db)).items}
-    for name in (STUDENT_GROUP, FACULTY_GROUP, ADMIN_GROUP):
+    for name in (
+        STUDENT_GROUP,
+        FACULTY_GROUP,
+        ADMIN_GROUP,
+        ADVISOR_GROUP,
+        CHAIR_GROUP,
+        DEAN_GROUP,
+        REGISTRAR_GROUP,
+        FINANCE_GROUP,
+    ):
         if name not in existing:
             await iam_service.create_group(db, name=name)
 

@@ -43,7 +43,7 @@ def key():
         "refreshType",
     ],
 )
-async def test_verified_google_identity_before_accepting_refresh_token(
+async def test_ac_stu_005_15_verified_identity_required_before_accepting_refresh_token(
     monkeypatch, key, bad, caplog
 ):
     monkeypatch.setattr(settings, "google_calendar_client_id", "synthetic-client")

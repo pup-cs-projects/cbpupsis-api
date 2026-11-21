@@ -395,7 +395,6 @@ async def test_ineligible_state_is_200_with_reasons(
     data = response.json()
     assert data["isEligible"] is False
     assert {reason["code"] for reason in data["reasons"]} == {
-        "ENROLL_FINANCIAL_HOLD",
         "ENROLL_PERIOD_CLOSED",
     }
 

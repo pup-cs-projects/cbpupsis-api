@@ -6,12 +6,14 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
+import sqlalchemy as sa
 from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -50,6 +52,29 @@ class StudentGrade(UUIDMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL"), default=None
     )
     submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class SectionGradeSubmission(UUIDMixin, Base):
+    """Workflow state and optimistic lock version for a section's grade sheet."""
+
+    __tablename__ = "section_grade_submissions"
+
+    section_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("course_sections.id", ondelete="CASCADE"), unique=True
+    )
+    state: Mapped[str] = mapped_column(
+        String(20), default="DRAFT", server_default="DRAFT"
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    finalized_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
+    finalized_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
     updated_at: Mapped[datetime] = mapped_column(
@@ -105,7 +130,35 @@ class IncompleteCompletion(UUIDMixin, Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    __table_args__ = (Index("idx_fk_incomplete_completions_grade_id", "grade_id"),)
+    __table_args__ = (
+        Index("idx_fk_incomplete_completions_grade_id", "grade_id"),
+        Index(
+            "uq_incomplete_completions_pending_grade",
+            "grade_id",
+            unique=True,
+            postgresql_where=sa.text("state = 'PENDING_DEAN'"),
+            sqlite_where=sa.text("state = 'PENDING_DEAN'"),
+        ),
+    )
+
+
+class IncExpiryRun(UUIDMixin, Base):
+    """Idempotent daily INC expiry sweep marker identified by its run key."""
+
+    __tablename__ = "inc_expiry_runs"
+
+    run_key: Mapped[str] = mapped_column(String(255), unique=True)
+    status: Mapped[str] = mapped_column(
+        String(20), default="RUNNING", server_default="RUNNING"
+    )
+    processed_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    converted_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
 
 
 class GradeCorrection(UUIDMixin, Base):
@@ -123,6 +176,25 @@ class GradeCorrection(UUIDMixin, Base):
     proposed_mark: Mapped[str] = mapped_column(String(10))
     reason: Mapped[str] = mapped_column(Text)
     grading_sheet_file_id: Mapped[str] = mapped_column(String(100))
+    section_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("course_sections.id", ondelete="RESTRICT"), index=True
+    )
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True
+    )
+    # Same transactional, private binary-storage pattern as user_avatars.
+    grading_sheet_content: Mapped[bytes | None] = mapped_column(
+        LargeBinary, default=None, deferred=True
+    )
+    grading_sheet_content_type: Mapped[str | None] = mapped_column(String(32))
+    grading_sheet_size: Mapped[int | None] = mapped_column(Integer)
+    grading_sheet_sha256: Mapped[str | None] = mapped_column(String(64))
+    window_closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    grade_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejected_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT")
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     state: Mapped[str] = mapped_column(
         String(30), default="PENDING_CHAIR", server_default="PENDING_CHAIR"
     )
@@ -165,8 +237,10 @@ class StudentTermGPA(UUIDMixin, Base):
         ForeignKey("academic_terms.id", ondelete="CASCADE")
     )
     total_gpa_units: Mapped[Decimal] = mapped_column(Numeric(precision=4, scale=1))
-    term_gpa: Mapped[Decimal] = mapped_column(Numeric(precision=4, scale=2))
-    cumulative_gpa: Mapped[Decimal] = mapped_column(Numeric(precision=4, scale=2))
+    term_gpa: Mapped[Decimal | None] = mapped_column(Numeric(precision=4, scale=2))
+    cumulative_gpa: Mapped[Decimal | None] = mapped_column(
+        Numeric(precision=4, scale=2)
+    )
     academic_standing: Mapped[str] = mapped_column(
         String(50), default="Good Standing", server_default="Good Standing"
     )

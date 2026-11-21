@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     #: JSON for machines (deployed), plain text for humans (local). Log
     #: aggregators query fields; a formatted string is not queryable.
     log_json: bool = False
+    #: Service calls wrapped with ``@logged`` slower than this (ms) log at WARNING.
+    log_slow_call_ms: int = Field(default=1000, ge=1)
 
     # --- Database (Neon) ---
     #: Pooled connection string (host contains ``-pooler``); used by the app.
@@ -117,6 +119,8 @@ class Settings(BaseSettings):
     #: Short-lived and non-privileged: a challenge proves only that the password
     #: step completed, never that the holder may call a protected route.
     mfa_challenge_ttl_minutes: int = 5
+    #: Temporary local testing only; never permits Superadmin or Student skips.
+    development_mfa_skip: bool = False
     #: Failed password or MFA steps per lockout subject before a temporary lock.
     mfa_lockout_threshold: int = 5
     mfa_lockout_window_minutes: int = 15
@@ -137,6 +141,18 @@ class Settings(BaseSettings):
     google_calendar_redirect_uri: str | None = None
     google_calendar_encryption_key: SecretStr | None = None
     google_calendar_sync_seconds: int = Field(default=300, ge=60, le=86400)
+
+    # --- Xendit hosted payment sessions ---
+    xendit_enabled: bool = False
+    xendit_api_key: SecretStr | None = None
+    xendit_webhook_verification_token: SecretStr | None = None
+    xendit_base_url: str = "https://api.xendit.co"
+    xendit_success_return_url: str = "http://localhost:3000/payments/success"
+    xendit_cancel_return_url: str = "http://localhost:3000/payments/cancel"
+    xendit_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    xendit_webhook_tolerance_seconds: int = Field(default=300, ge=30, le=3600)
+    payment_reconciliation_pending_seconds: int = Field(default=300, ge=30)
+    payment_retry_after_seconds: int = Field(default=2, ge=1, le=60)
 
     # --- One-time tokens (email verification, password reset) ---
     #: Verification links are low-risk and mailed once, so a day is generous
@@ -170,6 +186,11 @@ class Settings(BaseSettings):
     outbox_poll_interval_seconds: float = 30.0
     #: Optional unpooled URL using the restricted runtime role, never the owner.
     outbox_listener_database_url: str | None = None
+    #: Name of the worker Lambda the API invokes right after committing an
+    #: outbox message (``cbpupsis_shared.outbox.nudge``). Unset means no nudge:
+    #: locally the worker is woken by LISTEN/NOTIFY, and deployed the EventBridge
+    #: schedule still sweeps up anything a failed nudge missed.
+    outbox_worker_function_name: str | None = None
     #: Messages claimed per tick. Larger batches amortise the query; too large
     #: and one slow message delays every other in the batch.
     outbox_batch_size: int = 50
@@ -263,6 +284,12 @@ class Settings(BaseSettings):
     #: Minimum regular semester load required during add/drop adjustments.
     enrollment_minimum_regular_load: Decimal = Field(default=Decimal("12.0"))
 
+    # Count real regular semesters after publication, never elapsed fixed days.
+    grade_correction_window_regular_semesters: int = Field(default=1, ge=1, le=10)
+    # --- Grading & Incomplete (INC) lifecycle ---
+    #: Days after submission before an uncompleted INC expires into 5.00.
+    inc_completion_days: int = Field(default=365, ge=1)
+
     @property
     def email_enabled(self) -> bool:
         """Whether real mail is sent through Resend.
@@ -328,6 +355,19 @@ class Settings(BaseSettings):
             )
         return value
 
+    def development_mfa_skip_for(self, role: str) -> bool:
+        return (
+            self.environment == "development"
+            and self.development_mfa_skip
+            and role in {"admin", "faculty"}
+        )
+
+    @model_validator(mode="after")
+    def keep_mfa_skip_in_development(self) -> Settings:
+        if self.development_mfa_skip and self.environment != "development":
+            raise ValueError("DEVELOPMENT_MFA_SKIP is for development only")
+        return self
+
     @model_validator(mode="after")
     def validate_google_calendar(self) -> Settings:
         if not self.google_calendar_enabled:
@@ -370,6 +410,30 @@ class Settings(BaseSettings):
                 "Google Calendar requires a 32-byte base64 key, "
                 "a secure redirect URI and DEBUG=false"
             ) from None
+        return self
+
+    @model_validator(mode="after")
+    def validate_xendit(self) -> Settings:
+        """Require complete, HTTPS Xendit configuration when payments are on."""
+        if not self.xendit_enabled:
+            return self
+        if not self.xendit_api_key or not self.xendit_webhook_verification_token:
+            raise ValueError(
+                "Xendit requires an API key and webhook verification token"
+            )
+        urls = (
+            self.xendit_base_url,
+            self.xendit_success_return_url,
+            self.xendit_cancel_return_url,
+        )
+        for value in urls:
+            parsed = urlsplit(value)
+            local = self.environment == "development" and parsed.hostname in {
+                "localhost",
+                "127.0.0.1",
+            }
+            if not parsed.netloc or (parsed.scheme != "https" and not local):
+                raise ValueError("Xendit URLs must use HTTPS outside development")
         return self
 
     @model_validator(mode="after")
