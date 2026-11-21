@@ -28,6 +28,25 @@ FEE_STRUCTURE_ADMIN = "FeeStructureAdmin"
 #: The group bootstrap_admin promotes into. Must exist in seed_iam's GROUPS.
 ADMIN_GROUP = "Admins"
 SUPERADMIN_GROUP = "Superadmins"
+
+#: Admin position groups from BR-AUTH-005.
+ADVISOR_GROUP = "Advisor"
+CHAIR_GROUP = "Chair"
+DEAN_GROUP = "Dean"
+REGISTRAR_GROUP = "Registrar"
+FINANCE_GROUP = "Finance"
+
+ADMIN_GROUPS = frozenset(
+    {
+        ADVISOR_GROUP,
+        CHAIR_GROUP,
+        DEAN_GROUP,
+        REGISTRAR_GROUP,
+        FINANCE_GROUP,
+        ADMIN_GROUP,
+    }
+)
+
 #: Faculty accounts join this group; it carries their section-reading grant.
 FACULTY_GROUP = "Faculty"
 #: Student accounts join this group. It carries no policy yet: the student
@@ -36,18 +55,22 @@ STUDENT_GROUP = "Students"
 
 ADMIN_POSITION_POLICIES: dict[str, tuple[str, ...]] = {
     "chairperson": (
+        "GradeCorrectionAdmin",
         "AddDropRequestAdmin",
         "CatalogAdmin",
         "EnrollmentReportReader",
         "OverloadRequestReader",
     ),
     "dean": (
+        "GradeCorrectionAdmin",
         "AddDropRequestAdmin",
         "CatalogReader",
         "EnrollmentReportReader",
+        "IncompleteCompletionAdmin",
         "OverloadRequestAdmin",
     ),
     "registrar": (
+        "GradeCorrectionAdmin",
         "AddDropRequestReader",
         "CatalogReader",
         "EnrollmentReportReader",

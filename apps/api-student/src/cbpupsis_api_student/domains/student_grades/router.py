@@ -1,8 +1,8 @@
-"""Private student records with a self-only identified grades read."""
+"""Private student records resolved from the authenticated session."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_api_student.domains.student_grades import service
@@ -43,8 +43,7 @@ router = APIRouter(
         },
         404: {
             "description": "RESOURCE_NOT_FOUND: the session is not a student "
-            "session, no student record is available, or the supplied student "
-            "number is not the signed-in student's own number."
+            "session or no student record is available."
         },
         503: {
             "description": "GRADE_RECORD_UNAVAILABLE: stored academic data cannot "
@@ -78,9 +77,7 @@ grade_permissions = [Depends(require_permission(READ_GRADE))]
 transcript_permissions = [Depends(require_permission(READ_TRANSCRIPT))]
 
 
-@router.get(
-    "/students/me/grades", response_model=GradesRead, dependencies=grade_permissions
-)
+@router.get("/grades", response_model=GradesRead, dependencies=grade_permissions)
 async def read_grades(
     user: Student,
     db: Database,
@@ -90,7 +87,7 @@ async def read_grades(
     """Read your finalized grades for one academic term (US-STU-004).
 
     Requires a live **student Bearer session** and the **ReadGrade**
-    permission. `me` is resolved from the access token; no student number
+    permission. The student is resolved from the access token; no student number
     is needed. Other roles receive `404 RESOURCE_NOT_FOUND`.
 
     Omit both filters for the latest term containing posted marks, not
@@ -118,54 +115,7 @@ async def read_grades(
 
 
 @router.get(
-    "/students/{student_number}/grades",
-    response_model=GradesRead,
-    dependencies=grade_permissions,
-)
-async def read_identified_grades(
-    student_number: Annotated[
-        str,
-        Path(
-            description="The signed-in student's own institutional student "
-            "number, not a user UUID. Another student's number and an unknown "
-            "number both return 404 RESOURCE_NOT_FOUND.",
-            examples=["2021-00901-MN-0"],
-        ),
-    ],
-    user: Student,
-    db: Database,
-    year: Year = None,
-    semester: Semester = None,
-) -> GradesRead:
-    """Read your grades using an explicit student number (US-STU-004).
-
-    Requires a live **student Bearer session** and **ReadGrade**. The
-    path parameter must match the signed-in student's number exactly.
-    This is **not** a staff lookup or a way to read another student's
-    grades: foreign and unknown numbers both return
-    `404 RESOURCE_NOT_FOUND` without confirming whether they exist.
-
-    In Scalar, enter your own student number in the path field, for
-    example `2021-00901-MN-0`, and use that same student's Bearer token.
-    Prefer `/api/v1/students/me/grades` for normal frontend self-service.
-
-    Term selection, calculation rules, empty states and response fields
-    are identical to the `me` endpoint. Omit both term filters for the
-    latest posted term, or supply `year` and `semester` together; blank
-    or unpaired filters return **422**. Only finalized, non-draft marks
-    are returned. Responses use `Cache-Control: private, no-store`.
-    """
-    return await service.read_grades(
-        db,
-        student_id=user.id,
-        student_number=student_number,
-        year=year,
-        semester=semester,
-    )
-
-
-@router.get(
-    "/students/me/transcript",
+    "/transcript",
     response_model=TranscriptRead,
     dependencies=transcript_permissions,
 )
@@ -212,14 +162,14 @@ async def read_transcript(
     places and are null when there are no eligible numeric units.
     No posted marks returns **200** with empty terms and an explanation.
 
-    Use `/api/v1/students/me/transcript/export` for a complete printable
+    Use `/api/v1/student/transcript/export` for a complete printable
     PDF, not just the current page. Responses are private and no-store.
     """
     return await service.read_transcript(db, student_id=user.id, page=page, limit=limit)
 
 
 @router.get(
-    "/students/me/transcript/export",
+    "/transcript/export",
     response_class=Response,
     dependencies=transcript_permissions,
     responses={

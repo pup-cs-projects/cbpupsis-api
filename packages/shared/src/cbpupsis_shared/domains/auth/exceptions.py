@@ -166,8 +166,11 @@ class InvalidTokenError(AuthError, UnauthorizedError):
     """A one-time token is unknown, expired, already used, or was issued for a
     different purpose (HTTP 401).
 
-    One message for all four, so the response cannot be used to probe which.
+    One message and code for all unknown/invalid cases, so the response cannot
+    be used to probe which.
     """
+
+    code = "AUTH_RESET_TOKEN_INVALID"
 
     def __init__(self) -> None:
         super().__init__(INVALID_TOKEN_MESSAGE)
@@ -214,9 +217,15 @@ class RefreshTokenReusedError(AuthError, UnauthorizedError):
         super().__init__("Refresh token already used")
 
 
-class IncorrectCurrentPasswordError(AuthError, UnauthorizedError):
+class IncorrectCurrentPasswordError(AuthError):
     """The current password supplied to a password change did not match
-    (HTTP 401)."""
+    (HTTP 400).
+
+    Uses 400 rather than 401 so clients do not treat a mistyped current
+    password as an expired session and attempt a token refresh.
+    """
+
+    code = "AUTH_CURRENT_PASSWORD_INCORRECT"
 
     def __init__(self) -> None:
         super().__init__("Current password is incorrect")
@@ -306,12 +315,12 @@ class SessionExpiredError(AuthError, UnauthorizedError):
 
 
 class InvalidEmailAddressError(AuthError):
-    """Malformed email, independent of account existence (HTTP 400)."""
+    """Malformed reset identifier, independent of account existence (HTTP 400)."""
 
     code = "INVALID_EMAIL_ADDRESS"
 
     def __init__(self) -> None:
-        super().__init__("Enter a valid email address.")
+        super().__init__("Enter a valid email address or institutional ID.")
 
 
 class ResetRateLimitError(AuthError):

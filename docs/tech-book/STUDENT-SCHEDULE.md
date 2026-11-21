@@ -6,16 +6,14 @@ The Student API owns these authenticated GET routes beneath `/api/v1`:
 
 | Route | Purpose |
 |---|---|
-| `/students/me/schedule` | Caller-owned course list, meetings, and totals |
-| `/students/me/schedule/export?format=pdf` | Complete printable schedule |
-| `/students/me/schedule/export?format=ics` | Complete recurring calendar |
-| `/students/{student_number}/schedule` | Explicit self-identity check; foreign and absent identifiers are identical 404 `RESOURCE_NOT_FOUND` |
+| `/student/schedule` | Caller-owned course list, meetings, and totals |
+| `/student/schedule/export?format=pdf` | Complete printable schedule |
+| `/student/schedule/export?format=ics` | Complete recurring calendar |
 
-The parent-story `/students/me/...` routes are canonical for clients and QA.
-The earlier draft's deprecated `/student/schedule` and `/student/schedule/export`
-aliases have been removed, not merely hidden from Scalar. They return 404; update
-clients and QA requests to the canonical URLs before publishing this revision.
-The literal `me` is resolved from the session, never as a student number.
+These singular paths are the only public schedule contract (#147). The former
+plural paths and student-number endpoint are removed and return 404, with no
+aliases or redirects. The student is resolved from the authenticated session.
+Coordinate release with [client #63](https://github.com/pup-cs-projects/cbpupsis-client/issues/63).
 
 A live student session and `ReadSchedule` are required. Run the idempotent IAM
 seed after deploying: Students receive `ScheduleReader`. No new read-all grant
@@ -28,9 +26,8 @@ explanatory empty response, never an ownership 404. Read responses accept `q`
 (maximum 200 characters), matching code, title, or faculty name case-insensitively.
 Whitespace-only `q` restores the complete list. Exports always ignore view filters.
 
-The response uses snake_case to match existing student/faculty APIs and the
-parent-story naming convention. This user-approved contract change supersedes
-the earlier draft's camelCase choice. Data is returned directly at the JSON root;
+The response uses snake_case to match existing student/faculty APIs.
+Data is returned directly at the JSON root;
 no `status`/`data` success wrapper is added.
 
 - `student_name`, `student_number`, and `term` (`id`, `year`, `semester`,
@@ -49,10 +46,9 @@ no `status`/`data` success wrapper is added.
 
 ### Migrating from the earlier draft
 
-This is a breaking JSON property-name change on the canonical self and ownership
-read URLs. Update clients and QA assertions before publishing this revision;
-there is no dual-spelling response. The earlier deprecated singular `/student/`
-schedule routes are removed; migrate those URLs to `/students/me/` as well.
+The earlier draft used camelCase properties; there is no dual-spelling response.
+The route migration in #147 preserves the existing snake_case response and all
+download behavior. Update clients and QA URLs to the singular paths above.
 
 | Earlier draft property | Current property |
 | --- | --- |
@@ -81,10 +77,12 @@ PDF returns `application/pdf`; ICS returns `text/calendar`. Both have attachment
 disposition and are generated in memory. No storage service or background job is
 required. CPU work is offloaded to a thread. The ten-second export deadline
 returns 503 `SERVICE_UNAVAILABLE` with `Retry-After: 30`, never a partial file.
+Unexpected export errors reach the global handler as an opaque 500; logs record
+only the error type, not exception text or student data.
 Resource bounds are 100 courses, 1,000 meetings, a 731-day date span, 1,000 holiday
 records, and 10,000 historical meeting identities per student/term export stream.
 
-The user approved **one VEVENT per meeting**, clarifying #96's literal one-per-course
+Exports use **one VEVENT per meeting**, clarifying #96's literal one-per-course
 wording: lecture and laboratory slots with different times/durations must not be
 collapsed into an incorrect recurrence. Events use Asia/Manila, weekly RRULEs
 bounded by the academic term, and EXDATEs for inclusive `academic_events` holiday
@@ -108,6 +106,11 @@ original file-import contract remains unchanged; no subscription feed is added.
 
 ## Rollout and verification
 
+The #147 route migration needs no new database migration. Merge and deploy it
+with [client #63](https://github.com/pup-cs-projects/cbpupsis-client/issues/63)
+on the same day; older clients cannot use the removed routes. The underlying
+schedule feature's database and calendar verification requirements follow.
+
 Apply the new Alembic migration before serving calendar exports. Its explicit
 grants mirror named roles already holding ordinary enrollment CRUD privileges;
 no PUBLIC/default grants or audit-ledger permissions change. Seed IAM, publish
@@ -121,3 +124,10 @@ Verify a printable twelve-course PDF in under three seconds and inspect rendered
 pages. Before release, import/re-import in a real calendar client and run the
 5,000-student load scenario on an isolated deployment; report either as unverified
 until actually executed. Never run migration or load tests against shared data.
+
+### Issue #156: Google Calendar and Outlook file verification
+
+The issue-only [interoperability record](STUDENT-SCHEDULE-ICS-156.md) contains
+synthetic fixture reproduction, exact expected occurrences, import/re-import
+steps, the two-client evidence matrix, and outstanding integration/client checks.
+Parser checks do not establish real-client acceptance.

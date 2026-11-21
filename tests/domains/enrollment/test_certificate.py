@@ -408,19 +408,44 @@ async def test_ac_enrl_003_9_atomic_issue_status_one_audit_and_retry(client, set
     assert len(await enrolled_sections(db, setup.student_id, setup.term_id)) == 2
 
 
-async def test_generation_failure_no_partial_attachment(client, setup, monkeypatch):
+@pytest.mark.parametrize("failure,status", [(RuntimeError, 500), (TimeoutError, 503)])
+async def test_generation_failure_no_partial_attachment(
+    client, setup, monkeypatch, caplog, failure, status
+):
+    from httpx import ASGITransport, AsyncClient
+
     await issue(client, setup)
 
     def fail(_):
-        raise RuntimeError("sensitive renderer data must not leak")
+        raise failure("sensitive renderer data must not leak")
 
     monkeypatch.setattr(cor_exports, "render_pdf", fail)
-    response = await read(client, setup, "pdf")
-    assert (
-        response.status_code == 503 and response.json()["code"] == "SERVICE_UNAVAILABLE"
-    )
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as handler_client:
+        response = await read(handler_client, setup, "pdf")
+    assert response.status_code == status
+    if status == 503:
+        assert response.json()["code"] == "SERVICE_UNAVAILABLE"
+    else:
+        assert response.json()["detail"] == "Internal server error"
+        [record] = [r for r in caplog.records if r.name == "cbpupsis_core.exceptions"]
+        assert record.error_type == "RuntimeError"
+        assert record.exc_info is None
+    assert "no-store" in response.headers["cache-control"]
     assert "content-disposition" not in response.headers
     assert b"sensitive" not in response.content
+    assert "sensitive renderer" not in caplog.text
+
+
+async def test_invalid_renderer_output_returns_503(client, setup, monkeypatch):
+    await issue(client, setup)
+    monkeypatch.setattr(cor_exports, "render_pdf", lambda _: b"not-a-pdf")
+    response = await read(client, setup, "pdf")
+    assert response.status_code == 503
+    assert response.json()["code"] == "SERVICE_UNAVAILABLE"
+    assert "content-disposition" not in response.headers
 
 
 async def test_unissued_get_without_academic_service_is_read_only_409(
