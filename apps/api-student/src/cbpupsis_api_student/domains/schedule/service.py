@@ -243,19 +243,14 @@ async def export_schedule(
                     if getattr(exc.orig, "sqlstate", None) != "40001" or attempt == 2:
                         raise
             raise ScheduleUnavailableError
-    except ResourceNotFoundError:
-        await db.rollback()
-        raise
-    except asyncio.CancelledError:
-        await db.rollback()
-        raise
-    except Exception as exc:
-        await db.rollback()
+    except TimeoutError as exc:
         # No exception text: drivers and renderers can include private row data.
         logger.warning(
             "schedule.export_failed", extra={"failure_type": type(exc).__name__}
         )
         raise ScheduleUnavailableError from None
+    finally:
+        await db.rollback()
 
 
 async def _export_once(

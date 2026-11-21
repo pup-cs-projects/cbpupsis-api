@@ -310,7 +310,8 @@ class TestEmailFailureDoesNotBreakTheRequest:
         )
 
         response = await client.post(
-            "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
+            "/api/v1/auth/forgot-password",
+            json={"identifier": registered_user["email"]},
         )
         assert response.status_code == 202
         await drain_outbox()

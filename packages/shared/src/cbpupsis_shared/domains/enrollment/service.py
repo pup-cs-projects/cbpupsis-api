@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import Collection
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, time
 from decimal import Decimal
@@ -9,6 +10,7 @@ from decimal import Decimal
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cbpupsis_core import logged
 from cbpupsis_core.config import settings
 from cbpupsis_core.events import Event
 from cbpupsis_core.exceptions import ConflictError, ForbiddenError, ValidationError
@@ -81,6 +83,7 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     ConflictTerm,
     CurrentEnrollmentRead,
     EnrolledSection,
+    EnrollmentAttemptOwner,
     EnrollmentSubmitRead,
     EnrollmentSubmitSectionRead,
     EnrollmentSummaryRead,
@@ -89,6 +92,8 @@ from cbpupsis_shared.domains.enrollment.schemas import (
     OverloadRequestRead,
     RecordEnrollment,
     ScheduleConflictCheckRead,
+    SectionRosterAddDrop,
+    SectionRosterEnrollment,
     TermEnrollmentRead,
 )
 from cbpupsis_shared.domains.grading import client as grading
@@ -393,6 +398,54 @@ async def record_enrollments(db: AsyncSession, student_id: uuid.UUID):
     ]
 
 
+async def section_roster_enrollments(
+    db: AsyncSession, section_id: uuid.UUID
+) -> list[SectionRosterEnrollment]:
+    rows = await repository.list_section_roster_enrollments(db, section_id)
+    return [SectionRosterEnrollment.model_validate(row) for row in rows]
+
+
+async def get_enrollment_owners(
+    db: AsyncSession, enrollment_ids: Collection[uuid.UUID]
+) -> dict[uuid.UUID, EnrollmentAttemptOwner]:
+    rows = await repository.list_enrollment_owners_by_ids(db, enrollment_ids)
+    return {
+        row["enrollment_id"]: EnrollmentAttemptOwner.model_validate(row) for row in rows
+    }
+
+
+async def list_sections_enrollments(
+    db: AsyncSession, section_ids: Collection[uuid.UUID]
+) -> list[EnrollmentAttemptOwner]:
+    rows = await repository.list_section_enrollments_batch(db, section_ids)
+    return [EnrollmentAttemptOwner.model_validate(row) for row in rows]
+
+
+async def section_roster_add_drop(
+    db: AsyncSession,
+    *,
+    section_id: uuid.UUID,
+    student_ids: set[uuid.UUID],
+) -> list[SectionRosterAddDrop]:
+    rows = await repository.list_latest_section_add_drop(
+        db, section_id=section_id, student_ids=student_ids
+    )
+    found: set[uuid.UUID] = set()
+    result = []
+    for row in rows:
+        if row["student_id"] in found:
+            continue
+        found.add(row["student_id"])
+        state = row["state"].upper()
+        status = (
+            f"{state}_{row['action'].upper()}"
+            if state in {"PENDING", "APPROVED"}
+            else "NONE"
+        )
+        result.append(SectionRosterAddDrop(student_id=row["student_id"], status=status))
+    return result
+
+
 async def enrolled_sections(
     db: AsyncSession, student_id: uuid.UUID, term_id: uuid.UUID
 ) -> list[EnrolledSection]:
@@ -523,6 +576,7 @@ async def list_available_courses(
     )
 
 
+@logged("enrollment.submit", fields=("student_id",))
 async def submit_enrollment(
     db: AsyncSession,
     *,
@@ -1435,6 +1489,7 @@ async def list_admin_add_drop_requests(
     ]
 
 
+@logged("enrollment.decide_add_drop_request", fields=("reviewer_id",))
 async def decide_add_drop_request(
     db: AsyncSession,
     *,

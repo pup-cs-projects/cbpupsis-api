@@ -3,7 +3,7 @@
 One test (or more) per product-owner decision:
 
 1. Only a Superadmin creates accounts; public registration is gone.
-2. One at a time (``POST /users``) or in bulk (see ``tests/domains/user_import``).
+2. One at a time (``POST /admin/users``) or in bulk (see ``tests/domains/user_import``).
 3. Created accounts are verified on creation.
 4. The system mails a temporary password; the user signs in with it.
 5. Until it is changed, every route but change-password (and logout) answers
@@ -38,7 +38,7 @@ from cbpupsis_database.models.users import (
 from cbpupsis_shared.domains.auth.security import totp_at
 from tests.conftest import temporary_password_from
 
-USERS = "/api/v1/users"
+USERS = "/api/v1/admin/users"
 STUDENT_NUMBER = "2024-00001-MN-0"
 EMPLOYEE_ID = "2015-00042-MN-1"
 
@@ -92,15 +92,22 @@ ROWS: dict[str, dict[str, object]] = {
         "college": "CCIS",
         "department": "Ignored",
     },
+    "admin_advisor": {
+        "first_name": "Gabe",
+        "surname": "Santos",
+        "email": "gabe.santos@example.com",
+        "role": "admin_advisor",
+    },
 }
 
 EXPECTED_GROUP = {
     "student": "Students",
     "faculty": "Faculty",
-    "admin_registrar": "Admins",
-    "admin_finance": "Admins",
-    "admin_chairperson": "Admins",
-    "admin_dean": "Admins",
+    "admin_registrar": "Registrar",
+    "admin_finance": "Finance",
+    "admin_chairperson": "Chair",
+    "admin_dean": "Dean",
+    "admin_advisor": "Advisor",
 }
 
 
@@ -226,6 +233,7 @@ class TestEachRoleRow:
             ("admin_finance", "finance", None, None),
             ("admin_chairperson", "chairperson", "Computer Science", None),
             ("admin_dean", "dean", None, "CCIS"),
+            ("admin_advisor", "advisor", None, None),
         ],
     )
     async def test_admin_position_and_scope(

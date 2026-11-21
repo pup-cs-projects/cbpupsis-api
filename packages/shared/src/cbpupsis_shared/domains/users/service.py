@@ -29,15 +29,19 @@ from cbpupsis_shared.domains.auth.exceptions import SuperadminRoleRequiredError
 from cbpupsis_shared.domains.curriculum import client as curriculum_client
 from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.iam.constants import (
-    ADMIN_GROUP,
+    ADMIN_GROUPS,
+    ADVISOR_GROUP,
+    CHAIR_GROUP,
+    DEAN_GROUP,
     FACULTY_GROUP,
+    FINANCE_GROUP,
+    REGISTRAR_GROUP,
     STUDENT_GROUP,
 )
 from cbpupsis_shared.domains.users import repository
 from cbpupsis_shared.domains.users.constants import (
     ADMIN_ROLE_POSITIONS,
     EDITABLE_PROFILE_FIELDS,
-    INSTITUTION_WIDE_POSITIONS,
     MANAGE_USER,
     READ_ALL_USER,
     REQUIRED_ONBOARDING_FIELDS,
@@ -59,6 +63,7 @@ from cbpupsis_shared.domains.users.schemas import (
     AvatarRead,
     EmergencyContactRead,
     FacultyProfileRead,
+    FacultyRosterIdentity,
     OverloadStudentIdentity,
     RecordIdentity,
     ScheduleIdentity,
@@ -89,6 +94,25 @@ async def overload_student_identities(
         )
         for row in await repository.list_overload_student_identities(db, student_ids)
     }
+
+
+async def faculty_roster_identities(
+    db: AsyncSession, student_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, FacultyRosterIdentity]:
+    result = {}
+    for row in await repository.list_faculty_roster_identities(db, student_ids):
+        name = row.full_name or " ".join(
+            part for part in (row.first_name, row.last_name) if part
+        )
+        result[row.student_id] = FacultyRosterIdentity(
+            student_id=row.student_id,
+            student_number=row.student_number,
+            name=name or row.student_number,
+            email=row.email,
+            program_id=row.program_id,
+            year_level=row.year_level,
+        )
+    return result
 
 
 async def schedule_identity(
@@ -476,7 +500,7 @@ async def deactivate_as_admin(
     user = await repository.get_user_for_update(db, user_id)
     if user is None:
         raise UserNotFoundError(user_id)
-    if await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP):
+    if await iam_service.is_user_in_any_group(db, user_id, ADMIN_GROUPS):
         raise ForbiddenError(
             "Admin suspension requires a justified override", code="OVERRIDE_REQUIRED"
         )
@@ -544,6 +568,13 @@ async def reactivate_as_admin(
 async def get_by_email_for_update(db: AsyncSession, email: str):
     """Read a credential while holding the account lock until commit."""
     return await repository.get_user_by_email_for_update(db, email)
+
+
+async def get_by_institutional_id_for_update(db: AsyncSession, institutional_id: str):
+    """Read a live user holding a student number or employee id under lock."""
+    return await repository.get_user_by_institutional_id_for_update(
+        db, institutional_id
+    )
 
 
 async def get_active_user_for_update(db: AsyncSession, user_id: uuid.UUID):
@@ -675,6 +706,18 @@ async def get_faculty_profile(
     """Return a user's faculty profile, or ``None``."""
     profile = await repository.get_faculty_profile(db, user_id)
     return None if profile is None else FacultyProfileRead.model_validate(profile)
+
+
+async def stage_update_faculty_profile(
+    db: AsyncSession, user_id: uuid.UUID, **fields: object
+) -> FacultyProfileRead:
+    """Stage changes onto ``user_id``'s faculty profile without committing."""
+    profile = await repository.get_faculty_profile(db, user_id)
+    if profile is None:
+        raise UserNotFoundError(user_id)
+    repository.update_faculty_profile(profile, **fields)
+    await db.flush()
+    return FacultyProfileRead.model_validate(profile)
 
 
 async def get_user_profile(
@@ -883,7 +926,7 @@ async def stage_admin_deactivation_override(
     user = await repository.get_user_for_update(db, user_id)
     if user is None:
         raise UserNotFoundError(user_id)
-    if not await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP):
+    if not await iam_service.is_user_in_any_group(db, user_id, ADMIN_GROUPS):
         raise ForbiddenError(
             "Override target must be an Admin", code="OVERRIDE_TARGET_INVALID"
         )
@@ -897,7 +940,11 @@ async def stage_admin_deactivation_override(
 ROLE_GROUPS: dict[AccountRole, str] = {
     AccountRole.student: STUDENT_GROUP,
     AccountRole.faculty: FACULTY_GROUP,
-    **dict.fromkeys(ADMIN_ROLE_POSITIONS, ADMIN_GROUP),
+    AccountRole.admin_registrar: REGISTRAR_GROUP,
+    AccountRole.admin_finance: FINANCE_GROUP,
+    AccountRole.admin_chairperson: CHAIR_GROUP,
+    AccountRole.admin_dean: DEAN_GROUP,
+    AccountRole.admin_advisor: ADVISOR_GROUP,
 }
 
 
@@ -912,13 +959,13 @@ def admin_scope(
     """Keep only the scope a position holds: ``(department, college)``.
 
     A chairperson keeps a department, a dean a college, and an
-    institution-wide position (registrar, finance) neither.
+    institution-wide position (registrar, finance) or advisor neither.
     """
-    if position is not AdminPosition.chairperson:
-        department = None
-    if position in INSTITUTION_WIDE_POSITIONS:
-        college = None
-    return department, college
+    if position is AdminPosition.chairperson:
+        return department, None
+    if position is AdminPosition.dean:
+        return None, college
+    return None, None
 
 
 @dataclass(frozen=True)

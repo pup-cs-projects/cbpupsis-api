@@ -100,17 +100,23 @@ async def _group_named(db: AsyncSession, name: str) -> Group:
     return result.scalar_one()
 
 
-def _reload_app_modules() -> None:
+def _reload_app_modules(restore: object | None = None) -> None:
     """Rebuild the app from a fresh settings object, in dependency order.
 
     ``create_app`` reads the gate from the settings its module bound at import,
     so the factory module is reloaded after the config and before ``main``.
+    Pass ``restore`` (the settings object from before the first reload) when
+    putting things back: every module that imported ``settings`` earlier still
+    holds that object, so a test that patches ``cbpupsis_core.config.settings``
+    must reach the same one.
     """
     import cbpupsis_core.config
     import cbpupsis_shared.application
     import main
 
     importlib.reload(cbpupsis_core.config)
+    if restore is not None:
+        cbpupsis_core.config.settings = restore
     importlib.reload(cbpupsis_shared.application)
     importlib.reload(main)
 
@@ -133,6 +139,9 @@ def app_for(environment: str) -> Iterator[FastAPI]:
         # Production refuses per-instance counters; limiting is off in tests,
         # so this store is never contacted.
         os.environ["RATE_LIMIT_STORAGE_URI"] = "redis://localhost:6379/0"
+    import cbpupsis_core.config
+
+    original_settings = cbpupsis_core.config.settings
     try:
         _reload_app_modules()
         with patch(
@@ -148,7 +157,7 @@ def app_for(environment: str) -> Iterator[FastAPI]:
                 os.environ.pop(name, None)
             else:
                 os.environ[name] = value
-        _reload_app_modules()
+        _reload_app_modules(restore=original_settings)
 
 
 class TestAdminLogin:
