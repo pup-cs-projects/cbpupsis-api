@@ -34,7 +34,7 @@ jobs:
       # The hooks pin python3.12 (.pre-commit-config.yaml), and pre-commit looks
       # for it on PATH when it builds a hook environment. The runner image no
       # longer ships it, so install it rather than rely on the image.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
