@@ -113,7 +113,7 @@ jobs:
           $COMPOSE exec -T api-admin python -m scripts.seed_iam
           $COMPOSE exec -T -e E2E_PASSWORD="$E2E_PASSWORD" api-admin python -m scripts.seed_e2e --quiet
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
