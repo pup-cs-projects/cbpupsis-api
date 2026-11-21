@@ -7,3 +7,4 @@ Also declared, independently, in ``scripts/seed_iam.py``;
 from __future__ import annotations
 
 READ_COURSE_SECTION = "ReadCourseSection"
+ACADEMIC_RECORD_DISCLOSED = "faculty.academic_record_disclosed"

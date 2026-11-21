@@ -10,9 +10,13 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_database.session import get_db
+from cbpupsis_shared.domains.auth import client as auth_client
 from cbpupsis_shared.domains.auth.constants import ROLE_FACULTY
 from cbpupsis_shared.domains.auth.dependencies import CurrentUser, get_current_user
-from cbpupsis_shared.domains.auth.exceptions import InsufficientRoleError
+from cbpupsis_shared.domains.auth.exceptions import (
+    InsufficientRoleError,
+    MfaRequiredError,
+)
 from cbpupsis_shared.domains.users import client as users_client
 
 
@@ -22,8 +26,10 @@ async def require_faculty_session(
 ) -> CurrentUser:
     """The shared dependency enforces the session and idle timeout; this adds
     that the session came from faculty sign-in with MFA and the profile is live."""
-    if user.role != ROLE_FACULTY or user.claims.get("mfa") is not True:
+    if user.role != ROLE_FACULTY:
         raise InsufficientRoleError
+    if not auth_client.session_mfa_satisfied(user.claims):
+        raise MfaRequiredError
     profile = await users_client.get_faculty_profile(db, user.id)
     if profile is None or not profile.is_active:
         raise InsufficientRoleError

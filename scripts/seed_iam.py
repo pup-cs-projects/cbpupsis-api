@@ -98,10 +98,25 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("CreateAddDropRequest", "File your own add and drop request"),
     ("ReadAddDropRequest", "Read add and drop requests within your scope"),
     ("ApproveAddDrop", "Approve or reject an in-scope add and drop request"),
+    ("UpdateGrade", "Save draft grades for your assigned course sections"),
+    ("SubmitGrade", "Finalize and submit grades for your assigned course sections"),
+    ("CreateGradeCorrection", "File a correction for your assigned section"),
+    ("ReadGradeCorrection", "Read your own grade corrections"),
+    ("ApproveGradeCorrection", "Decide the assigned in-scope grade correction step"),
+    (
+        "CreateIncompleteCompletion",
+        "File a completion grade for an Incomplete in your assigned section",
+    ),
+    (
+        "ApproveIncompleteCompletion",
+        "Endorse or reject Incomplete completion requests in your college",
+    ),
     (
         "ManageFeeStructure",
         "Create and update term fee structures and payment plans",
     ),
+    ("ReadProfile", "Read your own profile"),
+    ("UpdateProfile", "Update editable fields on your own profile"),
 ]
 
 #: Policies as reusable bundles of the permissions above. name -> [actions]
@@ -141,7 +156,13 @@ POLICIES: dict[str, list[str]] = {
     "AddDropRequestAuthor": ["CreateAddDropRequest", "ReadAddDropRequest"],
     "AddDropRequestReader": ["ReadAddDropRequest"],
     "AddDropRequestAdmin": ["ReadAddDropRequest", "ApproveAddDrop"],
+    "GradeAuthor": ["UpdateGrade", "SubmitGrade"],
+    "GradeCorrectionAuthor": ["CreateGradeCorrection", "ReadGradeCorrection"],
+    "GradeCorrectionAdmin": ["ApproveGradeCorrection"],
+    "IncompleteCompletionAuthor": ["CreateIncompleteCompletion"],
+    "IncompleteCompletionAdmin": ["ApproveIncompleteCompletion"],
     "FeeStructureAdmin": ["ManageFeeStructure"],
+    "ProfileAuthor": ["ReadProfile", "UpdateProfile"],
 }
 
 #: Policies reserved for the separate Superadmin role. They are seeded now
@@ -178,7 +199,13 @@ GROUPS: dict[str, list[str]] = {
     # by those domains. User administration, IAM, and audit reading belong to
     # the separate Superadmin story and must not leak through this seed.
     ADMIN_GROUP: ["WaiverRequestAdmin"],
-    FACULTY_GROUP: ["CourseSectionReader"],
+    FACULTY_GROUP: [
+        "CourseSectionReader",
+        "GradeAuthor",
+        "GradeCorrectionAuthor",
+        "ProfileAuthor",
+        "IncompleteCompletionAuthor",
+    ],
     # Superadmin-created student accounts join this group.
     STUDENT_GROUP: [
         "GradeReader",
