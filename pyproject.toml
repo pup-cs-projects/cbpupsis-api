@@ -106,6 +106,7 @@ env = [
     "DATABASE_URL=postgresql://test:test@localhost/test",
     "JWT_SECRET=test-secret-key-that-is-long-enough-32chars",
     "ENVIRONMENT=development",
+    "DEVELOPMENT_MFA_SKIP=false",
     "DEBUG=false",
     # Off by default in tests: the limiter is a module-level singleton, so its
     # counters would persist for the whole session and leak between tests —

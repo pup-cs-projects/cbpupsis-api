@@ -6,14 +6,16 @@ import asyncio
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from ipaddress import ip_address
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pydantic import SecretStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from cbpupsis_api_student.domains.payments.exports import receipt_pdf
+from cbpupsis_api_student.domains.payments.exports import _format_paid_at, receipt_pdf
 from cbpupsis_api_student.main import app as student_app
 from cbpupsis_core.config import settings
 from cbpupsis_database.base import Base
@@ -24,8 +26,10 @@ from cbpupsis_database.models.billing import (
     PaymentWebhookEvent,
     StudentBillingAccount,
 )
-from cbpupsis_database.models.users import User
+from cbpupsis_database.models.curriculum import Program
+from cbpupsis_database.models.users import StudentProfile, User
 from cbpupsis_shared.domains.auth.exceptions import ResourceNotFoundError
+from cbpupsis_shared.domains.billing import account as account_service
 from cbpupsis_shared.domains.billing import service
 from cbpupsis_shared.domains.billing.constants import PAYMENT_PAID, PAYMENT_PENDING
 from cbpupsis_shared.domains.billing.exceptions import (
@@ -51,9 +55,11 @@ class FakeGateway:
         self.status = GatewayStatusResult(GatewayState.PENDING)
         self.entered: asyncio.Event | None = None
         self.release: asyncio.Event | None = None
+        self.last_create_kwargs: dict | None = None
 
-    async def create_session(self, **_kwargs) -> GatewayCreateResult:
+    async def create_session(self, **kwargs) -> GatewayCreateResult:
         self.create_calls += 1
+        self.last_create_kwargs = kwargs
         if self.entered is not None:
             self.entered.set()
         if self.release is not None:
@@ -132,7 +138,13 @@ async def test_ac_fin_002_1_creates_one_hosted_checkout(db):
     assert result.body["state"] == PAYMENT_PENDING
     assert result.body["checkoutUrl"].startswith("https://checkout.example/")
     assert gateway.create_calls == 1
+    assert gateway.last_create_kwargs is not None
     stored = await db.scalar(select(Payment))
+    customer = gateway.last_create_kwargs["customer"]
+    assert customer.reference_id == stored.id.hex
+    assert customer.email == user.email
+    assert customer.given_names == "Payment"
+    assert customer.surname == "Student"
     assert stored.idempotency_key == "key-1"
     assert stored.amount == Decimal("100.00")
 
@@ -366,3 +378,68 @@ def test_ac_fin_002_openapi_documents_routes_header_and_six_codes():
         "WEBHOOK_SIGNATURE_INVALID",
     }
     assert "security" not in paths["/api/v1/public/payments/webhooks/xendit"]["post"]
+
+
+@pytest.mark.asyncio
+async def test_ac_fin_002_settle_stringifies_ipaddress_client_ip(db):
+    user, account = await _billing_account(db)
+    payment = Payment(
+        billing_account_id=account.id,
+        student_id=user.id,
+        idempotency_key="ip-obj-1",
+        merchant_reference="cbp-ip-obj-1",
+        amount=Decimal("25.00"),
+        payment_status=PAYMENT_PENDING,
+    )
+    db.add(payment)
+    await db.flush()
+    payment_proxy = SimpleNamespace(
+        id=payment.id,
+        billing_account_id=payment.billing_account_id,
+        student_id=payment.student_id,
+        amount=payment.amount,
+        payment_status=payment.payment_status,
+        gateway_reference="py-ip-1",
+        receipt_number=None,
+        paid_at=None,
+        initiated_ip=ip_address("198.51.100.4"),
+    )
+    assert await service._settle_locked(db, payment_proxy, source="xendit_webhook")
+    await db.commit()
+    audit = await db.scalar(select(AuditEntry))
+    assert audit.payload["clientIp"] == "198.51.100.4"
+
+
+@pytest.mark.asyncio
+async def test_ac_fin_002_payment_history_handles_pending_without_gateway_ref(db):
+    user, _account = await _billing_account(db)
+    program = Program(
+        code="FIN107",
+        name="Pending History Program",
+        department="Computer Science",
+        total_units_required=Decimal("140"),
+    )
+    db.add(program)
+    await db.flush()
+    db.add(
+        StudentProfile(
+            user_id=user.id,
+            student_number="2026-00107-PG-0",
+            program_id=program.id,
+            year_level=1,
+        )
+    )
+    await db.commit()
+
+    created = await _create(db, user, FakeGateway())
+    payment_id = uuid.UUID(created.body["paymentId"])
+    history = await account_service.read_payments(db, user.id)
+    assert len(history) == 1
+    assert history[0].status == PAYMENT_PENDING
+    assert history[0].reference == f"cbp-{payment_id.hex}"
+
+
+def test_ac_fin_002_receipt_paid_at_formats_in_readable_utc8():
+    paid_utc = datetime(2026, 11, 18, 12, 51, 43, tzinfo=UTC)
+    assert _format_paid_at(paid_utc) == "November 18, 2026 at 8:51 PM (UTC+8)"
+    assert _format_paid_at(None) == "Pending"

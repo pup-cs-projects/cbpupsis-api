@@ -52,7 +52,13 @@ async def ops_grants(db, superadmin_headers):
     return superadmin_headers
 
 
-async def test_ac_104_1_password_is_only_a_challenge(client, superadmin_account):
+@pytest.mark.parametrize("skip", [False, True])
+async def test_ac_104_1_password_is_only_a_challenge(
+    client, superadmin_account, monkeypatch, skip
+):
+    from cbpupsis_core.config import settings
+
+    monkeypatch.setattr(settings, "development_mfa_skip", skip)
     response = await client.post(
         "/api/v1/auth/superadmin/login",
         json={
@@ -276,9 +282,8 @@ async def test_ac_104_8_read_and_legacy_mutation_each_audited_once(
 
 
 async def test_user_creation_is_superadmin_only_and_signup_is_gone(
-    client, db, superadmin_headers
+    client, superadmin_headers, role_groups
 ):
-    await iam_service.create_group(db, name=ADMIN_GROUP)
     data = {
         "first_name": "New",
         "surname": "Registrar",
@@ -447,7 +452,7 @@ async def test_password_reset_revokes_superadmin_and_pending_challenge(
     assert await db.get(MfaChallenge, uuid.UUID(registered_user["id"])) is not None
     sent_emails.clear()
     await client.post(
-        "/api/v1/auth/forgot-password", json={"email": registered_user["email"]}
+        "/api/v1/auth/forgot-password", json={"identifier": registered_user["email"]}
     )
     await drain_outbox()
     reset = next(mail for mail in sent_emails if "reset" in mail["subject"].lower())

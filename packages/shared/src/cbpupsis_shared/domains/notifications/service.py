@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -191,6 +192,8 @@ async def set_preference(
     notification_type: str,
     channel: str,
     enabled: bool,
+    *,
+    ip_address: str | None = None,
 ) -> None:
     """Store a user's choice for one type and channel.
 
@@ -212,15 +215,26 @@ async def set_preference(
         )
     else:
         repository.update_preference(existing, enabled=enabled)
-    if db.info.get("superadmin_audit"):
+    if prior_enabled != enabled or db.info.get("superadmin_audit"):
+        occurred_at = datetime.now(ZoneInfo("Asia/Manila"))
+        field_name = f"{notification_type}:{channel}"
         audit_client.stage(
             db,
             action="notification.preference_updated",
             actor_id=user_id,
             target_type="notification_preference",
             target_id=f"{user_id}:{notification_type}:{channel}",
+            occurred_at=occurred_at,
             prior_state={"enabled": prior_enabled},
             new_state={"enabled": enabled},
+            payload={
+                "field": field_name,
+                "prior_value": prior_enabled,
+                "new_value": enabled,
+                "actor": str(user_id),
+                "timestamp": occurred_at.isoformat(),
+                "ip_address": ip_address,
+            },
         )
     await db.commit()
 

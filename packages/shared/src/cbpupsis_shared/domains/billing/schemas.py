@@ -236,7 +236,7 @@ class PaymentCreated(BaseModel):
     checkoutUrl: str
 
 
-class PaymentStatusRead(BaseModel):
+class PaymentDetailRead(BaseModel):
     paymentId: uuid.UUID
     state: str
     amount: str
