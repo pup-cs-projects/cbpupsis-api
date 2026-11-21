@@ -14,6 +14,7 @@ from cbpupsis_shared.domains.academics.schemas import (
     AcademicTermRead,
 )
 from cbpupsis_shared.domains.academics.service import (
+    correction_window_terms,
     holidays,
     record_terms,
     resolve_term,
@@ -23,6 +24,7 @@ __all__ = [
     "AcademicEventRead",
     "AcademicPeriodRead",
     "AcademicTermRead",
+    "correction_window_terms",
     "get_academic_term",
     "get_current_term",
     "get_term",

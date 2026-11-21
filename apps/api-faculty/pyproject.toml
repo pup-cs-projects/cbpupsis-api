@@ -9,6 +9,7 @@ dependencies = [
     "cbpupsis-shared",
     "cryptography>=50.0.2",
     "fastapi",
+    "python-multipart",
     "pydantic",
     "sqlalchemy[asyncio]",
     "uvicorn[standard]",

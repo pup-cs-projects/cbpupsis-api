@@ -38,7 +38,8 @@ APPS := api-student api-faculty api-admin
 
 # `run --rm` rather than `exec`, so these work whether or not the stack is up.
 # Alembic runs in the one-shot `migrate` service, which waits only for the
-# database. Scripts run in api-admin: seeding IAM and managing accounts are
+# database. `up` never starts it (it sits behind a compose profile): run
+# `make migrate` on purpose. Scripts run in api-admin: seeding IAM and managing accounts are
 # administrative work, and the admin image is the one that carries scripts/.
 ALEMBIC := $(COMPOSE) run --rm migrate alembic
 RUN_ADMIN := $(COMPOSE) run --rm api-admin
@@ -75,6 +76,7 @@ ifeq ($(clients),1)
 	@echo "  Superadmin  http://localhost:3003"
 endif
 	@echo "Logs     make logs env=$(env)"
+	@echo "Migrations are not applied by up. If an app exits with 'Expected sole Alembic head', run make migrate on purpose."
 
 down:  ## Stop the stack. Add wipe=1 to also delete the database volume
 	$(COMPOSE) down $(if $(wipe),--volumes,)
@@ -129,6 +131,9 @@ digests:  ## Stage the periodic digests (what the scheduler runs)
 
 prune:  ## Delete rows past their retention window (what the scheduler runs)
 	$(RUN_ADMIN) python -m scripts.prune_retention
+
+expire-incompletes:  ## Convert expired INC grades to 5.00 (daily scheduler job)
+	$(RUN_ADMIN) python -m scripts.expire_incompletes
 
 worker:  ## Run the outbox worker in the foreground, for debugging
 	$(COMPOSE) run --rm worker
@@ -222,10 +227,10 @@ install:  ## Create the local virtualenv for the editor, hooks, and fast tests
 hooks:  ## Run every pre-commit hook over the whole repo
 	uv run pre-commit run --all-files
 
-setup:  ## First run on a fresh clone: build, start, migrate, seed
+setup:  ## First run on a fresh clone: build, migrate, start, seed
 	@$(MAKE) --no-print-directory build env=$(env)
-	@$(MAKE) --no-print-directory up env=$(env)
 	@$(MAKE) --no-print-directory migrate env=$(env)
+	@$(MAKE) --no-print-directory up env=$(env)
 	@$(MAKE) --no-print-directory seed env=$(env)
 	@$(MAKE) --no-print-directory seed-programs env=$(env)
 	@echo

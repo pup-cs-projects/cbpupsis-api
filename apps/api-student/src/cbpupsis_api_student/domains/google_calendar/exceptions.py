@@ -19,6 +19,8 @@ class CalendarConflict(AppError):
     code = "GOOGLE_CALENDAR_CONFLICT"
 
     def __init__(self, detail="Check the connection status before retrying."):
+        if "status" not in detail.lower():
+            detail += " Check the connection status before retrying."
         super().__init__(detail)
 
 

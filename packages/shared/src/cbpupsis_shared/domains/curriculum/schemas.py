@@ -41,6 +41,7 @@ class RecordCourse(BaseModel):
     course_code: str
     title: str
     total_units: Decimal
+    grading_mode: str = "NUMERIC"
 
 
 class ScheduleCourse(BaseModel):

@@ -30,6 +30,12 @@ from cbpupsis_api_admin.domains.admin_catalog.router import (
 from cbpupsis_api_admin.domains.fee_structures.router import (
     router as fee_structures_router,
 )
+from cbpupsis_api_admin.domains.grade_corrections.router import (
+    router as grade_corrections_router,
+)
+from cbpupsis_api_admin.domains.incomplete_completions.router import (
+    router as incomplete_completions_router,
+)
 from cbpupsis_api_admin.domains.overload_requests.router import (
     router as overload_requests_router,
 )
@@ -77,6 +83,11 @@ MOUNTS: tuple[RouterMount, ...] = (
         "/admin/fee-structures",
         "admin-fee-structures",
     ),
+    RouterMount(
+        incomplete_completions_router,
+        "/admin/incomplete-completions",
+        "admin-incomplete-completions",
+    ),
     IAM,
     AUDIT,
     # After COMMON_MOUNTS, so /users/me resolves before /users/{user_id}.
@@ -86,7 +97,7 @@ MOUNTS: tuple[RouterMount, ...] = (
     RouterMount(superadmin_ops_router, "/superadmin", "superadmin"),
     # Beside the shared users router, at the same prefix: only this app parses
     # multipart uploads.
-    RouterMount(user_import_router, "/users", "users"),
+    RouterMount(user_import_router, "/admin/users", "users"),
     RouterMount(
         build_admin_router(
             require_waiver_reviewer(READ_WAIVER_REQUEST),
@@ -96,6 +107,9 @@ MOUNTS: tuple[RouterMount, ...] = (
         "waiver-requests",
     ),
     ADMIN_CATALOG,
+    RouterMount(
+        grade_corrections_router, "/admin/grade-corrections", "grade-corrections"
+    ),
 )
 
 # SQLAdmin bypasses service-layer MFA, justification, and immutable audit staging.

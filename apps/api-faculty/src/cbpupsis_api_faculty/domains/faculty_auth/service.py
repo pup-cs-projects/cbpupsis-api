@@ -1,10 +1,11 @@
 """Faculty sign-in rules (US-102): employee id and password, then TOTP.
 
-A password alone never yields a faculty session: it yields a challenge token
+Normally a password alone never yields a faculty session: it yields a challenge token
 that every protected route refuses, and only a verified second factor (a TOTP
 code, or a single-use recovery code) turns that into a session. The shared
 mechanics (lockout, ledger, challenge, session) come from the auth client's
-role sign-in; the faculty profile comes from the users client.
+role sign-in; the faculty profile comes from the users client. The explicit
+development-only environment switch is the sole exception to the second factor.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from cbpupsis_api_faculty.domains.faculty_auth.schemas import (
     FacultyTokenPair,
     TotpEnrollmentRead,
 )
+from cbpupsis_core.config import settings
 from cbpupsis_shared.domains.auth import client as auth_client
 from cbpupsis_shared.domains.auth.client import MfaType
 from cbpupsis_shared.domains.auth.constants import (
@@ -47,8 +49,8 @@ async def login_faculty(
     password: str,
     ip_address: str | None,
     device_info: str,
-) -> FacultyLoginChallenge:
-    """Verify an employee id and password; return only an MFA challenge.
+) -> FacultyLoginChallenge | FacultyTokenPair:
+    """Verify credentials; require MFA unless the development switch is on.
 
     Unknown id, wrong password, and an inactive account or faculty profile all
     fail identically, and the 5th failure in the window locks the id (423)
@@ -81,6 +83,29 @@ async def login_faculty(
         reject=reject,
         failure=IdentifierSignInFailedError(FACULTY_SIGN_IN_FAILED_MESSAGE),
     )
+    if settings.development_mfa_skip_for(ROLE_FACULTY):
+        current = await users_client.lock_role_subject(db, subject_id)
+        if not current.is_active:
+            raise IdentifierSignInFailedError(FACULTY_SIGN_IN_FAILED_MESSAGE)
+        current_version = await users_client.get_session_version(db, subject_id)
+        if current_version is None:
+            raise InvalidAuthTokenError
+        auth_client.validate_session_version(
+            {"session_version": subject.session_version}, current_version
+        )
+        await _active_profile(db, subject_id)
+        pair = await auth_client.complete_sign_in(
+            db,
+            subject_id,
+            role=ROLE_FACULTY,
+            attempted_id=employee_id,
+            ip_address=ip_address,
+            device_info=device_info,
+            mfa=False,
+            claims={"mfa": False, "development_mfa_skipped": True},
+        )
+        return auth_client.expiring_pair(FacultyTokenPair, pair)
+
     # The password step is its own ledger row; the MFA completion adds a second.
     auth_client.record_attempt(
         db,
@@ -168,7 +193,9 @@ async def refresh_faculty(
 ) -> FacultyTokenPair:
     """Rotate a faculty session's refresh token after re-checking the profile."""
     claims = auth_client.decode_refresh_session(request.refresh_token)
-    if claims.get("role") != ROLE_FACULTY or claims.get("mfa") is not True:
+    if claims.get("role") != ROLE_FACULTY or not auth_client.session_mfa_satisfied(
+        claims
+    ):
         raise InvalidAuthTokenError
     await _active_profile(db, uuid.UUID(str(claims["sub"])))
     pair = await auth_client.refresh_role_session(

@@ -62,7 +62,13 @@ from cbpupsis_shared.domains.auth.service.verification import (
 from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.iam.constants import (
     ADMIN_GROUP,
+    ADMIN_GROUPS,
+    ADVISOR_GROUP,
+    CHAIR_GROUP,
+    DEAN_GROUP,
     FACULTY_GROUP,
+    FINANCE_GROUP,
+    REGISTRAR_GROUP,
     STUDENT_GROUP,
     SUPERADMIN_GROUP,
 )
@@ -79,6 +85,11 @@ TEMPORARY_PASSWORD_EVENT = "auth.temporary_password_email"
 PORTAL_ROLE_GROUPS: tuple[tuple[str, str], ...] = (
     (ROLE_SUPERADMIN, SUPERADMIN_GROUP),
     (ROLE_ADMIN, ADMIN_GROUP),
+    (ROLE_ADMIN, ADVISOR_GROUP),
+    (ROLE_ADMIN, CHAIR_GROUP),
+    (ROLE_ADMIN, DEAN_GROUP),
+    (ROLE_ADMIN, REGISTRAR_GROUP),
+    (ROLE_ADMIN, FINANCE_GROUP),
     (ROLE_FACULTY, FACULTY_GROUP),
     (ROLE_STUDENT, STUDENT_GROUP),
 )
@@ -387,7 +398,7 @@ async def login(
     if not user.is_active or user.deleted_at is not None:
         raise InvalidCredentialsError
     if (
-        await iam_service.is_user_in_group(db, user.id, ADMIN_GROUP)
+        await iam_service.is_user_in_any_group(db, user.id, ADMIN_GROUPS)
         or await iam_service.is_user_in_group(db, user.id, SUPERADMIN_GROUP)
         or await users_service.has_role_sign_in(db, user.id)
     ):

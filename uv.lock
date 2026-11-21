@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -398,6 +398,7 @@ dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "pydantic" },
+    { name = "python-multipart" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -410,6 +411,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=50.0.2" },
     { name = "fastapi" },
     { name = "pydantic" },
+    { name = "python-multipart" },
     { name = "sqlalchemy", extras = ["asyncio"] },
     { name = "uvicorn", extras = ["standard"] },
 ]
@@ -525,9 +527,12 @@ dependencies = [
     { name = "cbpupsis-database" },
     { name = "cryptography" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "passlib", extra = ["argon2"] },
+    { name = "pillow" },
     { name = "pydantic", extra = ["email"] },
     { name = "pyjwt" },
+    { name = "pypdf" },
     { name = "reportlab" },
     { name = "scalar-fastapi" },
     { name = "sqlalchemy", extra = ["asyncio"] },
@@ -542,9 +547,12 @@ requires-dist = [
     { name = "cbpupsis-database", editable = "packages/database" },
     { name = "cryptography", specifier = ">=46.0.0" },
     { name = "fastapi" },
+    { name = "httpx", specifier = ">=0.28,<1" },
     { name = "passlib", extras = ["argon2"] },
+    { name = "pillow", specifier = ">=13,<14" },
     { name = "pydantic", extras = ["email"] },
     { name = "pyjwt" },
+    { name = "pypdf", specifier = ">=6,<7" },
     { name = "reportlab", specifier = ">=4.4.0,<5" },
     { name = "scalar-fastapi", specifier = ">=1.8.2" },
     { name = "sqlalchemy", extras = ["asyncio"] },
