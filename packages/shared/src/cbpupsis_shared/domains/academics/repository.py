@@ -74,6 +74,23 @@ async def get_term_by_year_and_semester(
     return await db.scalar(stmt)
 
 
+async def terms_after(db: AsyncSession, start_date):
+    """Read calendar candidates after a grade's source semester.
+
+    SQL::
+
+        SELECT * FROM academic_terms WHERE start_date > :start_date
+        ORDER BY start_date, end_date, id;
+    """
+    return list(
+        await db.scalars(
+            select(AcademicTerm)
+            .where(AcademicTerm.start_date > start_date)
+            .order_by(AcademicTerm.start_date, AcademicTerm.end_date, AcademicTerm.id)
+        )
+    )
+
+
 async def list_events_for_term(
     db: AsyncSession, term_id: uuid.UUID, limit: int = 10
 ) -> list[AcademicEvent]:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import time
+from enum import StrEnum
+from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
@@ -43,6 +45,8 @@ class RecordSection(BaseModel):
     id: uuid.UUID
     course_id: uuid.UUID
     academic_term_id: uuid.UUID
+    section_name: str = ""
+    faculty_id: uuid.UUID | None = None
 
 
 class MeetingSlot(BaseModel):
@@ -79,20 +83,111 @@ class CourseSectionRead(BaseModel):
     status: str
 
 
+class OwnedSectionRead(BaseModel):
+    """Section metadata for an owned section returned across domain boundaries."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    academic_term_id: uuid.UUID
+    course_id: uuid.UUID
+    faculty_id: uuid.UUID | None
+    section_name: str
+    capacity: int
+    status: str
+
+
+class EnrollmentStatus(StrEnum):
+    ENROLLED = "ENROLLED"
+    DROPPED = "DROPPED"
+    WITHDRAWN = "WITHDRAWN"
+
+
+class GradeStatus(StrEnum):
+    PENDING = "PENDING"
+    DRAFT = "DRAFT"
+    SUBMITTED = "SUBMITTED"
+    INC = "INC"
+
+
+class AddDropStatus(StrEnum):
+    NONE = "NONE"
+    PENDING_ADD = "PENDING_ADD"
+    PENDING_DROP = "PENDING_DROP"
+    APPROVED_ADD = "APPROVED_ADD"
+    APPROVED_DROP = "APPROVED_DROP"
+
+
 class RosterEntryRead(BaseModel):
     """One enrolled student on a roster."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     user_id: uuid.UUID
+    student_number: str = Field(serialization_alias="studentNumber")
+    name: str
+    email: str
+    enrollment_status: EnrollmentStatus = Field(serialization_alias="enrollmentStatus")
+    grade_status: GradeStatus = Field(serialization_alias="gradeStatus")
+    add_drop_status: AddDropStatus = Field(serialization_alias="addDropStatus")
 
 
 class CourseSectionRosterRead(CourseSectionRead):
-    """A section with its roster.
+    """A filtered page of students in a section owned by the caller."""
 
-    The roster stays empty until the enrollment domain exists to fill it; the
-    endpoint already enforces who may see it.
-    """
+    roster: list[RosterEntryRead] = Field(default_factory=list)
+    total: int
+    limit: int
+    offset: int
 
-    roster: list[RosterEntryRead] = []
+
+class FacultyStudentRead(BaseModel):
+    """Teaching and contact data; deliberately excludes private profile data."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    student_number: str = Field(serialization_alias="studentNumber")
+    email: str
+    program: str
+    year_level: int = Field(serialization_alias="yearLevel")
+
+
+class FacultyCourseAttemptRead(BaseModel):
+    """One published attempt relevant to the section's course."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    enrollment_id: uuid.UUID = Field(serialization_alias="enrollmentId")
+    academic_term_id: uuid.UUID = Field(serialization_alias="academicTermId")
+    academic_year: str = Field(serialization_alias="academicYear")
+    semester: str
+    final_grade: str = Field(serialization_alias="finalGrade")
+    result: Literal["PASSED", "FAILED", "INCOMPLETE", "WITHDRAWN"]
+
+
+class FacultyPrerequisiteRecordRead(BaseModel):
+    """Published outcomes for one prerequisite of the taught course."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: uuid.UUID = Field(serialization_alias="courseId")
+    course_code: str = Field(serialization_alias="courseCode")
+    title: str
+    result: Literal["PASSED", "NOT_PASSED", "NOT_TAKEN"]
+    attempts: list[FacultyCourseAttemptRead] = Field(default_factory=list)
+
+
+class FacultyStudentRecordRead(BaseModel):
+    """Course-scoped academic record disclosed to the teaching faculty member."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: uuid.UUID = Field(serialization_alias="courseId")
+    course_attempts: list[FacultyCourseAttemptRead] = Field(
+        default_factory=list, serialization_alias="courseAttempts"
+    )
+    prerequisites: list[FacultyPrerequisiteRecordRead] = Field(default_factory=list)
 
 
 class SectionMeetingInput(BaseModel):

@@ -21,3 +21,13 @@ class SectionCapacityBelowEnrolledError(SectionError, ConflictError):
             response_fields={"details": {"enrolled": enrolled}},
         )
         self.enrolled = enrolled
+
+
+class InvalidRosterOffsetError(SectionError):
+    """A nonempty filtered roster cannot be paged at or past its end."""
+
+    status_code = 400
+    code = "INVALID_INPUT"
+
+    def __init__(self) -> None:
+        super().__init__("Offset must be less than the filtered roster total.")

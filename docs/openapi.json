@@ -75,13 +75,35 @@
         }
       }
     },
+    "/api/v1/auth/password-policy": {
+      "get": {
+        "tags": [
+          "account"
+        ],
+        "summary": "Get Password Policy",
+        "description": "Return password length and character-class rules for reset and change.",
+        "operationId": "get_password_policy_api_v1_auth_password_policy_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordPolicyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/forgot-password": {
       "post": {
         "tags": [
           "account"
         ],
         "summary": "Forgot Password",
-        "description": "Request a password-reset email.\n\nAlways 202 Accepted. Returning 404 for an unknown address would make this endpoint a\nmembership oracle for any email list.\n\nA shared per-address allowance prevents inbox flooding; an outer IP limit\nalso guards abusive request volume. Earlier usable links remain valid.",
+        "description": "Request a password-reset email by email address or institutional ID.\n\nAlways 202 Accepted. Returning 404 for an unknown identifier would make this\nendpoint a membership oracle.\n\nA shared per-account allowance prevents inbox flooding; an outer IP limit\nalso guards abusive request volume. Earlier usable links remain valid.",
         "operationId": "forgot_password_api_v1_auth_forgot_password_post",
         "requestBody": {
           "content": {
@@ -228,7 +250,7 @@
           "users"
         ],
         "summary": "Read Me",
-        "description": "Return the authenticated user's own profile.",
+        "description": "Return the authenticated user's own profile, group, and permissions.",
         "operationId": "read_me_api_v1_users_me_get",
         "responses": {
           "200": {
@@ -1866,14 +1888,14 @@
         }
       }
     },
-    "/api/v1/students/me/grades": {
+    "/api/v1/student/grades": {
       "get": {
         "tags": [
           "student-grades"
         ],
         "summary": "Read Grades",
-        "description": "Read your finalized grades for one academic term (US-STU-004).\n\nRequires a live **student Bearer session** and the **ReadGrade**\npermission. `me` is resolved from the access token; no student number\nis needed. Other roles receive `404 RESOURCE_NOT_FOUND`.\n\nOmit both filters for the latest term containing posted marks, not\nnecessarily the current academic term. To select history, supply\n`year` and `semester` together, for example `year=2025-2026` and\n`semester=first`. Labels must match the stored term exactly; blank\nor unpaired filters return **422**.\n\nOnly finalized, locked, non-draft marks are visible. Each course has\nits code, title, units, final mark, status, posted date and any stored\nincomplete deadline. Decimal values are JSON **strings**. GWA is\nunit-weighted, excludes NSTP and nonnumeric marks, includes numeric\nfailures and rounds half-up to two places. No eligible numeric units\nmeans `gwa: null`.\n\nNo posted marks returns **200** with an explanatory empty state.\nStanding is read from a stored evaluation, never calculated here;\nmissing evaluation leaves standing and `unitReduction` null. This\nread does not submit/correct marks or convert expired incompletes.\nResponses use `Cache-Control: private, no-store`.",
-        "operationId": "read_grades_api_v1_students_me_grades_get",
+        "description": "Read your finalized grades for one academic term (US-STU-004).\n\nRequires a live **student Bearer session** and the **ReadGrade**\npermission. The student is resolved from the access token; no student number\nis needed. Other roles receive `404 RESOURCE_NOT_FOUND`.\n\nOmit both filters for the latest term containing posted marks, not\nnecessarily the current academic term. To select history, supply\n`year` and `semester` together, for example `year=2025-2026` and\n`semester=first`. Labels must match the stored term exactly; blank\nor unpaired filters return **422**.\n\nOnly finalized, locked, non-draft marks are visible. Each course has\nits code, title, units, final mark, status, posted date and any stored\nincomplete deadline. Decimal values are JSON **strings**. GWA is\nunit-weighted, excludes NSTP and nonnumeric marks, includes numeric\nfailures and rounds half-up to two places. No eligible numeric units\nmeans `gwa: null`.\n\nNo posted marks returns **200** with an explanatory empty state.\nStanding is read from a stored evaluation, never calculated here;\nmissing evaluation leaves standing and `unitReduction` null. This\nread does not submit/correct marks or convert expired incompletes.\nResponses use `Cache-Control: private, no-store`.",
+        "operationId": "read_grades_api_v1_student_grades_get",
         "security": [
           {
             "HTTPBearer": []
@@ -1945,7 +1967,7 @@
             "description": "Missing the required read permission, or a temporary password must be changed (PASSWORD_CHANGE_REQUIRED)."
           },
           "404": {
-            "description": "RESOURCE_NOT_FOUND: the session is not a student session, no student record is available, or the supplied student number is not the signed-in student's own number."
+            "description": "RESOURCE_NOT_FOUND: the session is not a student session or no student record is available."
           },
           "503": {
             "description": "GRADE_RECORD_UNAVAILABLE: stored academic data cannot be safely read. No partial or fabricated record is returned."
@@ -1963,125 +1985,14 @@
         }
       }
     },
-    "/api/v1/students/{student_number}/grades": {
-      "get": {
-        "tags": [
-          "student-grades"
-        ],
-        "summary": "Read Identified Grades",
-        "description": "Read your grades using an explicit student number (US-STU-004).\n\nRequires a live **student Bearer session** and **ReadGrade**. The\npath parameter must match the signed-in student's number exactly.\nThis is **not** a staff lookup or a way to read another student's\ngrades: foreign and unknown numbers both return\n`404 RESOURCE_NOT_FOUND` without confirming whether they exist.\n\nIn Scalar, enter your own student number in the path field, for\nexample `2021-00901-MN-0`, and use that same student's Bearer token.\nPrefer `/api/v1/students/me/grades` for normal frontend self-service.\n\nTerm selection, calculation rules, empty states and response fields\nare identical to the `me` endpoint. Omit both term filters for the\nlatest posted term, or supply `year` and `semester` together; blank\nor unpaired filters return **422**. Only finalized, non-draft marks\nare returned. Responses use `Cache-Control: private, no-store`.",
-        "operationId": "read_identified_grades_api_v1_students__student_number__grades_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "student_number",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "The signed-in student's own institutional student number, not a user UUID. Another student's number and an unknown number both return 404 RESOURCE_NOT_FOUND.",
-              "examples": [
-                "2021-00901-MN-0"
-              ],
-              "title": "Student Number"
-            },
-            "description": "The signed-in student's own institutional student number, not a user UUID. Another student's number and an unknown number both return 404 RESOURCE_NOT_FOUND."
-          },
-          {
-            "name": "year",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 20
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Academic-year label exactly as stored. Supply together with semester, or omit both to select the latest term with posted marks.",
-              "examples": [
-                "2025-2026"
-              ],
-              "title": "Year"
-            },
-            "description": "Academic-year label exactly as stored. Supply together with semester, or omit both to select the latest term with posted marks."
-          },
-          {
-            "name": "semester",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 30
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Semester label exactly as stored, including letter case. Required when year is supplied; blank or unpaired filters return 422.",
-              "examples": [
-                "first"
-              ],
-              "title": "Semester"
-            },
-            "description": "Semester label exactly as stored, including letter case. Required when year is supplied; blank or unpaired filters return 422."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GradesRead"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid access token, expired/revoked session, or inactive account. A live authenticated session is required."
-          },
-          "403": {
-            "description": "Missing the required read permission, or a temporary password must be changed (PASSWORD_CHANGE_REQUIRED)."
-          },
-          "404": {
-            "description": "RESOURCE_NOT_FOUND: the session is not a student session, no student record is available, or the supplied student number is not the signed-in student's own number."
-          },
-          "503": {
-            "description": "GRADE_RECORD_UNAVAILABLE: stored academic data cannot be safely read. No partial or fabricated record is returned."
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/students/me/transcript": {
+    "/api/v1/student/transcript": {
       "get": {
         "tags": [
           "student-grades"
         ],
         "summary": "Read Transcript",
-        "description": "Read your academic history, paginated by term (US-STU-004).\n\nRequires a live **student Bearer session** and **ReadTranscript**.\nTerms containing finalized, non-draft marks are ordered newest first.\nPagination counts **terms**, not courses: `page` starts at 1 and\n`limit` defaults to 20 with a maximum of 100. Invalid values return\n**422**. `total` counts all available terms; `nextPage` is null when\nno later page exists.\n\nAll eligible attempts, including repeated courses and numeric\nfailures, contribute to GWA. NSTP and nonnumeric marks do not.\nCumulative GWA uses completed terms: their end date must be before\ntoday's Asia/Manila date. Ongoing terms remain visible but do not\ncontribute to cumulative GWA. Earned credits include posted passes,\nincluding ongoing terms, and count each catalog course only once.\n\nTop-level totals cover the **whole record**, independently of page\nand limit. Each term's running totals cover history through that\nterm. Decimal values are strings; averages round half-up to two\nplaces and are null when there are no eligible numeric units.\nNo posted marks returns **200** with empty terms and an explanation.\n\nUse `/api/v1/students/me/transcript/export` for a complete printable\nPDF, not just the current page. Responses are private and no-store.",
-        "operationId": "read_transcript_api_v1_students_me_transcript_get",
+        "description": "Read your academic history, paginated by term (US-STU-004).\n\nRequires a live **student Bearer session** and **ReadTranscript**.\nTerms containing finalized, non-draft marks are ordered newest first.\nPagination counts **terms**, not courses: `page` starts at 1 and\n`limit` defaults to 20 with a maximum of 100. Invalid values return\n**422**. `total` counts all available terms; `nextPage` is null when\nno later page exists.\n\nAll eligible attempts, including repeated courses and numeric\nfailures, contribute to GWA. NSTP and nonnumeric marks do not.\nCumulative GWA uses completed terms: their end date must be before\ntoday's Asia/Manila date. Ongoing terms remain visible but do not\ncontribute to cumulative GWA. Earned credits include posted passes,\nincluding ongoing terms, and count each catalog course only once.\n\nTop-level totals cover the **whole record**, independently of page\nand limit. Each term's running totals cover history through that\nterm. Decimal values are strings; averages round half-up to two\nplaces and are null when there are no eligible numeric units.\nNo posted marks returns **200** with empty terms and an explanation.\n\nUse `/api/v1/student/transcript/export` for a complete printable\nPDF, not just the current page. Responses are private and no-store.",
+        "operationId": "read_transcript_api_v1_student_transcript_get",
         "security": [
           {
             "HTTPBearer": []
@@ -2134,7 +2045,7 @@
             "description": "Missing the required read permission, or a temporary password must be changed (PASSWORD_CHANGE_REQUIRED)."
           },
           "404": {
-            "description": "RESOURCE_NOT_FOUND: the session is not a student session, no student record is available, or the supplied student number is not the signed-in student's own number."
+            "description": "RESOURCE_NOT_FOUND: the session is not a student session or no student record is available."
           },
           "503": {
             "description": "GRADE_RECORD_UNAVAILABLE: stored academic data cannot be safely read. No partial or fabricated record is returned."
@@ -2152,14 +2063,14 @@
         }
       }
     },
-    "/api/v1/students/me/transcript/export": {
+    "/api/v1/student/transcript/export": {
       "get": {
         "tags": [
           "student-grades"
         ],
         "summary": "Export Transcript",
         "description": "Download your complete unofficial transcript PDF (US-STU-004).\n\nRequires a live **student Bearer session** and **ReadTranscript**.\nThe PDF includes the university header, your identity, all posted\nterm tables, GWA/earned-unit totals and page numbers. It is labeled\n**Unofficial Transcript - Student Copy**, not an official registrar\ncertification. Table headings repeat when records span pages.\n\nExport always includes the **complete record**, regardless of JSON\npagination. This endpoint has no page/limit parameters or term\nfilters; supplying them does not narrow the PDF. No posted marks\nstill returns a valid PDF with an explanatory empty state.\n\nSuccess returns **200 application/pdf** with attachment filename\n`unofficial-transcript.pdf`, `Cache-Control: private, no-store`, and\n`X-Content-Type-Options: nosniff`. Use Scalar's response preview or\ndownload control; opening the URL in a new unauthenticated browser\ntab returns **401** because the Bearer token is not sent there.\n\nGeneration is in memory; no transcript file is stored by the API.\nRendering failure, timeout or inconsistent source data returns\n`503 GRADE_RECORD_UNAVAILABLE`, never a partial academic record.",
-        "operationId": "export_transcript_api_v1_students_me_transcript_export_get",
+        "operationId": "export_transcript_api_v1_student_transcript_export_get",
         "responses": {
           "200": {
             "description": "Complete unofficial student transcript as a private PDF attachment, including an explanatory empty transcript if no finalized marks are available.",
@@ -2174,7 +2085,7 @@
             "description": "Missing the required read permission, or a temporary password must be changed (PASSWORD_CHANGE_REQUIRED)."
           },
           "404": {
-            "description": "RESOURCE_NOT_FOUND: the session is not a student session, no student record is available, or the supplied student number is not the signed-in student's own number."
+            "description": "RESOURCE_NOT_FOUND: the session is not a student session or no student record is available."
           },
           "503": {
             "description": "GRADE_RECORD_UNAVAILABLE: academic data is inconsistent, or PDF rendering failed or exceeded its time limit."
@@ -2608,14 +2519,14 @@
         }
       }
     },
-    "/api/v1/students/me/schedule": {
+    "/api/v1/student/schedule": {
       "get": {
         "tags": [
           "student-schedule"
         ],
         "summary": "Read My Course Schedule",
         "description": "Read the signed-in student's officially enrolled courses, meeting times and weekly\ncontact-hour totals (US-STU-003).\n\n**Authentication:** a live student bearer session and `ReadSchedule` permission\nare required. Only the caller's records are accessible; this is not a staff or\nread-all endpoint. Downloading a Certificate of Registration is not required.\n\n**Term selection:** omit both `year` and `semester` for the current academic term,\nor supply both, for example `year=2026-2027&semester=first`. Historical configured\nterms are supported. Supplying just one selector or blank selectors returns 422.\n\n**Filtering:** `q` searches course code, title and faculty name case-insensitively.\nFor example, `q=CS001` narrows the rows and their totals. Clear `q` to restore the\nfull list; searching does not modify enrollment.\n\n**Response:** a direct snake_case JSON object, without a `status`/`data` wrapper.\nEach course includes its section, rooms, faculty, credit units, enrollment status,\nseparate lecture/lab hours and every meeting. Contact hours are weekly durations\ncalculated from meetings, not credit conversions or term-wide totals. Decimal\nquantities serialize as strings. Totals sum only the returned courses.\n\n**Empty states still return 200:** `notEnrolled` means no official enrollment for\nthe selected term; `noMatches` means the filter matched no enrolled courses;\n`termUnavailable` means the requested/current term configuration is unavailable.\nThese responses include an explanatory `message`, empty `courses` and zero totals.\nNonempty results have `state=ready`. Pending and dropped courses are excluded;\ncommitted enrollment changes are reflected on subsequent reads.\n\nResponses are private and use `Cache-Control: private, no-store`.",
-        "operationId": "read_schedule_api_v1_students_me_schedule_get",
+        "operationId": "read_schedule_api_v1_student_schedule_get",
         "security": [
           {
             "HTTPBearer": []
@@ -2725,14 +2636,14 @@
         }
       }
     },
-    "/api/v1/students/me/schedule/export": {
+    "/api/v1/student/schedule/export": {
       "get": {
         "tags": [
           "student-schedule"
         ],
         "summary": "Export My Course Schedule",
-        "description": "Download the signed-in student's complete officially enrolled schedule as a PDF\nor iCalendar attachment (US-STU-003). Requires a live student bearer session and\n`ReadSchedule` permission, just like the schedule read endpoint.\n\n**Choose a format:** `format=pdf` produces a university-headed printable document\nwith student identity, term, every course/meeting, credit units, separate weekly\nlecture/lab hours and totals. `format=ics` produces an iCalendar file with one\nrecurring event series per meeting slot, preserving separate lecture/lab times.\n\n**Select a term:** omit both `year` and `semester` for the current term, or supply\nboth, for example `year=2026-2027&semester=first`. Historical configured terms are\nsupported. The export always includes the complete selected term; the read\nendpoint's `q` filter does not restrict downloads and is not an export parameter.\nNo enrollment produces an empty schedule document/calendar. Missing term\nconfiguration produces an explanatory PDF or an empty calendar, not an ownership\n404.\n\n**Calendar behavior:** meeting times use Asia/Manila, weekly recurrences end at\nthe term boundary, and configured academic holidays are excluded. Stable opaque\nUIDs and durable SEQUENCE revisions support unchanged re-exports, updates and\ncancellation records for removed meetings. Import/re-import behavior depends on\nthe calendar client: downloading a file is not Google authorization or automatic\nsynchronization.\n\n**Download and failures:** 200 returns the file bytes, not JSON, with attachment\nfilename `course-schedule.pdf` or `course-schedule.ics`. The entire file is\nbuffered before responding. Generation has a ten-second deadline; failures\nreturn 503 `SERVICE_UNAVAILABLE` with `Retry-After: 30`, never a partial attachment.\nResponses are private and use `Cache-Control: private, no-store`.",
-        "operationId": "export_schedule_api_v1_students_me_schedule_export_get",
+        "description": "Download the signed-in student's complete officially enrolled schedule as a PDF\nor iCalendar attachment (US-STU-003). Requires a live student bearer session and\n`ReadSchedule` permission, just like the schedule read endpoint.\n\n**Choose a format:** `format=pdf` produces a university-headed printable document\nwith student identity, term, every course/meeting, credit units, separate weekly\nlecture/lab hours and totals. `format=ics` produces an iCalendar file with one\nrecurring event series per meeting slot, preserving separate lecture/lab times.\n\n**Select a term:** omit both `year` and `semester` for the current term, or supply\nboth, for example `year=2026-2027&semester=first`. Historical configured terms are\nsupported. The export always includes the complete selected term; the read\nendpoint's `q` filter does not restrict downloads and is not an export parameter.\nNo enrollment produces an empty schedule document/calendar. Missing term\nconfiguration produces an explanatory PDF or an empty calendar, not an ownership\n404.\n\n**Calendar behavior:** meeting times use Asia/Manila, weekly recurrences end at\nthe term boundary, and configured academic holidays are excluded. Stable opaque\nUIDs and durable SEQUENCE revisions support unchanged re-exports, updates and\ncancellation records for removed meetings. Import/re-import behavior depends on\nthe calendar client: downloading a file is not Google authorization or automatic\nsynchronization.\n\n**Download and failures:** 200 returns the file bytes, not JSON, with attachment\nfilename `course-schedule.pdf` or `course-schedule.ics`. The entire file is\nbuffered before responding. Generation has a ten-second deadline; timeouts\nreturn 503 `SERVICE_UNAVAILABLE` with `Retry-After: 30`, never a partial attachment.\nUnexpected errors reach the global handler as an opaque 500.\nResponses are private and use `Cache-Control: private, no-store`.",
+        "operationId": "export_schedule_api_v1_student_schedule_export_get",
         "security": [
           {
             "HTTPBearer": []
@@ -2865,145 +2776,14 @@
         }
       }
     },
-    "/api/v1/students/{student_number}/schedule": {
-      "get": {
-        "tags": [
-          "student-schedule"
-        ],
-        "summary": "Read My Schedule by Student Number",
-        "description": "Read the signed-in student's officially enrolled courses, meeting times and weekly\ncontact-hour totals (US-STU-003).\n\n**Authentication:** a live student bearer session and `ReadSchedule` permission\nare required. Only the caller's records are accessible; this is not a staff or\nread-all endpoint. Downloading a Certificate of Registration is not required.\n\n**Term selection:** omit both `year` and `semester` for the current academic term,\nor supply both, for example `year=2026-2027&semester=first`. Historical configured\nterms are supported. Supplying just one selector or blank selectors returns 422.\n\n**Filtering:** `q` searches course code, title and faculty name case-insensitively.\nFor example, `q=CS001` narrows the rows and their totals. Clear `q` to restore the\nfull list; searching does not modify enrollment.\n\n**Response:** a direct snake_case JSON object, without a `status`/`data` wrapper.\nEach course includes its section, rooms, faculty, credit units, enrollment status,\nseparate lecture/lab hours and every meeting. Contact hours are weekly durations\ncalculated from meetings, not credit conversions or term-wide totals. Decimal\nquantities serialize as strings. Totals sum only the returned courses.\n\n**Empty states still return 200:** `notEnrolled` means no official enrollment for\nthe selected term; `noMatches` means the filter matched no enrolled courses;\n`termUnavailable` means the requested/current term configuration is unavailable.\nThese responses include an explanatory `message`, empty `courses` and zero totals.\nNonempty results have `state=ready`. Pending and dropped courses are excluded;\ncommitted enrollment changes are reflected on subsequent reads.\n\nResponses are private and use `Cache-Control: private, no-store`.\n\n\n**Explicit ownership check:** `student_number` must exactly match the signed-in\nstudent's institutional number. A different student's number and a nonexistent\nnumber both return the same 404 `RESOURCE_NOT_FOUND`; this endpoint cannot look\nup other students. Prefer `/api/v1/students/me/schedule` when the client does not\nneed to send an explicit identifier. Term selectors, filtering and totals behave\nidentically to that self route.",
-        "operationId": "read_identified_schedule_api_v1_students__student_number__schedule_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "student_number",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "Your own institutional student number; must match the bearer session.",
-              "examples": [
-                "2021-00123-MN-0"
-              ],
-              "title": "Student Number"
-            },
-            "description": "Your own institutional student number; must match the bearer session."
-          },
-          {
-            "name": "year",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 20
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Stored academic-year string, not a calendar-year integer. Supply with semester, or omit both to use the current academic term.",
-              "examples": [
-                "2026-2027"
-              ],
-              "title": "Year"
-            },
-            "description": "Stored academic-year string, not a calendar-year integer. Supply with semester, or omit both to use the current academic term."
-          },
-          {
-            "name": "semester",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 30
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Semester identifier as stored for the academic term. Supply with year, or omit both for the current term; a single selector is rejected.",
-              "examples": [
-                "first"
-              ],
-              "title": "Semester"
-            },
-            "description": "Semester identifier as stored for the academic term. Supply with year, or omit both for the current term; a single selector is rejected."
-          },
-          {
-            "name": "q",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 200,
-              "description": "Case-insensitive substring search across course code, course title and faculty name. Blank or whitespace-only values restore all courses. Only returned rows and totals are filtered; enrollment is never changed.",
-              "examples": [
-                "CS001",
-                "Algorithms",
-                "Synthetic Faculty"
-              ],
-              "default": "",
-              "title": "Q"
-            },
-            "description": "Case-insensitive substring search across course code, course title and faculty name. Blank or whitespace-only values restore all courses. Only returned rows and totals are filtered; enrollment is never changed."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The caller's schedule after verifying the supplied number.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScheduleRead"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, expired or inactive student bearer session."
-          },
-          "403": {
-            "description": "The caller is not a student or lacks ReadSchedule permission."
-          },
-          "404": {
-            "description": "RESOURCE_NOT_FOUND: no accessible student identity. Foreign and nonexistent student numbers receive indistinguishable ownership errors."
-          },
-          "422": {
-            "description": "Invalid query parameters: supply year and semester together with nonblank values, respect field lengths and use a supported export format."
-          },
-          "503": {
-            "description": "SERVICE_UNAVAILABLE: schedule data or generation unavailable.",
-            "headers": {
-              "Retry-After": {
-                "description": "Wait 30 seconds before retrying.",
-                "schema": {
-                  "type": "integer",
-                  "example": 30
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/students/me/schedule/google-calendar": {
+    "/api/v1/student/schedule/google-calendar": {
       "get": {
         "tags": [
           "google-calendar"
         ],
         "summary": "Read Google Calendar Connection",
         "description": "Inspect the signed-in student's Google connection without starting a sync.\n\n**Access:** live SIS student bearer session and `ReadSchedule` permission.\nResponse is a direct snake_case object with `Cache-Control: private, no-store`.\nNo Google credentials, account identity or calendar IDs are returned.\n\n### Interpret the status\n- `enabled: false`: this optional integration is disabled on the deployment.\n- `connected`: a saved grant exists and is not marked `reconnectRequired`;\n  this alone does not prove successful delivery.\n- `disconnecting`: Google token revocation is pending.\n- `last_sync_at`: last successful worker reconciliation, including unchanged\n  checks. `next_sync_at` is a scheduled attempt, not a completion guarantee.\n- `targets[].provisioned`: a calendar was assigned, not proof of event delivery.\n\nPoll this endpoint after callback, sync or disconnect. Inspect `last_error`\nand verify the actual schedule in Google Calendar. After explicit disconnect,\nresponses expose `targets: []`, even when private reconnect mappings remain.",
-        "operationId": "read_connection_api_v1_students_me_schedule_google_calendar_get",
+        "operationId": "read_connection_api_v1_student_schedule_google_calendar_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3043,7 +2823,7 @@
         ],
         "summary": "Disconnect Google Calendar",
         "description": "Withdraw consent without deleting the student's Google calendar or events.\n\n**Access:** a live SIS student bearer session. Unlike the other Google\noperations, disconnect remains available after `ReadSchedule` is withdrawn.\nNo request body or Google account/calendar identifier is required.\n\n### Result and completion\n202 stops local sync immediately: `connected: false` and `targets: []`.\n`disconnecting: true` means token revocation is queued, not yet finished.\nKeep the worker running and poll GET until `disconnecting: false` and\n`next_sync_at: null`; inspect errors if revocation remains pending.\nAfter disconnect, `/sync` returns 409 until a fresh connection is completed.\n\n### Retention and reconnect\nExisting Google calendars/events remain visible. Only private non-credential\nmappings are retained for same-account reuse and hidden from disconnected\nresponses. An already in-flight provider request may finish. Wait for pending\nrevocation, then start new authorization/consent with the same Google account\nto reconnect. Repeating DELETE is safe: it does not delete calendars, create\na new grant or require the user to run PowerShell.",
-        "operationId": "disconnect_calendar_api_v1_students_me_schedule_google_calendar_delete",
+        "operationId": "disconnect_calendar_api_v1_student_schedule_google_calendar_delete",
         "responses": {
           "202": {
             "description": "Successful Response",
@@ -3078,14 +2858,14 @@
         ]
       }
     },
-    "/api/v1/students/me/schedule/google-calendar/authorization": {
+    "/api/v1/student/schedule/google-calendar/authorization": {
       "post": {
         "tags": [
           "google-calendar"
         ],
         "summary": "Begin Google Calendar Authorization",
         "description": "Create a short-lived Google consent attempt for the signed-in student.\n\n**Access:** live SIS student bearer session and `ReadSchedule`. Google consent\nconnects a calendar; it does not replace the SIS login.\n\n### Request body\nSend `{}` for the current configured term, or both selectors:\n`{\"year\":\"2026-2027\",\"semester\":\"first\"}`. Use the deployment's stored\nvalues; do not send blank strings or only one selector.\n\n### Scalar and browser workflow\n1. Send this request in Scalar with the student's `access_token`.\n2. Open the returned `authorization_url` in a browser and select the requested\n   app-created Calendar permission. Scalar does not replace Google consent.\n3. Google redirects to the configured frontend URI, **not** the backend POST\n   callback. Forward the new `state` and `code` to `/callback` using the\n   **same SIS session**, within `expires_in` (600 seconds).\n\nPowerShell is not required. State is single-use, protected by PKCE/OIDC nonce,\nand a new authorization supersedes the previous attempt. Never share the URL.\nExisting connections or pending revocations return 409; use `/sync` to add a\nterm when connected. Operators must configure Google settings and run the\nworker for background synchronization.",
-        "operationId": "begin_authorization_api_v1_students_me_schedule_google_calendar_authorization_post",
+        "operationId": "begin_authorization_api_v1_student_schedule_google_calendar_authorization_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3140,14 +2920,14 @@
         ]
       }
     },
-    "/api/v1/students/me/schedule/google-calendar/callback": {
+    "/api/v1/student/schedule/google-calendar/callback": {
       "post": {
         "tags": [
           "google-calendar"
         ],
         "summary": "Complete Google Calendar Authorization",
         "description": "Exchange a fresh Google browser redirect for an encrypted calendar grant.\n\n**Access:** the same live SIS student bearer session that began authorization,\nplus `ReadSchedule`. This is an authenticated POST, not Google's browser\nredirect destination.\n\n### Scalar request\nFrom the **new** redirect URL, extract `state` and `code`, URL-decoding each\nvalue exactly once locally. Send `{\"state\":\"...\",\"code\":\"...\"}`; do not\npaste the whole URL or use an online decoder. A missing local frontend page\nmay show connection refused while its address bar still contains the values.\nComplete within ten minutes; never expose codes/state in logs or screenshots.\n\n### Result and recovery\n200 means the grant was saved and initial sync queued, **not** that events\narrived. Poll GET connection status, then inspect Google Calendar. The worker\nmust be running. Same-account reconnect reuses known app-created mappings;\na different verified Google account never receives the previous mappings.\n\nExpired, replayed, superseded or foreign-session attempts return 400. Google\nexchange/verification failures return 503. Start fresh authorization after\neither failure; the consumed callback must not be replayed. Ensure the\nrequested Calendar permission was granted; no credentials are returned.",
-        "operationId": "complete_authorization_api_v1_students_me_schedule_google_calendar_callback_post",
+        "operationId": "complete_authorization_api_v1_student_schedule_google_calendar_callback_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3202,14 +2982,14 @@
         ]
       }
     },
-    "/api/v1/students/me/schedule/google-calendar/sync": {
+    "/api/v1/student/schedule/google-calendar/sync": {
       "post": {
         "tags": [
           "google-calendar"
         ],
         "summary": "Request Google Calendar Synchronization",
         "description": "Queue one-way reconciliation of a student's SIS timetable into Google.\n\n**Access:** live SIS student bearer session, `ReadSchedule`, and a connected\nGoogle account. Send `{}` for the current term, or both `year` and `semester`\nusing the stored identifiers. Up to ten terms may be pinned; no silent term\nrollover overwrites a prior semester.\n\n### What is synchronized\nForces reconciliation of app-created calendar series with committed SIS\nenrollment, meeting details, term bounds and configured holiday exclusions.\nManaged Google fields may be overwritten; Google edits never change SIS.\nNo primary-calendar access, enrollment editing or approval APIs are involved.\n\n### Verify completion\n202 means **queued**. The returned `last_sync_at` may refer to an earlier job,\nand `last_error: null` alone is not proof of completion. Allow worker polling/\nbacklog, poll GET for a successful reconciliation, then inspect the calendar.\nRepeating unchanged sync must not create duplicate calendars/meeting series.\n\nMissing/revoking connections, active worker leases or the term limit return\n409. Inspect GET status before retrying. There is no immediate-delivery SLA.",
-        "operationId": "request_synchronization_api_v1_students_me_schedule_google_calendar_sync_post",
+        "operationId": "request_synchronization_api_v1_student_schedule_google_calendar_sync_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3295,7 +3075,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaymentStatusRead"
+                  "$ref": "#/components/schemas/PaymentDetailRead"
                 }
               }
             }
@@ -3399,22 +3179,6 @@
                 }
               ],
               "title": "X-Callback-Token"
-            }
-          },
-          {
-            "name": "webhook-id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Webhook-Id"
             }
           }
         ],
@@ -3710,7 +3474,7 @@
           "faculty-auth"
         ],
         "summary": "Faculty Login",
-        "description": "Verify employee id and password; returns only an MFA challenge.",
+        "description": "Require MFA, except with the explicit development-only skip setting.",
         "operationId": "faculty_login",
         "requestBody": {
           "content": {
@@ -3728,7 +3492,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FacultyLoginChallenge"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/FacultyLoginChallenge"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FacultyTokenPair"
+                    }
+                  ],
+                  "title": "Response Faculty Login"
                 }
               }
             }
@@ -4001,10 +3773,95 @@
         ]
       }
     },
+    "/api/v1/faculty/profile": {
+      "get": {
+        "tags": [
+          "faculty-profile"
+        ],
+        "summary": "Get Faculty Profile",
+        "description": "Return the signed-in faculty member's profile and field editability flags.",
+        "operationId": "get_faculty_profile",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacultyProfileRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE), missing permission, or locked field (PROFILE_FIELD_LOCKED)."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "faculty-profile"
+        ],
+        "summary": "Update Faculty Profile",
+        "description": "Update editable faculty profile fields (title, location, hours, quals).",
+        "operationId": "update_faculty_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacultyProfileRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE), missing permission, or locked field (PROFILE_FIELD_LOCKED)."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/faculty/sections": {
       "get": {
         "tags": [
-          "sections"
+          "faculty-sections"
         ],
         "summary": "List Sections",
         "description": "List the sections assigned to you.",
@@ -4066,7 +3923,7 @@
     "/api/v1/faculty/sections/{section_id}/roster": {
       "get": {
         "tags": [
-          "sections"
+          "faculty-sections"
         ],
         "summary": "Section Roster",
         "description": "Return one of your sections with its roster; 404 for anyone else's.",
@@ -4085,6 +3942,61 @@
               "type": "string",
               "format": "uuid",
               "title": "Section Id"
+            }
+          },
+          {
+            "name": "enrollmentStatus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/EnrollmentStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enrollmentstatus"
+            }
+          },
+          {
+            "name": "gradeStatus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/GradeStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Gradestatus"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
             }
           }
         ],
@@ -4112,13 +4024,981 @@
         }
       }
     },
+    "/api/v1/faculty/sections/{section_id}/roster/export": {
+      "get": {
+        "tags": [
+          "faculty-sections"
+        ],
+        "summary": "Export Section Roster",
+        "description": "Export every student matching the same roster filters.",
+        "operationId": "export_section_roster_api_v1_faculty_sections__section_id__roster_export_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Section Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "const": "csv",
+              "type": "string",
+              "default": "csv",
+              "title": "Format"
+            }
+          },
+          {
+            "name": "enrollmentStatus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/EnrollmentStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enrollmentstatus"
+            }
+          },
+          {
+            "name": "gradeStatus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/GradeStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Gradestatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/sections/{section_id}/roster/{student_id}": {
+      "get": {
+        "tags": [
+          "faculty-sections"
+        ],
+        "summary": "Section Student",
+        "description": "Return the teaching-safe details of one student in the section.",
+        "operationId": "section_student_api_v1_faculty_sections__section_id__roster__student_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Section Id"
+            }
+          },
+          {
+            "name": "student_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Student Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacultyStudentRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/sections/{section_id}/roster/{student_id}/record": {
+      "get": {
+        "tags": [
+          "faculty-sections"
+        ],
+        "summary": "Section Student Record",
+        "description": "Disclose course-scoped results and write the required audit row.",
+        "operationId": "section_student_record_api_v1_faculty_sections__section_id__roster__student_id__record_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Section Id"
+            }
+          },
+          {
+            "name": "student_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Student Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacultyStudentRecordRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/sections/{section_id}/grades": {
+      "get": {
+        "tags": [
+          "faculty-grades"
+        ],
+        "summary": "Get Section Grades",
+        "description": "Return enrolled marks, grading mode, allowed marks, state, and deadline.",
+        "operationId": "get_faculty_section_grades",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Course section UUID assigned to the faculty member.",
+              "title": "Section Id"
+            },
+            "description": "Course section UUID assigned to the faculty member.",
+            "examples": {
+              "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectionGradesRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE), missing permission, or grade deadline passed (GRADE_DEADLINE_PASSED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the section does not exist or is not assigned to the caller."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/sections/{section_id}/grade-deadline": {
+      "get": {
+        "tags": [
+          "faculty-grades"
+        ],
+        "summary": "Get Section Grade Deadline",
+        "description": "Return the section's grade submission deadline and whether it has passed.",
+        "operationId": "get_faculty_section_grade_deadline",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Course section UUID assigned to the faculty member.",
+              "title": "Section Id"
+            },
+            "description": "Course section UUID assigned to the faculty member.",
+            "examples": {
+              "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GradeDeadlineRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE), missing permission, or grade deadline passed (GRADE_DEADLINE_PASSED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the section does not exist or is not assigned to the caller."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/sections/{section_id}/grades/draft": {
+      "put": {
+        "tags": [
+          "faculty-grades"
+        ],
+        "summary": "Save Section Grade Draft",
+        "description": "Save draft marks for a section assigned to the caller.",
+        "operationId": "save_faculty_section_grade_draft",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Course section UUID assigned to the faculty member.",
+              "title": "Section Id"
+            },
+            "description": "Course section UUID assigned to the faculty member.",
+            "examples": {
+              "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000"
+              }
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveGradeDraftRequest"
+              },
+              "examples": {
+                "default": {
+                  "summary": "Sample draft payload",
+                  "value": {
+                    "version": 0,
+                    "grades": [
+                      {
+                        "enrollmentId": "00000000-0000-0000-0000-000000000001",
+                        "finalGrade": "1.25",
+                        "midtermGrade": "1.50",
+                        "remarks": "Draft mark"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectionGradesRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE), missing permission, or grade deadline passed (GRADE_DEADLINE_PASSED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the section does not exist or is not assigned to the caller."
+          },
+          "409": {
+            "description": "GRADES_LOCKED if already finalized, or VERSION_CONFLICT if the draft version is stale."
+          },
+          "422": {
+            "description": "GRADE_MODE_MISMATCH with gradingMode and allowedMarks when a mark does not fit the section's grading mode, or VALIDATION_ERROR naming offending student row(s) when marks are invalid."
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/sections/{section_id}/grades/finalize": {
+      "post": {
+        "tags": [
+          "faculty-grades"
+        ],
+        "summary": "Finalize Section Grades",
+        "description": "Finalize and lock section grades once, notifying each enrolled student.",
+        "operationId": "finalize_faculty_section_grades",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Course section UUID assigned to the faculty member.",
+              "title": "Section Id"
+            },
+            "description": "Course section UUID assigned to the faculty member.",
+            "examples": {
+              "default": {
+                "summary": "Section UUID placeholder",
+                "value": "00000000-0000-0000-0000-000000000000"
+              }
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/FinalizeGradesRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              },
+              "examples": {
+                "default": {
+                  "summary": "Sample finalize payload",
+                  "value": {
+                    "version": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalizeGradesRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "GRADE_DEADLINE_PASSED with deadline when the submission deadline has passed."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the section does not exist or is not assigned to the caller."
+          },
+          "409": {
+            "description": "GRADES_LOCKED if already finalized, or VERSION_CONFLICT if a supplied version is stale."
+          },
+          "422": {
+            "description": "GRADE_MODE_MISMATCH with gradingMode and allowedMarks when a mark does not fit the section's grading mode, or VALIDATION_ERROR naming student row(s) with missing or invalid marks; section stays DRAFT."
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/sections/{section_id}/incompletes": {
+      "get": {
+        "tags": [
+          "faculty-grades"
+        ],
+        "summary": "List Section Incompletes",
+        "description": "List finalized Incomplete (INC) grades and deadlines for one assigned section.",
+        "operationId": "list_faculty_section_incompletes",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Course section UUID assigned to the faculty member.",
+              "title": "Section Id"
+            },
+            "description": "Course section UUID assigned to the faculty member."
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "PENDING_COMPLETION",
+                    "COMPLETED",
+                    "EXPIRED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_IncompleteGradeRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE), missing permission, or grade deadline passed (GRADE_DEADLINE_PASSED)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the section does not exist or is not assigned to the caller."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/sections/{section_id}/grade-corrections": {
+      "post": {
+        "tags": [
+          "faculty-grade-corrections"
+        ],
+        "summary": "File Grade Correction",
+        "operationId": "file_faculty_grade_correction",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "section_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Section Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_file_faculty_grade_correction"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED."
+          },
+          "403": {
+            "description": "CORRECTION_WINDOW_CLOSED with windowClosedAt."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND for a missing or unowned resource."
+          },
+          "413": {
+            "description": "FILE_TOO_LARGE (maximum 10 MB)."
+          },
+          "415": {
+            "description": "UNSUPPORTED_MEDIA_TYPE; content must be PDF, JPEG or PNG."
+          },
+          "422": {
+            "description": "VALIDATION_ERROR for an invalid filing or nonfinal grade."
+          },
+          "503": {
+            "description": "GRADE_RECORD_UNAVAILABLE: missing calendar/catalog scope."
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/grade-corrections": {
+      "get": {
+        "tags": [
+          "faculty-grade-corrections"
+        ],
+        "summary": "List Grade Corrections",
+        "operationId": "list_faculty_grade_corrections",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED."
+          },
+          "403": {
+            "description": "AUTH_INSUFFICIENT_ROLE or missing permission."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND for a missing or unowned resource."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/grade-corrections/{correction_id}": {
+      "get": {
+        "tags": [
+          "faculty-grade-corrections"
+        ],
+        "summary": "Get Grade Correction",
+        "operationId": "get_faculty_grade_correction",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "correction_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Correction Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED."
+          },
+          "403": {
+            "description": "AUTH_INSUFFICIENT_ROLE or missing permission."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND for a missing or unowned resource."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/incompletes": {
+      "get": {
+        "tags": [
+          "faculty-incompletes"
+        ],
+        "summary": "List Faculty Incompletes",
+        "description": "List finalized Incomplete (INC) grades across all assigned sections.",
+        "operationId": "list_faculty_incompletes",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "PENDING_COMPLETION",
+                    "COMPLETED",
+                    "EXPIRED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_IncompleteGradeRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE) or missing permission."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the Inc record does not exist or belongs to another faculty member's section."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faculty/incompletes/{inc_id}/completion": {
+      "post": {
+        "tags": [
+          "faculty-incompletes"
+        ],
+        "summary": "File Incomplete Completion",
+        "description": "File a passing completion mark (1.00 to 3.00) for Dean endorsement.",
+        "operationId": "file_faculty_incomplete_completion",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "inc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identifier of the finalized Incomplete grade row.",
+              "title": "Inc Id"
+            },
+            "description": "Identifier of the finalized Incomplete grade row."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIncompleteCompletionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncompleteCompletionRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired (AUTH_SESSION_EXPIRED) or MFA required (AUTH_MFA_REQUIRED)."
+          },
+          "403": {
+            "description": "Wrong role (AUTH_INSUFFICIENT_ROLE) or missing permission."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the Inc record does not exist or belongs to another faculty member's section."
+          },
+          "409": {
+            "description": "INC_COMPLETION_WINDOW_CLOSED if already expired to 5.00, INC_ALREADY_COMPLETED, or INC_COMPLETION_PENDING."
+          },
+          "422": {
+            "description": "VALIDATION_ERROR when proposed mark is outside 1.00 to 3.00 or completion form is missing."
+          }
+        }
+      }
+    },
     "/api/v1/auth/admin/login": {
       "post": {
         "tags": [
           "admin-auth"
         ],
         "summary": "Login Admin",
-        "description": "Verify credentials and issue no session until MFA completes.",
+        "description": "Require MFA, except with the explicit development-only skip setting.",
         "operationId": "login_admin_api_v1_auth_admin_login_post",
         "requestBody": {
           "content": {
@@ -4136,7 +5016,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AdminLoginChallenge"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AdminLoginChallenge"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdminTokenPair"
+                    }
+                  ],
+                  "title": "Response Login Admin Api V1 Auth Admin Login Post"
                 }
               }
             }
@@ -4983,6 +5871,160 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/incomplete-completions": {
+      "get": {
+        "tags": [
+          "admin-incomplete-completions"
+        ],
+        "summary": "List Incomplete Completions",
+        "description": "List incomplete completion filings within the Dean's own college.",
+        "operationId": "list_admin_incomplete_completions",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "PENDING_DEAN",
+                    "ENDORSED",
+                    "REJECTED",
+                    "EXPIRED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_IncompleteCompletionRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED when the Admin session is missing or unverified."
+          },
+          "403": {
+            "description": "ApproveIncompleteCompletion permission is required (College Dean only)."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/incomplete-completions/{completion_id}": {
+      "patch": {
+        "tags": [
+          "admin-incomplete-completions"
+        ],
+        "summary": "Decide Incomplete Completion",
+        "description": "Endorse or reject an Incomplete completion within the Dean's own college.",
+        "operationId": "decide_admin_incomplete_completion",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "completion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Completion Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncompleteCompletionDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncompleteCompletionRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED when the Admin session is missing or unverified."
+          },
+          "403": {
+            "description": "ApproveIncompleteCompletion permission is required (College Dean only)."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND when the completion does not exist or belongs to another college."
+          },
+          "409": {
+            "description": "INC_COMPLETION_WINDOW_CLOSED if already expired to 5.00, REQUEST_ALREADY_DECIDED, or VERSION_CONFLICT."
+          },
+          "422": {
+            "description": "DECISION_REMARKS_REQUIRED when rejecting without remarks."
           }
         }
       }
@@ -7351,6 +8393,194 @@
         }
       }
     },
+    "/api/v1/admin/grade-corrections": {
+      "get": {
+        "tags": [
+          "grade-corrections"
+        ],
+        "summary": "List Grade Corrections",
+        "operationId": "list_admin_grade_corrections",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED."
+          },
+          "403": {
+            "description": "Missing permission, Finance denial or APPROVAL_SAME_ACTOR."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND for missing or out-of-scope corrections."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/grade-corrections/{correction_id}": {
+      "get": {
+        "tags": [
+          "grade-corrections"
+        ],
+        "summary": "Get Grade Correction",
+        "operationId": "get_admin_grade_correction",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "correction_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Correction Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED."
+          },
+          "403": {
+            "description": "Missing permission, Finance denial or APPROVAL_SAME_ACTOR."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND for missing or out-of-scope corrections."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "grade-corrections"
+        ],
+        "summary": "Decide Grade Correction",
+        "operationId": "decide_admin_grade_correction",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "correction_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Correction Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectionDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_SESSION_EXPIRED or AUTH_MFA_REQUIRED."
+          },
+          "403": {
+            "description": "Missing permission, Finance denial or APPROVAL_SAME_ACTOR."
+          },
+          "404": {
+            "description": "RESOURCE_NOT_FOUND for missing or out-of-scope corrections."
+          },
+          "409": {
+            "description": "APPROVAL_OUT_OF_ORDER or VERSION_CONFLICT; nothing changes."
+          },
+          "422": {
+            "description": "DECISION_REMARKS_REQUIRED when rejecting without remarks."
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -7919,7 +9149,8 @@
           "admin_registrar",
           "admin_finance",
           "admin_chairperson",
-          "admin_dean"
+          "admin_dean",
+          "admin_advisor"
         ],
         "title": "AccountRole",
         "description": "The ``role`` a Superadmin gives a new account, one per CSV row."
@@ -8149,6 +9380,17 @@
           "createdAt"
         ],
         "title": "AddDropRequestRead"
+      },
+      "AddDropStatus": {
+        "type": "string",
+        "enum": [
+          "NONE",
+          "PENDING_ADD",
+          "PENDING_DROP",
+          "APPROVED_ADD",
+          "APPROVED_DROP"
+        ],
+        "title": "AddDropStatus"
       },
       "AddSectionItem": {
         "properties": {
@@ -8409,6 +9651,7 @@
       "AdminPosition": {
         "type": "string",
         "enum": [
+          "advisor",
           "chairperson",
           "dean",
           "finance",
@@ -9194,6 +10437,36 @@
         ],
         "title": "AvatarUploadRead",
         "description": "Confirmation returned when a student uploads a valid profile picture."
+      },
+      "Body_file_faculty_grade_correction": {
+        "properties": {
+          "student_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Student Id"
+          },
+          "proposed_mark": {
+            "type": "string",
+            "title": "Proposed Mark"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "grading_sheet": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Grading Sheet"
+          }
+        },
+        "type": "object",
+        "required": [
+          "student_id",
+          "proposed_mark",
+          "reason",
+          "grading_sheet"
+        ],
+        "title": "Body_file_faculty_grade_correction"
       },
       "Body_import_users_api_v1_admin_users_import_post": {
         "properties": {
@@ -9989,7 +11262,6 @@
           "new_password": {
             "type": "string",
             "maxLength": 128,
-            "minLength": 12,
             "title": "New Password"
           }
         },
@@ -10085,6 +11357,322 @@
         "title": "ConnectionRead",
         "description": "Direct private/no-store status; no status/data wrapper or Google credentials."
       },
+      "CorrectionDecision": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "ENDORSE",
+              "COMMIT",
+              "REJECT"
+            ],
+            "title": "Action"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action",
+          "version"
+        ],
+        "title": "CorrectionDecision"
+      },
+      "CorrectionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CorrectionRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "CorrectionPage"
+      },
+      "CorrectionRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "gradeId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Gradeid"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "facultyId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Facultyid"
+          },
+          "currentMark": {
+            "type": "string",
+            "title": "Currentmark"
+          },
+          "proposedMark": {
+            "type": "string",
+            "title": "Proposedmark"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "gradingSheetFileId": {
+            "type": "string",
+            "title": "Gradingsheetfileid"
+          },
+          "gradingSheetContentType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradingsheetcontenttype"
+          },
+          "gradingSheetSize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradingsheetsize"
+          },
+          "gradingSheetSha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradingsheetsha256"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING_CHAIR",
+              "PENDING_DEAN",
+              "PENDING_REGISTRAR",
+              "COMMITTED",
+              "REJECTED"
+            ],
+            "title": "State"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "windowClosedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Windowclosedat"
+          },
+          "chairApprovedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chairapprovedby"
+          },
+          "chairApprovedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chairapprovedat"
+          },
+          "deanApprovedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deanapprovedby"
+          },
+          "deanApprovedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deanapprovedat"
+          },
+          "registrarApprovedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registrarapprovedby"
+          },
+          "registrarApprovedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registrarapprovedat"
+          },
+          "rejectedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejectedby"
+          },
+          "rejectionRemarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejectionremarks"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "gradeId",
+          "studentId",
+          "sectionId",
+          "facultyId",
+          "currentMark",
+          "proposedMark",
+          "reason",
+          "gradingSheetFileId",
+          "gradingSheetContentType",
+          "gradingSheetSize",
+          "gradingSheetSha256",
+          "state",
+          "version",
+          "windowClosedAt",
+          "chairApprovedBy",
+          "chairApprovedAt",
+          "deanApprovedBy",
+          "deanApprovedAt",
+          "registrarApprovedBy",
+          "registrarApprovedAt",
+          "rejectedBy",
+          "rejectionRemarks",
+          "resolvedAt",
+          "createdAt"
+        ],
+        "title": "CorrectionRead"
+      },
       "CourseSectionRead": {
         "properties": {
           "id": {
@@ -10139,8 +11727,19 @@
               "$ref": "#/components/schemas/RosterEntryRead"
             },
             "type": "array",
-            "title": "Roster",
-            "default": []
+            "title": "Roster"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
           }
         },
         "type": "object",
@@ -10148,10 +11747,79 @@
           "id",
           "section_name",
           "capacity",
-          "status"
+          "status",
+          "total",
+          "limit",
+          "offset"
         ],
         "title": "CourseSectionRosterRead",
-        "description": "A section with its roster.\n\nThe roster stays empty until the enrollment domain exists to fill it; the\nendpoint already enforces who may see it."
+        "description": "A filtered page of students in a section owned by the caller."
+      },
+      "CreateIncompleteCompletionRequest": {
+        "properties": {
+          "proposedMark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposedmark",
+            "description": "Passing completion grade mark from 1.00 to 3.00.",
+            "examples": [
+              "1.50"
+            ]
+          },
+          "completionFormFileId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completionformfileid",
+            "description": "Reference identifier of the uploaded completion form.",
+            "examples": [
+              "form-inc-0001"
+            ]
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks",
+            "description": "Optional remarks accompanying the completion filing."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CreateIncompleteCompletionRequest",
+        "description": "Faculty filing of an Incomplete completion grade; validated in the service.",
+        "example": {
+          "completionFormFileId": "form-inc-0001",
+          "proposedMark": "1.50",
+          "remarks": "Completed final project"
+        }
       },
       "CurrentEnrollmentRead": {
         "properties": {
@@ -10878,6 +12546,15 @@
         "title": "EnrollmentReportRow",
         "description": "An aggregated group count in the enrollment statistics report."
       },
+      "EnrollmentStatus": {
+        "type": "string",
+        "enum": [
+          "ENROLLED",
+          "DROPPED",
+          "WITHDRAWN"
+        ],
+        "title": "EnrollmentStatus"
+      },
       "EnrollmentSubmitRead": {
         "properties": {
           "enrollmentId": {
@@ -11034,6 +12711,53 @@
         "title": "EnrollmentSummaryRead",
         "description": "Enrolled load, limits, and schedule link for a term."
       },
+      "FacultyCourseAttemptRead": {
+        "properties": {
+          "enrollmentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Enrollmentid"
+          },
+          "academicTermId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Academictermid"
+          },
+          "academicYear": {
+            "type": "string",
+            "title": "Academicyear"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          },
+          "finalGrade": {
+            "type": "string",
+            "title": "Finalgrade"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "PASSED",
+              "FAILED",
+              "INCOMPLETE",
+              "WITHDRAWN"
+            ],
+            "title": "Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enrollmentId",
+          "academicTermId",
+          "academicYear",
+          "semester",
+          "finalGrade",
+          "result"
+        ],
+        "title": "FacultyCourseAttemptRead",
+        "description": "One published attempt relevant to the section's course."
+      },
       "FacultyEnrollmentResult": {
         "properties": {
           "access_token": {
@@ -11177,6 +12901,81 @@
         "title": "FacultyMfaVerifyRequest",
         "description": "Exactly one second factor: a TOTP code or an unused recovery code."
       },
+      "FacultyPrerequisiteRecordRead": {
+        "properties": {
+          "courseId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Courseid"
+          },
+          "courseCode": {
+            "type": "string",
+            "title": "Coursecode"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "PASSED",
+              "NOT_PASSED",
+              "NOT_TAKEN"
+            ],
+            "title": "Result"
+          },
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/FacultyCourseAttemptRead"
+            },
+            "type": "array",
+            "title": "Attempts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "courseId",
+          "courseCode",
+          "title",
+          "result"
+        ],
+        "title": "FacultyPrerequisiteRecordRead",
+        "description": "Published outcomes for one prerequisite of the taught course."
+      },
+      "FacultyProfileRead": {
+        "properties": {
+          "petitionRoute": {
+            "type": "string",
+            "title": "Petitionroute"
+          },
+          "fields": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/cbpupsis_api_faculty__domains__faculty_profile__schemas__ProfileFieldEntry"
+            },
+            "type": "object",
+            "title": "Fields"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "petitionRoute",
+          "fields"
+        ],
+        "title": "FacultyProfileRead",
+        "description": "Faculty profile response with per-field editability flags."
+      },
       "FacultySessionRead": {
         "properties": {
           "id": {
@@ -11215,6 +13014,69 @@
         ],
         "title": "FacultySessionRead",
         "description": "The signed-in faculty member, as returned by ``/auth/faculty/me``."
+      },
+      "FacultyStudentRead": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "program": {
+            "type": "string",
+            "title": "Program"
+          },
+          "yearLevel": {
+            "type": "integer",
+            "title": "Yearlevel"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "studentNumber",
+          "email",
+          "program",
+          "yearLevel"
+        ],
+        "title": "FacultyStudentRead",
+        "description": "Teaching and contact data; deliberately excludes private profile data."
+      },
+      "FacultyStudentRecordRead": {
+        "properties": {
+          "courseId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Courseid"
+          },
+          "courseAttempts": {
+            "items": {
+              "$ref": "#/components/schemas/FacultyCourseAttemptRead"
+            },
+            "type": "array",
+            "title": "Courseattempts"
+          },
+          "prerequisites": {
+            "items": {
+              "$ref": "#/components/schemas/FacultyPrerequisiteRecordRead"
+            },
+            "type": "array",
+            "title": "Prerequisites"
+          }
+        },
+        "type": "object",
+        "required": [
+          "courseId"
+        ],
+        "title": "FacultyStudentRecordRead",
+        "description": "Course-scoped academic record disclosed to the teaching faculty member."
       },
       "FacultyTokenPair": {
         "properties": {
@@ -11427,18 +13289,86 @@
         "type": "object",
         "title": "FeeStructureSaveRequest"
       },
+      "FinalizeGradesRead": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "state": {
+            "type": "string",
+            "const": "FINAL",
+            "title": "State"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "recordsCommitted": {
+            "type": "integer",
+            "title": "Recordscommitted"
+          },
+          "notificationsQueued": {
+            "type": "integer",
+            "title": "Notificationsqueued"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Submittedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectionId",
+          "state",
+          "version",
+          "recordsCommitted",
+          "notificationsQueued",
+          "submittedAt"
+        ],
+        "title": "FinalizeGradesRead",
+        "description": "Summary returned after finalizing and locking a section's grades."
+      },
+      "FinalizeGradesRequest": {
+        "properties": {
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version",
+            "description": "Optional expected version of the grade sheet before finalizing.",
+            "examples": [
+              0
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "FinalizeGradesRequest",
+        "description": "Optional optimistic-lock version check when finalizing a section.",
+        "example": {
+          "version": 0
+        }
+      },
       "ForgotPasswordRequest": {
         "properties": {
-          "email": {
+          "identifier": {
             "type": "string",
-            "format": "email",
-            "title": "Email"
+            "title": "Identifier",
+            "description": "Email address, student number, or employee ID."
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "email"
+          "identifier"
         ],
         "title": "ForgotPasswordRequest",
         "description": "Payload for requesting a password-reset email."
@@ -11504,13 +13434,17 @@
               "2.75",
               "3.00",
               "5.00",
+              "PASS",
+              "FAIL",
               "Inc",
               "W"
             ],
             "title": "Final Grade",
-            "description": "Published final mark. Numeric marks have two places; Inc means incomplete and W means withdrawn.",
+            "description": "Published final mark. Numeric marks have two places; PASS/FAIL apply to Pass/Fail sections; Inc is incomplete, W is withdrawn.",
             "examples": [
               "1.25",
+              "PASS",
+              "FAIL",
               "Inc",
               "W"
             ]
@@ -11559,6 +13493,173 @@
         ],
         "title": "GradeCourse",
         "description": "One posted course attempt; draft marks are excluded."
+      },
+      "GradeDeadlineRead": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "academicTermId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Academictermid"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Deadline"
+          },
+          "passed": {
+            "type": "boolean",
+            "title": "Passed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectionId",
+          "academicTermId",
+          "deadline",
+          "passed"
+        ],
+        "title": "GradeDeadlineRead",
+        "description": "Grade submission deadline and whether it has passed."
+      },
+      "GradeDraftItemInput": {
+        "properties": {
+          "enrollmentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enrollmentid",
+            "description": "Enrolled student's course enrollment ID.",
+            "examples": [
+              "00000000-0000-0000-0000-000000000001"
+            ]
+          },
+          "studentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Studentid",
+            "description": "Optional student user ID (omit when enrollmentId is provided)."
+          },
+          "finalGrade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalgrade",
+            "description": "Final grade mark (1.00 to 5.00 or INC for NUMERIC; PASS or FAIL for PASS_FAIL).",
+            "examples": [
+              "1.25"
+            ]
+          },
+          "rawScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rawscore",
+            "description": "Optional numeric raw score.",
+            "examples": [
+              "88.5"
+            ]
+          },
+          "midtermGrade": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Midtermgrade",
+            "description": "Optional midterm grade.",
+            "examples": [
+              "1.50"
+            ]
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks",
+            "description": "Optional remarks for this grade entry.",
+            "examples": [
+              "Draft mark"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "GradeDraftItemInput",
+        "description": "One student's draft mark input; validated in the service layer.",
+        "example": {
+          "enrollmentId": "00000000-0000-0000-0000-000000000001",
+          "finalGrade": "1.25",
+          "midtermGrade": "1.50",
+          "remarks": "Draft mark"
+        }
+      },
+      "GradeStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "DRAFT",
+          "SUBMITTED",
+          "INC"
+        ],
+        "title": "GradeStatus"
       },
       "GradesRead": {
         "properties": {
@@ -11825,6 +13926,492 @@
         ],
         "title": "HoldRead",
         "description": "A student administrative or financial hold."
+      },
+      "IncompleteCompletionDecisionRequest": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "ENDORSE",
+              "REJECT"
+            ],
+            "title": "Decision"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "title": "IncompleteCompletionDecisionRequest",
+        "description": "College Dean endorsement or rejection of an Incomplete completion."
+      },
+      "IncompleteCompletionRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "completionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Completionid"
+          },
+          "incId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Incid"
+          },
+          "gradeId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Gradeid"
+          },
+          "enrollmentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Enrollmentid"
+          },
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "sectionName": {
+            "type": "string",
+            "title": "Sectionname"
+          },
+          "courseId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Courseid"
+          },
+          "courseCode": {
+            "type": "string",
+            "title": "Coursecode"
+          },
+          "courseTitle": {
+            "type": "string",
+            "title": "Coursetitle"
+          },
+          "academicTermId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Academictermid"
+          },
+          "academicYear": {
+            "type": "string",
+            "title": "Academicyear"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "studentName": {
+            "type": "string",
+            "title": "Studentname"
+          },
+          "college": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "College"
+          },
+          "proposedMark": {
+            "type": "string",
+            "title": "Proposedmark"
+          },
+          "completionFormFileId": {
+            "type": "string",
+            "title": "Completionformfileid"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING_DEAN",
+              "ENDORSED",
+              "REJECTED",
+              "EXPIRED"
+            ],
+            "title": "State"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "reviewedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedby"
+          },
+          "reviewRemarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewremarks"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "completionDeadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completiondeadline"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "completionId",
+          "incId",
+          "gradeId",
+          "enrollmentId",
+          "sectionId",
+          "sectionName",
+          "courseId",
+          "courseCode",
+          "courseTitle",
+          "academicTermId",
+          "academicYear",
+          "semester",
+          "studentId",
+          "studentNumber",
+          "studentName",
+          "proposedMark",
+          "completionFormFileId",
+          "state",
+          "version",
+          "createdAt"
+        ],
+        "title": "IncompleteCompletionRead",
+        "description": "Full Incomplete completion record returned to faculty and College Deans."
+      },
+      "IncompleteCompletionSummaryRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "gradeId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Gradeid"
+          },
+          "proposedMark": {
+            "type": "string",
+            "title": "Proposedmark"
+          },
+          "completionFormFileId": {
+            "type": "string",
+            "title": "Completionformfileid"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING_DEAN",
+              "ENDORSED",
+              "REJECTED",
+              "EXPIRED"
+            ],
+            "title": "State"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "reviewedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedby"
+          },
+          "reviewRemarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewremarks"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "gradeId",
+          "proposedMark",
+          "completionFormFileId",
+          "state",
+          "version",
+          "createdAt"
+        ],
+        "title": "IncompleteCompletionSummaryRead",
+        "description": "Compact summary of an Incomplete completion filing attached to an Inc row."
+      },
+      "IncompleteGradeRead": {
+        "properties": {
+          "incId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Incid"
+          },
+          "gradeId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Gradeid"
+          },
+          "enrollmentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Enrollmentid"
+          },
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "sectionName": {
+            "type": "string",
+            "title": "Sectionname"
+          },
+          "courseId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Courseid"
+          },
+          "courseCode": {
+            "type": "string",
+            "title": "Coursecode"
+          },
+          "courseTitle": {
+            "type": "string",
+            "title": "Coursetitle"
+          },
+          "academicTermId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Academictermid"
+          },
+          "academicYear": {
+            "type": "string",
+            "title": "Academicyear"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "studentName": {
+            "type": "string",
+            "title": "Studentname"
+          },
+          "finalGrade": {
+            "type": "string",
+            "title": "Finalgrade"
+          },
+          "submittedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submittedat"
+          },
+          "completionDeadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completiondeadline"
+          },
+          "daysLeft": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daysleft"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING_COMPLETION",
+              "COMPLETED",
+              "EXPIRED"
+            ],
+            "title": "State"
+          },
+          "latestCompletion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IncompleteCompletionSummaryRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "incId",
+          "gradeId",
+          "enrollmentId",
+          "sectionId",
+          "sectionName",
+          "courseId",
+          "courseCode",
+          "courseTitle",
+          "academicTermId",
+          "academicYear",
+          "semester",
+          "studentId",
+          "studentNumber",
+          "studentName",
+          "finalGrade",
+          "state"
+        ],
+        "title": "IncompleteGradeRead",
+        "description": "One student's Incomplete grade record with deadline, days left, and state."
       },
       "InstallmentItem": {
         "properties": {
@@ -12654,6 +15241,68 @@
         ],
         "title": "Page[GroupRead]"
       },
+      "Page_IncompleteCompletionRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IncompleteCompletionRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[IncompleteCompletionRead]"
+      },
+      "Page_IncompleteGradeRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IncompleteGradeRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[IncompleteGradeRead]"
+      },
       "Page_ItemRead_": {
         "properties": {
           "items": {
@@ -12871,6 +15520,25 @@
         ],
         "title": "Page[WaiverRead]"
       },
+      "PasswordPolicyResponse": {
+        "properties": {
+          "minimumLength": {
+            "type": "integer",
+            "title": "Minimumlength",
+            "default": 8
+          },
+          "requiredRules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Requiredrules"
+          }
+        },
+        "type": "object",
+        "title": "PasswordPolicyResponse",
+        "description": "Password complexity requirements enforced by reset and password change."
+      },
       "PaymentCreate": {
         "properties": {
           "amount": {
@@ -12918,37 +15586,7 @@
         ],
         "title": "PaymentCreated"
       },
-      "PaymentRead": {
-        "properties": {
-          "date": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Date"
-          },
-          "amount": {
-            "type": "string",
-            "pattern": "^\\d+\\.\\d{2}$",
-            "title": "Amount"
-          },
-          "reference": {
-            "type": "string",
-            "title": "Reference"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          }
-        },
-        "type": "object",
-        "required": [
-          "date",
-          "amount",
-          "reference",
-          "status"
-        ],
-        "title": "PaymentRead"
-      },
-      "PaymentStatusRead": {
+      "PaymentDetailRead": {
         "properties": {
           "paymentId": {
             "type": "string",
@@ -13015,7 +15653,37 @@
           "amount",
           "createdAt"
         ],
-        "title": "PaymentStatusRead"
+        "title": "PaymentDetailRead"
+      },
+      "PaymentRead": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Amount"
+          },
+          "reference": {
+            "type": "string",
+            "title": "Reference"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "amount",
+          "reference",
+          "status"
+        ],
+        "title": "PaymentRead"
       },
       "PermissionCreate": {
         "properties": {
@@ -13172,35 +15840,6 @@
         "title": "PolicyRead",
         "description": "Policy as returned by the API, including its resolved permissions."
       },
-      "ProfileFieldEntry": {
-        "properties": {
-          "value": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Value"
-          },
-          "editable": {
-            "type": "boolean",
-            "title": "Editable"
-          }
-        },
-        "type": "object",
-        "required": [
-          "value",
-          "editable"
-        ],
-        "title": "ProfileFieldEntry",
-        "description": "One profile field with its value and self-service editability flag."
-      },
       "ProgramTuitionRate": {
         "properties": {
           "programId": {
@@ -13333,11 +15972,6 @@
       },
       "ResetTokenVerificationResponse": {
         "properties": {
-          "valid": {
-            "type": "boolean",
-            "title": "Valid",
-            "default": true
-          },
           "minimumLength": {
             "type": "integer",
             "title": "Minimumlength",
@@ -13349,6 +15983,11 @@
             },
             "type": "array",
             "title": "Requiredrules"
+          },
+          "valid": {
+            "type": "boolean",
+            "title": "Valid",
+            "default": true
           }
         },
         "type": "object",
@@ -13405,14 +16044,79 @@
             "type": "string",
             "format": "uuid",
             "title": "User Id"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "enrollmentStatus": {
+            "$ref": "#/components/schemas/EnrollmentStatus"
+          },
+          "gradeStatus": {
+            "$ref": "#/components/schemas/GradeStatus"
+          },
+          "addDropStatus": {
+            "$ref": "#/components/schemas/AddDropStatus"
           }
         },
         "type": "object",
         "required": [
-          "user_id"
+          "user_id",
+          "studentNumber",
+          "name",
+          "email",
+          "enrollmentStatus",
+          "gradeStatus",
+          "addDropStatus"
         ],
         "title": "RosterEntryRead",
         "description": "One enrolled student on a roster."
+      },
+      "SaveGradeDraftRequest": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "description": "Expected version of draft submission for optimistic locking.",
+            "examples": [
+              0
+            ]
+          },
+          "grades": {
+            "items": {
+              "$ref": "#/components/schemas/GradeDraftItemInput"
+            },
+            "type": "array",
+            "title": "Grades"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "grades"
+        ],
+        "title": "SaveGradeDraftRequest",
+        "description": "Versioned draft save payload for a section's grade sheet.",
+        "example": {
+          "grades": [
+            {
+              "enrollmentId": "00000000-0000-0000-0000-000000000001",
+              "finalGrade": "1.25",
+              "midtermGrade": "1.50",
+              "remarks": "Draft mark"
+            }
+          ],
+          "version": 0
+        }
       },
       "ScheduleCourse": {
         "properties": {
@@ -13763,6 +16467,242 @@
         ],
         "title": "ScholasticStandingRead",
         "description": "Scholastic standing evaluation and load impact."
+      },
+      "SectionGradeEntryRead": {
+        "properties": {
+          "enrollmentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Enrollmentid"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Studentid"
+          },
+          "studentNumber": {
+            "type": "string",
+            "title": "Studentnumber"
+          },
+          "studentName": {
+            "type": "string",
+            "title": "Studentname"
+          },
+          "rawScore": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rawscore"
+          },
+          "midtermGrade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Midtermgrade"
+          },
+          "finalGrade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalgrade"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "incExpiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incexpiresat"
+          },
+          "completionDeadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completiondeadline"
+          },
+          "isDraft": {
+            "type": "boolean",
+            "title": "Isdraft",
+            "default": true
+          },
+          "isLocked": {
+            "type": "boolean",
+            "title": "Islocked",
+            "default": false
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "MISSING",
+              "DRAFT",
+              "FINAL"
+            ],
+            "title": "Status"
+          },
+          "submittedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submittedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enrollmentId",
+          "studentId",
+          "studentNumber",
+          "studentName",
+          "status"
+        ],
+        "title": "SectionGradeEntryRead",
+        "description": "One enrolled student's grade row for a section."
+      },
+      "SectionGradesRead": {
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sectionid"
+          },
+          "sectionName": {
+            "type": "string",
+            "title": "Sectionname"
+          },
+          "courseCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coursecode"
+          },
+          "courseTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coursetitle"
+          },
+          "gradingMode": {
+            "type": "string",
+            "enum": [
+              "NUMERIC",
+              "PASS_FAIL"
+            ],
+            "title": "Gradingmode",
+            "description": "Section grading mode (NUMERIC or PASS_FAIL).",
+            "default": "NUMERIC"
+          },
+          "allowedMarks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowedmarks",
+            "description": "Allowed marks for the section's grading mode."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "FINAL"
+            ],
+            "title": "State"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Deadline"
+          },
+          "deadlinePassed": {
+            "type": "boolean",
+            "title": "Deadlinepassed"
+          },
+          "submittedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submittedat"
+          },
+          "grades": {
+            "items": {
+              "$ref": "#/components/schemas/SectionGradeEntryRead"
+            },
+            "type": "array",
+            "title": "Grades"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectionId",
+          "sectionName",
+          "state",
+          "version",
+          "deadline",
+          "deadlinePassed"
+        ],
+        "title": "SectionGradesRead",
+        "description": "Section grade sheet with enrolled marks, workflow state, version, deadline."
       },
       "SectionMeetingInput": {
         "properties": {
@@ -14256,7 +17196,7 @@
           },
           "fields": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/ProfileFieldEntry"
+              "$ref": "#/components/schemas/cbpupsis_api_student__domains__student_profile__schemas__ProfileFieldEntry"
             },
             "type": "object",
             "title": "Fields"
@@ -15038,6 +17978,31 @@
               }
             ],
             "title": "Phone Number"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Permissions"
+          },
+          "page_permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Page Permissions"
           }
         },
         "type": "object",
@@ -15538,6 +18503,61 @@
         ],
         "title": "TotpEnrollmentRead",
         "description": "A pending seed: the secret for manual entry and the URI to scan."
+      },
+      "cbpupsis_api_faculty__domains__faculty_profile__schemas__ProfileFieldEntry": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "editable": {
+            "type": "boolean",
+            "title": "Editable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "editable"
+        ],
+        "title": "ProfileFieldEntry",
+        "description": "One faculty profile field with its value and self-service editability flag."
+      },
+      "cbpupsis_api_student__domains__student_profile__schemas__ProfileFieldEntry": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "editable": {
+            "type": "boolean",
+            "title": "Editable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "editable"
+        ],
+        "title": "ProfileFieldEntry",
+        "description": "One profile field with its value and self-service editability flag."
       }
     },
     "securitySchemes": {
