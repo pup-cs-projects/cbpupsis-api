@@ -8,9 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_shared.domains.billing import service as billing_service
 from cbpupsis_shared.domains.billing.schemas import (
+    FeeStructureOptionsRead,
     FeeStructureRead,
     FeeStructureSaveRequest,
 )
+
+
+async def get_fee_structure_options(db: AsyncSession) -> FeeStructureOptionsRead:
+    return await billing_service.get_fee_structure_options(db)
 
 
 async def get_fee_structure_for_term(

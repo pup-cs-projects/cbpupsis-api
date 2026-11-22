@@ -13,6 +13,7 @@ from cbpupsis_api_admin.domains.admin_auth.dependencies import (
 )
 from cbpupsis_api_admin.domains.fee_structures import service
 from cbpupsis_api_admin.domains.fee_structures.schemas import (
+    FeeStructureOptionsRead,
     FeeStructureRead,
     FeeStructureSaveRequest,
 )
@@ -21,6 +22,19 @@ from cbpupsis_database.session import get_db
 from cbpupsis_shared.domains.iam.constants import MANAGE_FEE_STRUCTURE
 
 router = APIRouter()
+
+
+@router.get(
+    "/options",
+    response_model=FeeStructureOptionsRead,
+    operation_id="get_admin_fee_structure_options",
+)
+async def get_fee_structure_options(
+    admin: AdminSession = Depends(require_admin_permission(MANAGE_FEE_STRUCTURE)),
+    db: AsyncSession = Depends(get_db),
+) -> FeeStructureOptionsRead:
+    """List academic terms and active programs for the fee structure form."""
+    return await service.get_fee_structure_options(db)
 
 
 @router.get(

@@ -105,6 +105,22 @@ async def list_all_programs(db: AsyncSession) -> list[Program]:
     return list(await db.scalars(select(Program).order_by(Program.code.asc())))
 
 
+async def list_active_programs(db: AsyncSession) -> list[Program]:
+    """List active degree programs ordered by code.
+
+    SQL::
+
+        SELECT * FROM programs WHERE is_active IS true ORDER BY code ASC
+    """
+    return list(
+        await db.scalars(
+            select(Program)
+            .where(Program.is_active.is_(True))
+            .order_by(Program.code.asc())
+        )
+    )
+
+
 async def list_programs_by_ids(db: AsyncSession, ids: set[uuid.UUID]):
     """Read program scope metadata for a bounded id set.
 
