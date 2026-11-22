@@ -116,16 +116,14 @@ async def setup(db, grading_setup, monkeypatch):
         section_id=data["own_id"],
         payload=FinalizeGradesRequest(version=draft.version),
     )
-    db.add(
-        StudentTermGPA(
-            student_id=data["alice_id"],
-            academic_term_id=data["open_term_id"],
-            total_gpa_units=Decimal("3"),
-            term_gpa=Decimal("2"),
-            cumulative_gpa=Decimal("2"),
-            academic_standing="Warning Level 1",
+    gpa_row = await db.scalar(
+        select(StudentTermGPA).where(
+            StudentTermGPA.student_id == data["alice_id"],
+            StudentTermGPA.academic_term_id == data["open_term_id"],
         )
     )
+    assert gpa_row is not None
+    gpa_row.academic_standing = "Warning Level 1"
     for position in ("chairperson", "dean", "registrar", "finance"):
         actor = User(
             email=f"correction-{position}@example.com", password_hash="!fixture"

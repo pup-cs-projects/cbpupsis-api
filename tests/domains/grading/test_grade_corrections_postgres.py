@@ -158,16 +158,14 @@ async def seed_record(db):
             section_id=section_id,
             payload=FinalizeGradesRequest(version=draft.version),
         )
-    db.add(
-        StudentTermGPA(
-            student_id=data.student_id,
-            academic_term_id=data.term_id,
-            total_gpa_units=Decimal("6"),
-            term_gpa=Decimal("2.50"),
-            cumulative_gpa=Decimal("2.50"),
-            academic_standing="Warning Level 1",
+    gpa_row = await db.scalar(
+        select(StudentTermGPA).where(
+            StudentTermGPA.student_id == data.student_id,
+            StudentTermGPA.academic_term_id == data.term_id,
         )
     )
+    assert gpa_row is not None
+    gpa_row.academic_standing = "Warning Level 1"
     await db.commit()
     return data, actors
 
