@@ -1,0 +1,42 @@
+# syntax=docker/dockerfile:1
+#
+# Production image for the Google Calendar worker (US-STU-005) on AWS Lambda.
+# Built like docker/worker/Dockerfile.prod: Lambda's Python runtime calls
+# cbpupsis_api_student.calendar_worker.lambda_handler directly, once per
+# EventBridge tick. It differs from the outbox worker only in the package it
+# installs, because the calendar worker lives in the student app.
+#
+# The function needs the same GOOGLE_CALENDAR_* settings and encryption key as
+# the student API, and a timeout of at least 300 seconds (one account may take
+# 90). With GOOGLE_CALENDAR_ENABLED unset or false each run is a no-op.
+#
+# Build from the PROJECT ROOT, not from docker/:
+#   docker build -f docker/calendar-worker/Dockerfile.prod -t calendar-worker .
+
+# ---------- build stage ----------
+FROM public.ecr.aws/lambda/python:3.12 AS build
+
+COPY --from=ghcr.io/astral-sh/uv:0.9.9 /uv /bin/
+
+WORKDIR /build
+
+COPY pyproject.toml uv.lock ./
+COPY packages/core ./packages/core
+COPY packages/database ./packages/database
+COPY packages/shared ./packages/shared
+COPY apps/api-student ./apps/api-student
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv export --frozen --no-dev --no-editable --no-hashes \
+      --package cbpupsis-api-student --format requirements-txt -o requirements.txt && \
+    uv pip install --no-deps --compile-bytecode --python python3.12 \
+      --target /build/task -r requirements.txt
+
+# ---------- runtime stage ----------
+FROM public.ecr.aws/lambda/python:3.12 AS runtime
+
+COPY --from=build /build/task ${LAMBDA_TASK_ROOT}
+
+# Secrets are injected at runtime (Secrets Manager, env), never baked into a
+# layer: anyone who can pull the image can read every layer.
+CMD ["cbpupsis_api_student.calendar_worker.lambda_handler"]

@@ -109,6 +109,22 @@ permitted Google test account only after external testing is authorized.
    URLs, codes, state, bearer tokens or Google IDs in logs/screenshots/reports.
 5. DELETE to disconnect; revocation finishes when `disconnecting` becomes false.
 
+## Running deployed (AWS Lambda)
+
+A Lambda cannot host the continuous loop, so deployed environments run the
+worker as a scheduled one-shot function from `docker/calendar-worker/`, whose
+entry point is `cbpupsis_api_student.calendar_worker.lambda_handler`. Each run
+reconciles due accounts until about 100 seconds before the function's time
+limit, then stops; the next tick continues.
+
+- Give the function the same `APP_SECRETS_ARN` (with the `GOOGLE_CALENDAR_*`
+  values) and runtime settings as the student API, a timeout of at least
+  300 seconds, and a schedule of every one to five minutes.
+- With `GOOGLE_CALENDAR_ENABLED` unset or `false`, each run does nothing and
+  succeeds, so the schedule can exist before the feature is turned on.
+- Without this function, connecting succeeds but no event is ever written,
+  status stays "Sync queued", and a disconnect stays pending forever.
+
 ## Troubleshooting
 
 | Symptom | Action |
