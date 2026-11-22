@@ -35,7 +35,6 @@ from cbpupsis_shared.domains.grading.constants import (
 from cbpupsis_shared.domains.grading.exceptions import GradeModeLockedError
 from cbpupsis_shared.domains.grading.service import (
     _evaluate_term_standing,
-    _recompute_student_term_evaluation,
 )
 from cbpupsis_shared.domains.iam import service as iam_service
 from cbpupsis_shared.domains.sections.constants import READ_COURSE_SECTION
@@ -550,6 +549,8 @@ async def test_ac_fac_003_4_finalize_pass_keeps_gwa_and_grows_units_earned(
     after = (await client.get("/api/v1/student/grades", headers=alice_headers)).json()
     assert after["gwa"] == "1.50"
     assert Decimal(after["units_earned"]) == Decimal("6.0")
+    assert after["academic_standing"] == "Good Standing"
+    assert after["standing_state"] == "evaluated"
     pf_row = next(c for c in after["courses"] if c["code"] == "COMP 399")
     assert pf_row["final_grade"] == "PASS"
     assert pf_row["status"] == "Passed"
@@ -561,6 +562,8 @@ async def test_ac_fac_003_4_finalize_pass_keeps_gwa_and_grows_units_earned(
     ).json()
     assert bob_grades["gwa"] is None
     assert Decimal(bob_grades["units_earned"]) == Decimal("3.0")
+    assert bob_grades["academic_standing"] == "Good Standing"
+    assert bob_grades["standing_state"] == "evaluated"
 
 
 async def test_ac_fac_003_5_finalize_fail_counts_3_units_in_standing_same_as_5_00(
@@ -673,18 +676,6 @@ async def test_ac_fac_003_5_finalize_fail_counts_3_units_in_standing_same_as_5_0
         )
     ).status_code == 200
 
-    now = datetime.now(UTC)
-    await _recompute_student_term_evaluation(
-        db, student_id=setup["alice_id"], term_id=setup["term_id"], evaluated_at=now
-    )
-    await _recompute_student_term_evaluation(
-        db, student_id=setup["control_id"], term_id=setup["term_id"], evaluated_at=now
-    )
-    await _recompute_student_term_evaluation(
-        db, student_id=setup["bob_id"], term_id=setup["term_id"], evaluated_at=now
-    )
-    await db.commit()
-
     alice_eval = await db.scalar(
         select(StudentTermGPA).where(
             StudentTermGPA.student_id == setup["alice_id"],
@@ -709,7 +700,7 @@ async def test_ac_fac_003_5_finalize_fail_counts_3_units_in_standing_same_as_5_0
     # 3 failed units out of 3 total units = 100% -> University Dismissal.
     assert bob_eval.academic_standing == "University Dismissal"
 
-    # Pure unit check comparing FAIL and 5.00 directly on _evaluate_term_standing.
+    # Student grade reads reflect finalized standing without manual recompute.
     alice_headers = await _student_headers(client, "2024-00201-MN-0")
     alice_grades = (
         await client.get("/api/v1/student/grades", headers=alice_headers)
@@ -717,6 +708,32 @@ async def test_ac_fac_003_5_finalize_fail_counts_3_units_in_standing_same_as_5_0
     assert alice_grades["gwa"] == "1.50"
     assert Decimal(alice_grades["units_earned"]) == Decimal("3.0")
     assert alice_grades["academic_standing"] == "Probation"
+    assert alice_grades["standing_state"] == "evaluated"
+    alice_pf = next(c for c in alice_grades["courses"] if c["code"] == "COMP 399")
+    assert alice_pf["final_grade"] == "FAIL"
+    assert alice_pf["status"] == "Failed"
+
+    control_headers = await _student_headers(client, "2024-00203-MN-0")
+    control_grades = (
+        await client.get("/api/v1/student/grades", headers=control_headers)
+    ).json()
+    assert control_grades["academic_standing"] == "Probation"
+    assert control_grades["standing_state"] == "evaluated"
+    control_fail = next(c for c in control_grades["courses"] if c["code"] == "COMP 302")
+    assert control_fail["final_grade"] == "5.00"
+    assert control_fail["status"] == "Failed"
+
+    bob_headers = await _student_headers(client, "2024-00202-MN-0")
+    bob_grades = (
+        await client.get("/api/v1/student/grades", headers=bob_headers)
+    ).json()
+    assert bob_grades["gwa"] is None
+    assert Decimal(bob_grades["units_earned"]) == Decimal("0.0")
+    assert bob_grades["academic_standing"] == "University Dismissal"
+    assert bob_grades["standing_state"] == "evaluated"
+    assert bob_grades["courses"][0]["final_grade"] == "FAIL"
+    assert bob_grades["courses"][0]["status"] == "Failed"
+
     assert _evaluate_term_standing([]) == "Good Standing"
 
 

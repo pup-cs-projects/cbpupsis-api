@@ -1045,7 +1045,7 @@ async def finalize_section_grades(
     payload: FinalizeGradesRequest | None = None,
     client_ip: str | None = None,
 ) -> FinalizeGradesRead:
-    """Lock all enrolled grades atomically, audit, and queue student notifications."""
+    """Lock all enrolled grades atomically, recompute standing, audit, and notify."""
     section, term, course, memberships, identities = await _load_section_context(
         db, faculty_id=faculty_id, section_id=section_id
     )
@@ -1160,6 +1160,17 @@ async def finalize_section_grades(
         submission.finalized_at = now
         submission.updated_at = now
         await db.flush()
+
+        for student_id in sorted(
+            {membership.student_id for membership in memberships},
+            key=str,
+        ):
+            await _recompute_student_term_evaluation(
+                db,
+                student_id=student_id,
+                term_id=section.academic_term_id,
+                evaluated_at=now,
+            )
 
         new_marks = {
             str(m.enrollment_id): _grade_snapshot(

@@ -17,7 +17,11 @@ from cbpupsis_database.models.academics import AcademicTerm
 from cbpupsis_database.models.audit import AuditEntry
 from cbpupsis_database.models.curriculum import Course, Program
 from cbpupsis_database.models.enrollment import StudentCourseEnrollment, TermEnrollment
-from cbpupsis_database.models.grading import SectionGradeSubmission, StudentGrade
+from cbpupsis_database.models.grading import (
+    SectionGradeSubmission,
+    StudentGrade,
+    StudentTermGPA,
+)
 from cbpupsis_database.models.outbox import OutboxMessage
 from cbpupsis_database.models.sections import CourseSection
 from cbpupsis_database.models.users import (
@@ -554,12 +558,16 @@ async def test_ac_fac_001_2_finalize_locks_grades_and_shows_to_student(
     alice_grades = await client.get("/api/v1/student/grades", headers=alice_headers)
     assert alice_grades.status_code == 200, alice_grades.text
     assert alice_grades.json()["courses"][0]["final_grade"] == "1.25"
+    assert alice_grades.json()["academic_standing"] == "Good Standing"
+    assert alice_grades.json()["standing_state"] == "evaluated"
 
     bob_headers = await _student_headers(client, "2024-00102-MN-0")
     bob_grades = await client.get("/api/v1/student/grades", headers=bob_headers)
     assert bob_grades.status_code == 200, bob_grades.text
     bob_course = bob_grades.json()["courses"][0]
     assert bob_course["final_grade"] == "Inc"
+    assert bob_grades.json()["academic_standing"] == "Good Standing"
+    assert bob_grades.json()["standing_state"] == "evaluated"
     posted = datetime.fromisoformat(bob_course["posted_at"])
     deadline = datetime.fromisoformat(bob_course["completion_deadline"])
     assert deadline - posted == timedelta(days=365)
@@ -628,6 +636,15 @@ async def test_ac_fac_001_9_finalize_after_deadline_returns_403(
         )
     )
     assert outbox == []
+
+    standing_rows = list(
+        await db.scalars(
+            select(StudentTermGPA).where(
+                StudentTermGPA.student_id.in_([setup["alice_id"], setup["bob_id"]])
+            )
+        )
+    )
+    assert standing_rows == []
 
 
 async def test_ac_fac_001_10_foreign_and_missing_sections_return_404(
@@ -861,6 +878,15 @@ async def test_ac_fac_001_11_failed_finalize_leaves_section_draft(
         )
     )
     assert outbox == []
+
+    standing_rows = list(
+        await db.scalars(
+            select(StudentTermGPA).where(
+                StudentTermGPA.student_id.in_([setup["alice_id"], setup["bob_id"]])
+            )
+        )
+    )
+    assert standing_rows == []
 
 
 async def test_ac_fac_001_1_draft_60_students_meets_speed_target(
