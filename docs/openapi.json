@@ -5769,6 +5769,33 @@
         }
       }
     },
+    "/api/v1/admin/fee-structures/options": {
+      "get": {
+        "tags": [
+          "admin-fee-structures"
+        ],
+        "summary": "Get Fee Structure Options",
+        "description": "List academic terms and active programs for the fee structure form.",
+        "operationId": "get_admin_fee_structure_options",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeeStructureOptionsRead"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/fee-structures/{term_id}": {
       "get": {
         "tags": [
@@ -13113,6 +13140,50 @@
         "title": "FacultyTokenPair",
         "description": "A faculty session's tokens. The refresh token is also set as a cookie."
       },
+      "FeeStructureOptionsRead": {
+        "properties": {
+          "terms": {
+            "items": {
+              "$ref": "#/components/schemas/FeeStructureTermOption"
+            },
+            "type": "array",
+            "title": "Terms"
+          },
+          "programs": {
+            "items": {
+              "$ref": "#/components/schemas/FeeStructureProgramOption"
+            },
+            "type": "array",
+            "title": "Programs"
+          }
+        },
+        "type": "object",
+        "title": "FeeStructureOptionsRead"
+      },
+      "FeeStructureProgramOption": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "name"
+        ],
+        "title": "FeeStructureProgramOption"
+      },
       "FeeStructureRead": {
         "properties": {
           "academicTermId": {
@@ -13288,6 +13359,40 @@
         },
         "type": "object",
         "title": "FeeStructureSaveRequest"
+      },
+      "FeeStructureTermOption": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "academicYear": {
+            "type": "string",
+            "title": "Academicyear"
+          },
+          "semester": {
+            "type": "string",
+            "title": "Semester"
+          },
+          "isCurrent": {
+            "type": "boolean",
+            "title": "Iscurrent"
+          },
+          "hasFeeStructure": {
+            "type": "boolean",
+            "title": "Hasfeestructure"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "academicYear",
+          "semester",
+          "isCurrent",
+          "hasFeeStructure"
+        ],
+        "title": "FeeStructureTermOption"
       },
       "FinalizeGradesRead": {
         "properties": {
