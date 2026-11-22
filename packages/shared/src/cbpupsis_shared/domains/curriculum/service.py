@@ -76,6 +76,12 @@ async def schedule_courses(
     ]
 
 
+async def list_active_programs(db: AsyncSession) -> list[ProgramRead]:
+    """Return the active degree programs ordered by code."""
+    rows = await repository.list_active_programs(db)
+    return [ProgramRead.model_validate(row) for row in rows]
+
+
 async def active_programs_by_code(
     db: AsyncSession, codes: Iterable[str]
 ) -> dict[str, ProgramRead]:

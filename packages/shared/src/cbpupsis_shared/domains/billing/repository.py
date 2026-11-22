@@ -94,6 +94,16 @@ async def get_fee_structures_for_term(
     )
 
 
+async def list_term_ids_with_fee_structures(db: AsyncSession) -> set[uuid.UUID]:
+    """Return the IDs of terms that have at least one fee structure row.
+
+    SQL::
+
+        SELECT DISTINCT academic_term_id FROM fee_structures;
+    """
+    return set(await db.scalars(select(FeeStructure.academic_term_id).distinct()))
+
+
 async def count_term_assessments(db: AsyncSession, term_id: uuid.UUID) -> int:
     """Return count of student assessments generated for this term.
 

@@ -122,6 +122,10 @@ limit, then stops; the next tick continues.
   300 seconds, and a schedule of every one to five minutes.
 - With `GOOGLE_CALENDAR_ENABLED` unset or `false`, each run does nothing and
   succeeds, so the schedule can exist before the feature is turned on.
+- The function is `calendar-worker-lambda-<env>` (image in
+  `calendar-worker-ecr-<env>`, schedule `calendar-worker-schedule-<env>`,
+  every five minutes), defined in cbpupsis-infra. The deploy workflow builds
+  and ships it with the other functions and smoke tests it by invoking it once.
 - Without this function, connecting succeeds but no event is ever written,
   status stays "Sync queued", and a disconnect stays pending forever.
 

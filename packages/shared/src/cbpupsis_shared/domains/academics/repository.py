@@ -131,6 +131,25 @@ async def list_terms(
     return list(await db.scalars(select(AcademicTerm).where(AcademicTerm.id.in_(ids))))
 
 
+async def list_all_terms(db: AsyncSession) -> list[AcademicTerm]:
+    """Read every academic term, current first, then newest first.
+
+    SQL::
+
+        SELECT * FROM academic_terms
+        ORDER BY is_current DESC, start_date DESC, id;
+    """
+    return list(
+        await db.scalars(
+            select(AcademicTerm).order_by(
+                AcademicTerm.is_current.desc(),
+                AcademicTerm.start_date.desc(),
+                AcademicTerm.id,
+            )
+        )
+    )
+
+
 async def find_terms(db: AsyncSession, year: str | None, semester: str | None):
     """Find a selected term or the current term; ambiguity is not hidden.
 

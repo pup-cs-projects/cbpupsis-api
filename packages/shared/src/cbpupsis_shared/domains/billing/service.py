@@ -45,8 +45,11 @@ from cbpupsis_shared.domains.billing.provider import (
     PaymentGateway,
 )
 from cbpupsis_shared.domains.billing.schemas import (
+    FeeStructureOptionsRead,
+    FeeStructureProgramOption,
     FeeStructureRead,
     FeeStructureSaveRequest,
+    FeeStructureTermOption,
     HoldRead,
     InstallmentItemRead,
     PaymentDetailRead,
@@ -55,6 +58,7 @@ from cbpupsis_shared.domains.billing.schemas import (
     StudentBillingAccountRead,
     XenditWebhook,
 )
+from cbpupsis_shared.domains.curriculum import client as curriculum_client
 from cbpupsis_shared.domains.users import client as users_client
 
 logger = logging.getLogger(__name__)
@@ -225,6 +229,29 @@ def _build_read_dto(
         due_date=row.due_date,
         subsidy_covered_fees=row.subsidy_covered_fees or [],
         installments=_format_installments(raw_inst),
+    )
+
+
+async def get_fee_structure_options(db: AsyncSession) -> FeeStructureOptionsRead:
+    """List the terms and active programs a fee structure can be set for."""
+    terms = await academics_client.list_all_terms(db)
+    configured = await repository.list_term_ids_with_fee_structures(db)
+    programs = await curriculum_client.list_active_programs(db)
+    return FeeStructureOptionsRead(
+        terms=[
+            FeeStructureTermOption(
+                id=term.id,
+                academic_year=term.academic_year,
+                semester=term.semester,
+                is_current=term.is_current,
+                has_fee_structure=term.id in configured,
+            )
+            for term in terms
+        ],
+        programs=[
+            FeeStructureProgramOption(id=p.id, code=p.code, name=p.name)
+            for p in programs
+        ],
     )
 
 
