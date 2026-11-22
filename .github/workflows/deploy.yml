@@ -8,6 +8,11 @@
 # and every production deploy waits for one click, after CI and the image
 # builds are already green.
 #
+# Five functions ship from one image build each: the student, faculty, and
+# admin APIs, the outbox worker, and the Google Calendar worker
+# (docker/<app>/Dockerfile.<env> into <app>-ecr-<env>, deployed to
+# <app>-lambda-<env>). Each must already exist in cbpupsis-infra.
+#
 # A function whose smoke test fails is rolled back to the image it ran before,
 # so a bad build never stays live. Migrations are not rolled back: write them
 # expand-then-contract, so the previous code still works against the new schema.
@@ -145,7 +150,7 @@ jobs:
       id-token: write
     strategy:
       matrix:
-        app: [student, faculty, admin, worker]
+        app: [student, faculty, admin, worker, calendar-worker]
     env:
       REPOSITORY: ${{ matrix.app }}-ecr-${{ needs.target.outputs.environment }}
     steps:
@@ -217,7 +222,7 @@ jobs:
       # leave another half-deployed.
       fail-fast: false
       matrix:
-        app: [student, faculty, admin, worker]
+        app: [student, faculty, admin, worker, calendar-worker]
     env:
       ENVIRONMENT_NAME: ${{ needs.target.outputs.environment }}
       FUNCTION: ${{ matrix.app }}-lambda-${{ needs.target.outputs.environment }}
@@ -258,8 +263,30 @@ jobs:
             exit 1
           fi
 
+      - name: Smoke test the calendar worker
+        if: matrix.app == 'calendar-worker'
+        # Also invoked directly: one reconciliation run, exactly what its
+        # schedule does every five minutes. While GOOGLE_CALENDAR_ENABLED is off
+        # it returns {"processed": 0} without touching the database. When it is
+        # on, a run can last until about 100 seconds before the function's
+        # timeout, so the CLI must wait longer than its 60 second default or it
+        # would retry and start a second run.
+        run: |
+          error=$(aws lambda invoke --function-name "$FUNCTION" --payload '{}' \
+            --cli-binary-format raw-in-base64-out --cli-read-timeout 900 \
+            --query 'FunctionError' --output text response.json)
+          cat response.json; echo
+          if [ "$error" != "None" ]; then
+            echo "::error::$FUNCTION failed its smoke test ($error)."
+            exit 1
+          fi
+          if ! jq -e '.processed | type == "number"' response.json >/dev/null; then
+            echo "::error::$FUNCTION failed its smoke test: expected {\"processed\": <number>}."
+            exit 1
+          fi
+
       - name: Smoke test the API through its portal
-        if: matrix.app != 'worker'
+        if: matrix.app != 'worker' && matrix.app != 'calendar-worker'
         # The whole path, CloudFront -> API Gateway -> Lambda -> app: an
         # anonymous request for the caller's own profile must answer 401. A 5xx
         # means the app did not start; a 404 means routing is broken.
