@@ -1,7 +1,7 @@
 # Deploys the API: every push to `staging` deploys the staging environment, and
 # every push to `main` deploys production.
 #
-#   ci + build -> approve -> migrate -> deploy each function -> smoke test
+#   ci + build -> approve -> migrate and seed IAM -> deploy each function -> smoke test
 #
 # `approve` runs in the GitHub Environment of the target (staging or
 # production). Give production required reviewers in the repository settings
@@ -128,6 +128,12 @@ jobs:
           export DATABASE_URL JWT_SECRET DIRECT_DATABASE_URL
 
           uv run alembic -c packages/migrations/alembic.ini upgrade head
+
+          # New permissions and groups ship in code, not in migrations, so a
+          # release that adds one (Sprint 4's UpdateGrade and SubmitGrade) left
+          # every user without it until someone ran the seed by hand. The seed
+          # only adds what is missing, so running it on every deploy is safe.
+          uv run python -m scripts.seed_iam
 
   build:
     name: Build ${{ matrix.app }}
