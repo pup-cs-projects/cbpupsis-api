@@ -443,3 +443,150 @@ def test_ac_fin_002_receipt_paid_at_formats_in_readable_utc8():
     paid_utc = datetime(2026, 11, 18, 12, 51, 43, tzinfo=UTC)
     assert _format_paid_at(paid_utc) == "November 18, 2026 at 8:51 PM (UTC+8)"
     assert _format_paid_at(None) == "Pending"
+
+
+@pytest.mark.asyncio
+async def test_ac_fin_002_3_and_6_http_replay_is_byte_identical_after_jsonb_reordering(
+    db, monkeypatch
+):
+    import httpx
+    from sqlalchemy import update
+
+    from cbpupsis_api_student.domains.student_auth.dependencies import (
+        require_student_session,
+    )
+    from cbpupsis_database.session import get_db
+    from cbpupsis_shared.domains.auth.dependencies import get_current_user
+    from cbpupsis_shared.domains.billing import client as billing_client
+    from cbpupsis_shared.domains.iam import service as iam_service
+
+    async def reorder_like_jsonb(idempotency_key: str) -> list[str]:
+        stored = await db.scalar(
+            select(Payment).where(Payment.idempotency_key == idempotency_key)
+        )
+        assert stored is not None and stored.response_body is not None
+        reordered = dict(
+            sorted(
+                stored.response_body.items(),
+                key=lambda item: (len(item[0]), item[0]),
+            )
+        )
+        # Explicit UPDATE + expire_all: Python dict equality ignores key order,
+        # so ORM attribute assignment alone would be skipped as unchanged.
+        await db.execute(
+            update(Payment)
+            .where(Payment.id == stored.id)
+            .values(response_body=reordered)
+        )
+        await db.commit()
+        db.expire(stored)
+        reloaded = await db.scalar(
+            select(Payment).where(Payment.idempotency_key == idempotency_key)
+        )
+        assert reloaded is not None and reloaded.response_body is not None
+        return list(reloaded.response_body.keys())
+
+    user, _account = await _billing_account(db, gross=Decimal("1000.00"))
+    gateway = FakeGateway()
+    monkeypatch.setattr(billing_client, "XenditGateway", lambda: gateway)
+
+    async def allow_payments(*_args, **_kwargs):
+        return {"CreatePayment", "ReadPayment"}
+
+    monkeypatch.setattr(iam_service, "get_effective_permissions", allow_payments)
+
+    async def override_db():
+        yield db
+
+    overrides = student_app.dependency_overrides
+    previous = dict(overrides)
+    overrides[get_db] = override_db
+    overrides[get_current_user] = lambda: user
+    overrides[require_student_session] = lambda: user
+
+    try:
+        transport = httpx.ASGITransport(app=student_app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            # AC-FIN-002.3: 201 replay remains byte-for-byte identical even when
+            # PostgreSQL JSONB returns stored keys sorted by (len(key), key).
+            first_201 = await client.post(
+                "/api/v1/student/payments",
+                headers={"Idempotency-Key": "jsonb-201", "X-Request-ID": "req-201-a"},
+                json={"amount": "100.00"},
+            )
+            assert first_201.status_code == 201
+            assert await reorder_like_jsonb("jsonb-201") == [
+                "state",
+                "paymentId",
+                "checkoutUrl",
+            ]
+
+            replay_201 = await client.post(
+                "/api/v1/student/payments",
+                headers={"Idempotency-Key": "jsonb-201", "X-Request-ID": "req-201-b"},
+                json={"amount": "100.00"},
+            )
+            assert replay_201.status_code == 201
+            assert replay_201.content == first_201.content
+            assert replay_201.headers["X-Request-ID"] == "req-201-b"
+
+            # AC-FIN-002.6: 502 replay preserves original request_id in body and
+            # remains byte-for-byte identical after PostgreSQL JSONB reordering.
+            gateway.create_error = GatewayRejected("Xendit payments are not configured")
+            first_502 = await client.post(
+                "/api/v1/student/payments",
+                headers={"Idempotency-Key": "jsonb-502", "X-Request-ID": "req-502-a"},
+                json={"amount": "100.00"},
+            )
+            assert first_502.status_code == 502
+            assert await reorder_like_jsonb("jsonb-502") == [
+                "code",
+                "detail",
+                "reason",
+                "status",
+                "message",
+                "request_id",
+            ]
+
+            replay_502 = await client.post(
+                "/api/v1/student/payments",
+                headers={"Idempotency-Key": "jsonb-502", "X-Request-ID": "req-502-b"},
+                json={"amount": "100.00"},
+            )
+            assert replay_502.status_code == 502
+            assert replay_502.content == first_502.content
+            assert replay_502.json()["request_id"] == "req-502-a"
+            assert replay_502.headers["X-Request-ID"] == "req-502-b"
+
+            # AC-FIN-002.7: 504 timeout replay also stays byte-for-byte identical
+            # and retains the original request_id in the body.
+            gateway.create_error = GatewayTimedOut()
+            first_504 = await client.post(
+                "/api/v1/student/payments",
+                headers={"Idempotency-Key": "jsonb-504", "X-Request-ID": "req-504-a"},
+                json={"amount": "100.00"},
+            )
+            assert first_504.status_code == 504
+            assert await reorder_like_jsonb("jsonb-504") == [
+                "code",
+                "detail",
+                "status",
+                "message",
+                "request_id",
+            ]
+
+            replay_504 = await client.post(
+                "/api/v1/student/payments",
+                headers={"Idempotency-Key": "jsonb-504", "X-Request-ID": "req-504-b"},
+                json={"amount": "100.00"},
+            )
+            assert replay_504.status_code == 504
+            assert replay_504.content == first_504.content
+            assert replay_504.json()["request_id"] == "req-504-a"
+            assert replay_504.headers["X-Request-ID"] == "req-504-b"
+            assert gateway.create_calls == 3
+    finally:
+        overrides.clear()
+        overrides.update(previous)

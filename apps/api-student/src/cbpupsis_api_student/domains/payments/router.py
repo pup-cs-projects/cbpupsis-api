@@ -8,7 +8,6 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request, Response
-from fastapi.responses import JSONResponse
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,7 +89,7 @@ async def create_payment(
     user: Student,
     db: Database,
     idempotency_key: Annotated[str, Depends(required_idempotency_key)],
-) -> JSONResponse:
+) -> Response:
     """Create one hosted checkout; the student/key pair is the replay identity."""
     result = await service.create_payment(
         db,
@@ -101,7 +100,13 @@ async def create_payment(
         client_ip=client_ip_or_none(request),
         request_id=getattr(request.state, "request_id", None),
     )
-    return JSONResponse(status_code=result.status_code, content=result.body)
+    # Canonical key order ensures byte-for-byte identical replays even after
+    # PostgreSQL JSONB reorders stored object keys.
+    return Response(
+        content=json.dumps(result.body, sort_keys=True, separators=(",", ":")),
+        status_code=result.status_code,
+        media_type="application/json",
+    )
 
 
 @router.get(
