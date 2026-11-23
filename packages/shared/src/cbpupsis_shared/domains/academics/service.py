@@ -32,6 +32,12 @@ async def get_current_term(db: AsyncSession) -> AcademicTermRead | None:
     return AcademicTermRead.model_validate(row)
 
 
+async def list_all_terms(db: AsyncSession) -> list[AcademicTermRead]:
+    """Return every academic term, current first, then newest first."""
+    rows = await repository.list_all_terms(db)
+    return [AcademicTermRead.model_validate(row) for row in rows]
+
+
 async def get_term_by_id(
     db: AsyncSession, term_id: uuid.UUID
 ) -> AcademicTermRead | None:
