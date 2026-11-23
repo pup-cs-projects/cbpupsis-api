@@ -224,6 +224,31 @@ class FeeStructureRead(BaseModel):
     )
 
 
+class FeeStructureTermOption(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: uuid.UUID
+    academic_year: str = Field(serialization_alias="academicYear")
+    semester: str
+    is_current: bool = Field(serialization_alias="isCurrent")
+    has_fee_structure: bool = Field(serialization_alias="hasFeeStructure")
+
+
+class FeeStructureProgramOption(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: uuid.UUID
+    code: str
+    name: str
+
+
+class FeeStructureOptionsRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    terms: list[FeeStructureTermOption] = Field(default_factory=list)
+    programs: list[FeeStructureProgramOption] = Field(default_factory=list)
+
+
 class PaymentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

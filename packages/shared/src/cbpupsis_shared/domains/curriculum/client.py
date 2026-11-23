@@ -64,6 +64,7 @@ __all__ = [
     "get_prescribed_load",
     "get_program",
     "get_student_degree_progress",
+    "list_active_programs",
     "list_catalog_courses",
     "list_curriculum_course_ids",
     "program_ids_in_scope",
@@ -122,6 +123,10 @@ async def active_programs_by_code(
     db: AsyncSession, codes: Iterable[str]
 ) -> dict[str, ProgramRead]:
     return await service.active_programs_by_code(db, codes)
+
+
+async def list_active_programs(db: AsyncSession) -> list[ProgramRead]:
+    return await service.list_active_programs(db)
 
 
 async def get_program(db: AsyncSession, program_id: uuid.UUID) -> ProgramRead | None:
