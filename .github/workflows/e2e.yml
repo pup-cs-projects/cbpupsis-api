@@ -33,7 +33,7 @@ jobs:
       COMPOSE: docker compose -f docker/docker-compose.yml
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Write the environment file
         # env/ is gitignored because it holds real values, so CI composes its
