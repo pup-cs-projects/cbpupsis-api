@@ -99,7 +99,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -154,7 +154,7 @@ jobs:
     env:
       REPOSITORY: ${{ matrix.app }}-ecr-${{ needs.target.outputs.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
