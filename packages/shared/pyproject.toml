@@ -18,7 +18,7 @@ dependencies = [
     "scalar-fastapi>=1.8.2",
     "reportlab>=4.4.0,<5",
     "pillow>=13,<14",
-    "pypdf>=6,<7",
+    "pypdf>=6,<8",
     "httpx>=0.28,<1",
     # The IANA time zone database for `zoneinfo`, which validates the user
     # profile's timezone field. Required, not optional: Windows ships no system
