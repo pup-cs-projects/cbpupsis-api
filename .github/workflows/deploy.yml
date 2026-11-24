@@ -190,7 +190,7 @@ jobs:
           AWS_REGION: us-east-1
           AWS_DEFAULT_REGION: us-east-1
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
         if: steps.exists.outputs.built == 'false'
 
       - uses: docker/build-push-action@v6
