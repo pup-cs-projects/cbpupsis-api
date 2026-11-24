@@ -107,7 +107,7 @@ jobs:
 
       - run: uv sync --frozen --no-dev
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ needs.target.outputs.role }}
           aws-region: ${{ env.AWS_REGION }}
@@ -156,7 +156,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ needs.target.outputs.role }}
           aws-region: ${{ env.AWS_REGION }}
@@ -228,7 +228,7 @@ jobs:
       FUNCTION: ${{ matrix.app }}-lambda-${{ needs.target.outputs.environment }}
       REPOSITORY: ${{ matrix.app }}-ecr-${{ needs.target.outputs.environment }}
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ needs.target.outputs.role }}
           aws-region: ${{ env.AWS_REGION }}
