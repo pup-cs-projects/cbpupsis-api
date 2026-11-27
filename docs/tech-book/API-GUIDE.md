@@ -554,7 +554,8 @@ Before displaying its form, the frontend can call `POST /reset-password` with
 endpoint accepts `{"token":"...","new_password":"..."}` to complete the reset.
 Success returns 200 `{"sessionsRevoked":2}` (the count varies by account).
 Expired and spent links return 410 `AUTH_RESET_TOKEN_EXPIRED` and
-`AUTH_RESET_TOKEN_USED`; the frontend should offer another reset request.
+`AUTH_RESET_TOKEN_USED`, and unknown links (including `verify_only`) return
+401 `AUTH_RESET_TOKEN_INVALID`; the frontend should offer another reset request.
 Password failures return 422 `AUTH_PASSWORD_TOO_WEAK` with `unmet_rules`.
 The reset policy accepts eight characters with uppercase, lowercase, a number,
 and a symbol. Inputs exceeding bcrypt's 72 UTF-8 byte limit are refused rather
@@ -577,8 +578,8 @@ limited token) and accepts `{"current_password":"...","new_password":"..."}`
 pair carrying the same role, MFA, and Admin scope claims. Every other session
 and refresh token of the account is revoked, outstanding reset links are spent,
 and a password-changed notice is mailed, so the client must replace both
-tokens with the returned ones. A wrong current password returns 401 with
-`Current password is incorrect` (no `code`); reusing the temporary password
+tokens with the returned ones. A wrong current password returns 400
+`AUTH_CURRENT_PASSWORD_INCORRECT`; reusing the temporary password
 returns 422 `AUTH_PASSWORD_TOO_WEAK`; an expired temporary password returns
 401 `AUTH_TEMPORARY_PASSWORD_EXPIRED`; an ended session returns 401
 `AUTH_SESSION_EXPIRED`.
@@ -988,12 +989,11 @@ Review, manual acceptance and approved data readiness are separate delivery gate
 Student schedule reads and exports follow the
 [US-STU-003 contract](STUDENT-SCHEDULE.md), including weekly contact-hour totals,
 snake_case fields, private documents, and durable calendar revisions. Schedule
-JSON is a direct object, consistent with existing resource endpoints. This
-user-approved naming alignment replaces the earlier draft's camelCase fields;
-see the schedule guide's client migration notes before updating a consumer.
-Use `/api/v1/students/me/schedule` and `/api/v1/students/me/schedule/export`;
-the earlier draft's deprecated `/api/v1/student/schedule` URLs were removed and
-now return 404. Scalar documents term selection, filtering, ownership, empty
+JSON is a direct object, consistent with existing resource endpoints. See the
+schedule guide's client migration notes before updating a consumer.
+Use `/api/v1/student/schedule` and `/api/v1/student/schedule/export`; the old
+`/api/v1/students/me/...` and `/api/v1/students/{student_number}/...` URLs were
+removed and now return 404. Scalar documents term selection, filtering, ownership, empty
 states, weekly totals, download formats and failure/retry behavior on these routes.
 
 The optional [Google Calendar connection](GOOGLE-CALENDAR.md) adds student-owned

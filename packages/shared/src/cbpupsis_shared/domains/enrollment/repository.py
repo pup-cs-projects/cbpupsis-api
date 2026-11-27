@@ -435,6 +435,74 @@ async def enrolled_sections(
     )
 
 
+async def list_section_roster_enrollments(db: AsyncSession, section_id: uuid.UUID):
+    """Read every current or historical course membership for one section.
+
+    SQL::
+
+        SELECT sce.id, te.student_id, sce.status
+        FROM student_course_enrollments sce
+        JOIN term_enrollments te ON te.id = sce.term_enrollment_id
+        WHERE sce.section_id = :section_id;
+    """
+    result = await db.execute(
+        select(
+            StudentCourseEnrollment.id.label("enrollment_id"),
+            TermEnrollment.student_id,
+            StudentCourseEnrollment.status.label("enrollment_status"),
+        )
+        .select_from(StudentCourseEnrollment)
+        .join(
+            TermEnrollment,
+            TermEnrollment.id == StudentCourseEnrollment.term_enrollment_id,
+        )
+        .where(StudentCourseEnrollment.section_id == section_id)
+    )
+    return result.mappings().all()
+
+
+async def list_latest_section_add_drop(
+    db: AsyncSession,
+    *,
+    section_id: uuid.UUID,
+    student_ids: Collection[uuid.UUID],
+):
+    """Read section add/drop requests newest first for each roster student.
+
+    SQL::
+
+        SELECT adr.student_id, adr.state, adri.action
+        FROM add_drop_requests adr
+        JOIN add_drop_request_items adri ON adri.request_id = adr.id
+        WHERE adr.student_id IN (:student_ids)
+          AND adri.section_id = :section_id
+        ORDER BY adr.student_id, adr.created_at DESC, adr.id DESC;
+    """
+    if not student_ids:
+        return []
+    result = await db.execute(
+        select(
+            AddDropRequest.student_id,
+            AddDropRequest.state,
+            AddDropRequestItem.action,
+        )
+        .join(
+            AddDropRequestItem,
+            AddDropRequestItem.request_id == AddDropRequest.id,
+        )
+        .where(
+            AddDropRequest.student_id.in_(student_ids),
+            AddDropRequestItem.section_id == section_id,
+        )
+        .order_by(
+            AddDropRequest.student_id,
+            AddDropRequest.created_at.desc(),
+            AddDropRequest.id.desc(),
+        )
+    )
+    return result.mappings().all()
+
+
 async def active_registrations(db: AsyncSession, student_id, term_id):
     """Read active selected/official registrations, not dropped attempts.
 
@@ -962,3 +1030,79 @@ async def get_student_pending_add_drop_request(
         .limit(1)
     )
     return await db.scalar(stmt)
+
+
+async def list_enrollment_owners_by_ids(
+    db: AsyncSession, enrollment_ids: Collection[uuid.UUID]
+):
+    """Resolve enrollment owners, terms, and sections for grading workflows.
+
+    SQL::
+
+        SELECT sce.id AS enrollment_id, te.student_id, sce.academic_term_id,
+               sce.section_id, sce.status
+        FROM student_course_enrollments sce
+        JOIN term_enrollments te
+          ON sce.term_enrollment_id = te.id
+         AND sce.academic_term_id = te.academic_term_id
+        WHERE sce.id IN (:enrollment_ids);
+    """
+    if not enrollment_ids:
+        return []
+    result = await db.execute(
+        select(
+            StudentCourseEnrollment.id.label("enrollment_id"),
+            TermEnrollment.student_id,
+            StudentCourseEnrollment.academic_term_id,
+            StudentCourseEnrollment.section_id,
+            StudentCourseEnrollment.status,
+        )
+        .join(
+            TermEnrollment,
+            (StudentCourseEnrollment.term_enrollment_id == TermEnrollment.id)
+            & (
+                StudentCourseEnrollment.academic_term_id
+                == TermEnrollment.academic_term_id
+            ),
+        )
+        .where(StudentCourseEnrollment.id.in_(enrollment_ids))
+    )
+    return list(result.mappings().all())
+
+
+async def list_section_enrollments_batch(
+    db: AsyncSession, section_ids: Collection[uuid.UUID]
+):
+    """Resolve enrolled course memberships across multiple sections.
+
+    SQL::
+
+        SELECT sce.id AS enrollment_id, te.student_id, sce.academic_term_id,
+               sce.section_id, sce.status
+        FROM student_course_enrollments sce
+        JOIN term_enrollments te
+          ON sce.term_enrollment_id = te.id
+         AND sce.academic_term_id = te.academic_term_id
+        WHERE sce.section_id IN (:section_ids);
+    """
+    if not section_ids:
+        return []
+    result = await db.execute(
+        select(
+            StudentCourseEnrollment.id.label("enrollment_id"),
+            TermEnrollment.student_id,
+            StudentCourseEnrollment.academic_term_id,
+            StudentCourseEnrollment.section_id,
+            StudentCourseEnrollment.status,
+        )
+        .join(
+            TermEnrollment,
+            (StudentCourseEnrollment.term_enrollment_id == TermEnrollment.id)
+            & (
+                StudentCourseEnrollment.academic_term_id
+                == TermEnrollment.academic_term_id
+            ),
+        )
+        .where(StudentCourseEnrollment.section_id.in_(section_ids))
+    )
+    return list(result.mappings().all())

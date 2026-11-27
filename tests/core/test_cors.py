@@ -27,7 +27,7 @@ async def test_cross_origin_429_exposes_retry_after(
     """
     monkeypatch.setattr(settings, "rate_limit_enabled", True)
     origin = settings.cors_origins[0]
-    body = {"email": registered_user["email"]}
+    body = {"identifier": registered_user["email"]}
     for _ in range(settings.password_reset_request_limit):
         await client.post("/api/v1/auth/forgot-password", json=body)
 
@@ -46,7 +46,7 @@ async def test_every_cross_origin_response_exposes_the_same_headers(
     """The request id stays exposed beside the new header."""
     response = await client.post(
         "/api/v1/auth/forgot-password",
-        json={"email": "nobody@example.com"},
+        json={"identifier": "nobody@example.com"},
         headers={"Origin": settings.cors_origins[0]},
     )
     assert response.status_code == 202

@@ -15,7 +15,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi import FastAPI
 from fastapi.dependencies.models import Dependant
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, iter_route_contexts
 from starlette.routing import Mount
 
 import main
@@ -26,7 +26,10 @@ from cbpupsis_api_faculty.routes import MOUNTS as FACULTY_MOUNTS
 from cbpupsis_api_student.main import app as student_app
 from cbpupsis_api_student.routes import MOUNTS as STUDENT_MOUNTS
 from cbpupsis_shared.application import RouterMount
-from cbpupsis_shared.domains.auth.dependencies import require_superadmin_session
+from cbpupsis_shared.domains.auth.dependencies import (
+    get_current_user,
+    require_superadmin_session,
+)
 from cbpupsis_shared.domains.iam.constants import SUPERADMIN_ACTIONS
 
 APPS: dict[str, FastAPI] = {
@@ -44,7 +47,6 @@ EXPECTED_PREFIXES: dict[str, set[str]] = {
         "notifications",
         "items",
         "student",
-        "students",
         "public",
     },
     "faculty": {"auth", "users", "notifications", "faculty"},
@@ -87,10 +89,9 @@ def test_student_records_have_one_public_route_per_operation(app: FastAPI) -> No
         ("post", "/api/v1/student/schedule/cor"),
         ("get", "/api/v1/student/schedule/cor"),
         ("get", "/api/v1/student/assessment"),
-        ("get", "/api/v1/students/me/grades"),
-        ("get", "/api/v1/students/me/transcript"),
-        ("get", "/api/v1/students/me/transcript/export"),
-        ("get", "/api/v1/students/{student_number}/grades"),
+        ("get", "/api/v1/student/grades"),
+        ("get", "/api/v1/student/transcript"),
+        ("get", "/api/v1/student/transcript/export"),
         ("get", "/api/v1/student/profile"),
         ("patch", "/api/v1/student/profile"),
         ("post", "/api/v1/student/profile/avatar"),
@@ -111,15 +112,50 @@ def test_student_records_have_one_public_route_per_operation(app: FastAPI) -> No
         ("post", "/api/v1/student/payments"),
         ("get", "/api/v1/student/payments/{payment_id}"),
         ("get", "/api/v1/student/payments/{payment_id}/receipt"),
-        ("get", "/api/v1/students/me/schedule"),
-        ("get", "/api/v1/students/me/schedule/export"),
-        ("get", "/api/v1/students/{student_number}/schedule"),
-        ("get", "/api/v1/students/me/schedule/google-calendar"),
-        ("delete", "/api/v1/students/me/schedule/google-calendar"),
-        ("post", "/api/v1/students/me/schedule/google-calendar/authorization"),
-        ("post", "/api/v1/students/me/schedule/google-calendar/callback"),
-        ("post", "/api/v1/students/me/schedule/google-calendar/sync"),
+        ("get", "/api/v1/student/schedule"),
+        ("get", "/api/v1/student/schedule/export"),
+        ("get", "/api/v1/student/schedule/google-calendar"),
+        ("delete", "/api/v1/student/schedule/google-calendar"),
+        ("post", "/api/v1/student/schedule/google-calendar/authorization"),
+        ("post", "/api/v1/student/schedule/google-calendar/callback"),
+        ("post", "/api/v1/student/schedule/google-calendar/sync"),
     }
+
+
+@pytest.mark.parametrize("app", [student_app, main.app], ids=["student", "composed"])
+def test_student_route_inventory_has_no_plural_paths(app: FastAPI) -> None:
+    """Include hidden routes, not only the operations advertised in OpenAPI."""
+    paths = [route.path for route in iter_route_contexts(app.routes)]
+    assert "/api/v1/student/schedule" in paths
+    assert not [path for path in paths if path.startswith("/api/v1/students/")]
+
+
+def test_migrated_student_route_permissions_are_unchanged() -> None:
+    expected = {
+        "read_schedule": {"ReadSchedule"},
+        "export_schedule": {"ReadSchedule"},
+        "read_grades": {"ReadGrade"},
+        "read_transcript": {"ReadTranscript"},
+        "export_transcript": {"ReadTranscript"},
+        "read_connection": {"ReadSchedule"},
+        "begin_authorization": {"ReadSchedule"},
+        "complete_authorization": {"ReadSchedule"},
+        "request_synchronization": {"ReadSchedule"},
+        "disconnect_calendar": set(),
+    }
+    found = {}
+    for route in iter_route_contexts(student_app.routes):
+        name = route.endpoint.__name__
+        if name not in expected:
+            continue
+        calls = list(_calls(route.dependant))
+        assert get_current_user in calls
+        permissions = set()
+        for call in calls:
+            if callable(call) and getattr(call, "__name__", "") == "checker":
+                permissions.update(inspect.getclosurevars(call).nonlocals["required"])
+        found[name] = permissions
+    assert found == expected
 
 
 @pytest.mark.parametrize("name", sorted(APPS))
@@ -145,14 +181,14 @@ def test_the_composed_app_registers_each_operation_once() -> None:
 
 
 @pytest.mark.parametrize("app", [student_app, main.app], ids=["student", "composed"])
-def test_schedule_self_routes_and_removed_alias_contract(app: FastAPI) -> None:
+def test_schedule_self_routes_and_removed_plural_contract(app: FastAPI) -> None:
     paths = app.openapi()["paths"]
     for suffix in ("", "/export"):
-        canonical = paths[f"/api/v1/students/me/schedule{suffix}"]["get"]
-        assert f"/api/v1/student/schedule{suffix}" not in paths
+        canonical = paths[f"/api/v1/student/schedule{suffix}"]["get"]
+        assert f"/api/v1/students/me/schedule{suffix}" not in paths
         assert not canonical.get("deprecated", False)
         assert canonical["security"] == [{"HTTPBearer": []}]
-    assert "/api/v1/students/{student_number}/schedule" in paths
+    assert "/api/v1/students/{student_number}/schedule" not in paths
 
 
 @pytest.mark.parametrize("app", [student_app, main.app], ids=["student", "composed"])
@@ -161,8 +197,8 @@ def test_schedule_openapi_documents_selectors_filters_and_downloads(
 ) -> None:
     schema = app.openapi()
     paths = schema["paths"]
-    base = "/api/v1/students/me/schedule"
-    for path in (base, f"{base}/export", "/api/v1/students/{student_number}/schedule"):
+    base = "/api/v1/student/schedule"
+    for path in (base, f"{base}/export"):
         operation = paths[path]["get"]
         assert len(operation["description"]) > 600
         assert "ReadSchedule" in operation["description"]

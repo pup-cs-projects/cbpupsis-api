@@ -25,7 +25,10 @@ from cbpupsis_shared.domains.auth.exceptions import (
 )
 from cbpupsis_shared.domains.auth.security import require_session_version
 from cbpupsis_shared.domains.iam import service as iam_service
-from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
+from cbpupsis_shared.domains.iam.constants import (
+    ADMIN_GROUPS,
+    SUPERADMIN_GROUP,
+)
 from cbpupsis_shared.domains.users import service as users_service
 
 
@@ -53,7 +56,7 @@ async def require_superadmin_actor(db: AsyncSession, user_id: uuid.UUID) -> None
         user is None
         or user.email_verified_at is None
         or not await iam_service.is_user_in_group(db, user_id, SUPERADMIN_GROUP)
-        or await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP)
+        or await iam_service.is_user_in_any_group(db, user_id, ADMIN_GROUPS)
     ):
         raise SuperadminRoleRequiredError
 
