@@ -34,6 +34,7 @@ from cbpupsis_database.models.iam import (
     Permission,
     Policy,
     PolicyPermission,
+    Role,
     UserGroup,
     UserPolicy,
 )
@@ -342,6 +343,18 @@ async def get_group_id_by_name(db: AsyncSession, name: str) -> int | None:
         SELECT groups.id FROM groups WHERE groups.name = :name_1
     """
     return await db.scalar(select(Group.id).where(Group.name == name))
+
+
+async def get_role_id_by_code(db: AsyncSession, code: str) -> uuid.UUID | None:
+    """Return the id of the role with ``code``, or ``None``.
+
+    SQL::
+
+        SELECT roles.id FROM roles WHERE lower(roles.code) = lower(:code_1) LIMIT 1
+    """
+    return await db.scalar(
+        select(Role.id).where(func.lower(Role.code) == code.lower()).limit(1)
+    )
 
 
 def add_user_group(db: AsyncSession, user_id: uuid.UUID, group_id: int) -> UserGroup:

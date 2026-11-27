@@ -53,6 +53,7 @@ from cbpupsis_shared.domains.announcements import client as announcements_client
 from cbpupsis_shared.domains.announcements.schemas import AnnouncementRead
 from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.audit.schemas import StudentRecentActivityRead
+from cbpupsis_shared.domains.auth.constants import ROLE_STUDENT
 from cbpupsis_shared.domains.auth.dependencies import CurrentUser
 from cbpupsis_shared.domains.billing import client as billing_client
 from cbpupsis_shared.domains.billing.schemas import HoldRead
@@ -281,7 +282,9 @@ async def _resolve_announcements(
     limit: int,
 ) -> list[AnnouncementRead]:
     try:
-        return await announcements_client.list_active_announcements(db, limit=limit)
+        return await announcements_client.list_active_announcements(
+            db, limit=limit, role_code=ROLE_STUDENT
+        )
     except Exception:
         logger.warning("Failed to fetch announcements for dashboard", exc_info=True)
         return []

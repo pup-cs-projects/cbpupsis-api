@@ -64,6 +64,7 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("ReadGrade", "Read your own finalized grades"),
     ("ReadTranscript", "Read and export your own transcript"),
     ("ReadSchedule", "Read and export your own student course schedule"),
+    ("ReadDashboard", "Read your own student dashboard"),
     # Domain capabilities split across the admin groups (BR-AUTH-005).
     ("ManageBilling", "Manage student billing, fees, and payments"),
     ("ModerateGrade", "Submit or correct student grades"),
@@ -135,6 +136,7 @@ POLICIES: dict[str, list[str]] = {
     "GradeReader": ["ReadGrade"],
     "TranscriptReader": ["ReadTranscript"],
     "ScheduleReader": ["ReadSchedule"],
+    "DashboardReader": ["ReadDashboard"],
     "BillingAdmin": ["ManageBilling"],
     "GradeModerator": ["ModerateGrade"],
     "CourseSectionModerator": ["ModerateCourseSection"],
@@ -208,6 +210,7 @@ GROUPS: dict[str, list[str]] = {
     ],
     # Superadmin-created student accounts join this group.
     STUDENT_GROUP: [
+        "DashboardReader",
         "GradeReader",
         "TranscriptReader",
         "ScheduleReader",

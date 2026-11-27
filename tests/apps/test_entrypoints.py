@@ -102,8 +102,6 @@ def test_student_records_have_one_public_route_per_operation(app: FastAPI) -> No
         ("delete", "/api/v1/student/profile/emergency-contacts/{contact_id}"),
         ("get", "/api/v1/student/dashboard"),
         ("get", "/api/v1/student/enrollment/eligibility"),
-        ("get", "/api/v1/student/me/dashboard"),
-        ("get", "/api/v1/student/{student_id}/dashboard"),
         ("get", "/api/v1/student/enrollment/add-drop"),
         ("get", "/api/v1/student/enrollment/add-drop/{request_id}"),
         ("post", "/api/v1/student/enrollment/add-drop"),

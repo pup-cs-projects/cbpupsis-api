@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Collection
+from datetime import date
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -92,9 +93,13 @@ async def terms_after(db: AsyncSession, start_date):
 
 
 async def list_events_for_term(
-    db: AsyncSession, term_id: uuid.UUID, limit: int = 10
+    db: AsyncSession,
+    term_id: uuid.UUID,
+    limit: int = 10,
+    *,
+    on_or_after: date | None = None,
 ) -> list[AcademicEvent]:
-    """Return upcoming academic events for a term.
+    """Return current and upcoming academic events for a term.
 
     SQL::
 
@@ -104,15 +109,19 @@ async def list_events_for_term(
                academic_events.event_type
         FROM academic_events
         WHERE academic_events.academic_term_id = :term_id
+          AND COALESCE(
+              academic_events.end_date, academic_events.start_date
+          ) >= :on_or_after
         ORDER BY academic_events.start_date ASC
         LIMIT :limit
     """
-    stmt = (
-        select(AcademicEvent)
-        .where(AcademicEvent.academic_term_id == term_id)
-        .order_by(AcademicEvent.start_date.asc())
-        .limit(limit)
-    )
+    stmt = select(AcademicEvent).where(AcademicEvent.academic_term_id == term_id)
+    if on_or_after is not None:
+        stmt = stmt.where(
+            func.coalesce(AcademicEvent.end_date, AcademicEvent.start_date)
+            >= on_or_after
+        )
+    stmt = stmt.order_by(AcademicEvent.start_date.asc()).limit(limit)
     result = await db.scalars(stmt)
     return list(result)
 
