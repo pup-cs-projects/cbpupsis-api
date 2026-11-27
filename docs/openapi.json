@@ -12653,13 +12653,27 @@
       "EnrollmentSummaryRead": {
         "properties": {
           "enrolled_units": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Enrolled Units"
           },
           "effective_ceiling": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Effective Ceiling"
           },
           "unit_ceiling": {
@@ -12675,19 +12689,40 @@
             "title": "Unit Ceiling"
           },
           "prescribed_load": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Prescribed Load"
           },
           "approved_overload_units": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Approved Overload Units",
             "default": "0"
           },
           "standing_reduction": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Standing Reduction",
             "default": "0"
           },
@@ -12700,14 +12735,41 @@
             "type": "string",
             "title": "Schedule Url",
             "default": "/api/v1/student/schedule"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable",
+              "error"
+            ],
+            "title": "State",
+            "default": "available"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
           }
         },
         "type": "object",
-        "required": [
-          "enrolled_units",
-          "effective_ceiling",
-          "prescribed_load"
-        ],
         "title": "EnrollmentSummaryRead",
         "description": "Enrolled load, limits, and schedule link for a term."
       },
@@ -15520,6 +15582,112 @@
         ],
         "title": "Page[WaiverRead]"
       },
+      "PanelErrorsRead": {
+        "properties": {
+          "identity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity"
+          },
+          "term": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term"
+          },
+          "holds": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holds"
+          },
+          "standing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing"
+          },
+          "enrollment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enrollment"
+          },
+          "periods": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Periods"
+          },
+          "announcements": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Announcements"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events"
+          },
+          "recent_activity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recent Activity"
+          }
+        },
+        "type": "object",
+        "title": "PanelErrorsRead",
+        "description": "Explanatory error states for panels whose upstream read failed."
+      },
       "PasswordPolicyResponse": {
         "properties": {
           "minimumLength": {
@@ -16436,11 +16604,25 @@
       "ScholasticStandingRead": {
         "properties": {
           "value": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Value"
           },
           "unit_reduction": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Unit Reduction",
             "default": 0
           },
@@ -16459,12 +16641,29 @@
             "type": "boolean",
             "title": "Appeal Available",
             "default": false
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "error"
+            ],
+            "title": "State",
+            "default": "available"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
           }
         },
         "type": "object",
-        "required": [
-          "value"
-        ],
         "title": "ScholasticStandingRead",
         "description": "Scholastic standing evaluation and load impact."
       },
@@ -16885,13 +17084,27 @@
             "$ref": "#/components/schemas/StudentIdentityRead"
           },
           "current_term": {
-            "$ref": "#/components/schemas/AcademicTermRead"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcademicTermRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "holds": {
-            "items": {
-              "$ref": "#/components/schemas/HoldRead"
-            },
-            "type": "array",
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/HoldRead"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Holds"
           },
           "standing": {
@@ -16930,12 +17143,14 @@
           },
           "empty_states": {
             "$ref": "#/components/schemas/EmptyStatesRead"
+          },
+          "panel_errors": {
+            "$ref": "#/components/schemas/PanelErrorsRead"
           }
         },
         "type": "object",
         "required": [
           "student",
-          "current_term",
           "standing",
           "enrollment",
           "empty_states"
@@ -17092,23 +17307,58 @@
       "StudentIdentityRead": {
         "properties": {
           "student_number": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Student Number"
           },
           "name": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Name"
           },
           "programme": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Programme"
           },
           "year_level": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Year Level"
           },
           "enrollment_status": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Enrollment Status"
           },
           "avatar_url": {
@@ -17121,16 +17371,29 @@
               }
             ],
             "title": "Avatar Url"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "error"
+            ],
+            "title": "State",
+            "default": "available"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
           }
         },
         "type": "object",
-        "required": [
-          "student_number",
-          "name",
-          "programme",
-          "year_level",
-          "enrollment_status"
-        ],
         "title": "StudentIdentityRead",
         "description": "The authenticated student's identity block."
       },

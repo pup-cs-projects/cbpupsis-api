@@ -125,10 +125,20 @@ async def get_student_holds(
     ]
     stored_types = {hold.type.strip().upper() for hold in holds}
 
-    if outstanding > 0:
-        financial_metadata = next(
-            (row for row in stored if row.hold_type.strip().upper() == "FINANCIAL"),
-            None,
+    financial_rows = [
+        row for row in stored if row.hold_type.strip().upper() == "FINANCIAL"
+    ]
+    if outstanding > 0 or financial_rows:
+        financial_metadata = financial_rows[0] if financial_rows else None
+        effective_amount = (
+            outstanding
+            if outstanding > 0
+            else (
+                financial_metadata.amount_outstanding
+                if financial_metadata
+                and financial_metadata.amount_outstanding is not None
+                else Decimal("0.00")
+            )
         )
         holds.append(
             HoldRead(
@@ -139,11 +149,22 @@ async def get_student_holds(
                 description=financial_metadata.description
                 if financial_metadata
                 else "Outstanding student account balance",
-                amount_outstanding=f"{outstanding:.2f}",
-                currency="PHP",
-                is_blocking=True,
-                blocks=["ENROLLMENT", "COR"],
-                blocks_enrollment=True,
+                amount_outstanding=f"{effective_amount:.2f}",
+                currency=financial_metadata.currency if financial_metadata else "PHP",
+                is_blocking=(
+                    financial_metadata.blocks_enrollment if financial_metadata else True
+                ),
+                blocks=(
+                    ["ENROLLMENT", "COR"]
+                    if (
+                        financial_metadata is None
+                        or financial_metadata.blocks_enrollment
+                    )
+                    else []
+                ),
+                blocks_enrollment=(
+                    financial_metadata.blocks_enrollment if financial_metadata else True
+                ),
             )
         )
 

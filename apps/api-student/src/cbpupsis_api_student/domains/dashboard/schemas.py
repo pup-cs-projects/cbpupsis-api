@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from cbpupsis_shared.domains.academics.schemas import (
@@ -21,12 +23,14 @@ class StudentIdentityRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    student_number: str
-    name: str
-    programme: str
-    year_level: int
-    enrollment_status: str
+    student_number: str | None = None
+    name: str | None = None
+    programme: str | None = None
+    year_level: int | None = None
+    enrollment_status: str | None = None
     avatar_url: str | None = None
+    state: Literal["available", "error"] = "available"
+    error: str | None = None
 
 
 class EmptyStatesRead(BaseModel):
@@ -39,14 +43,30 @@ class EmptyStatesRead(BaseModel):
     recent_activity: str | None = None
 
 
+class PanelErrorsRead(BaseModel):
+    """Explanatory error states for panels whose upstream read failed."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    identity: str | None = None
+    term: str | None = None
+    holds: str | None = None
+    standing: str | None = None
+    enrollment: str | None = None
+    periods: str | None = None
+    announcements: str | None = None
+    events: str | None = None
+    recent_activity: str | None = None
+
+
 class StudentDashboardData(BaseModel):
     """Aggregated sections of the student landing dashboard."""
 
     model_config = ConfigDict(from_attributes=True)
 
     student: StudentIdentityRead
-    current_term: AcademicTermRead
-    holds: list[HoldRead] = Field(default_factory=list)
+    current_term: AcademicTermRead | None = None
+    holds: list[HoldRead] | None = None
     standing: ScholasticStandingRead
     enrollment: EnrollmentSummaryRead
     periods: list[AcademicPeriodRead] = Field(default_factory=list)
@@ -54,6 +74,7 @@ class StudentDashboardData(BaseModel):
     events: list[AcademicEventRead] = Field(default_factory=list)
     recent_activity: list[StudentRecentActivityRead] = Field(default_factory=list)
     empty_states: EmptyStatesRead
+    panel_errors: PanelErrorsRead = Field(default_factory=PanelErrorsRead)
 
 
 class StudentDashboardResponse(BaseModel):
