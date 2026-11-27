@@ -66,6 +66,31 @@ MESSAGES_BY_EVENT: dict[str, tuple[str, str]] = {
         "Add and drop request decided",
         "Your add and drop request has been decided.",
     ),
+    "grading.grades_finalized": (
+        "Grades available",
+        "Your finalized grade for this course is now available.",
+    ),
+    "faculty.roster_updated": (
+        "Class roster updated",
+        "A student add or drop updated one of your assigned course rosters.",
+    ),
+    "faculty.deadline_reminder": (
+        "Submission deadline reminder",
+        "An upcoming grading or form submission deadline requires your attention.",
+    ),
+    "faculty.system_announcement": (
+        "System announcement",
+        "There is a new portal maintenance or institutional announcement.",
+    ),
+    "grading.inc_completion_decided": (
+        "Incomplete completion reviewed",
+        "A College Dean has reviewed an Incomplete completion request.",
+    ),
+    "grading.inc_expired": (
+        "Incomplete grade expired",
+        "An Incomplete grade whose 365-day completion window elapsed has expired "
+        "to 5.00.",
+    ),
 }
 
 
@@ -82,6 +107,37 @@ def render(event: Event) -> RenderedNotification:
         body = f"Your {entity} request was {state.lower()}."
         if remarks:
             body += f" Remarks: {remarks}"
+    elif event.name == "grading.grades_finalized":
+        course_code = event.payload.get("course_code")
+        section_name = event.payload.get("section_name")
+        if course_code and section_name:
+            title = f"Grades available for {course_code}"
+            body = (
+                f"Your finalized grade for {course_code} ({section_name}) "
+                "is now available."
+            )
+    elif event.name == "grading.inc_completion_decided":
+        state = str(event.payload.get("state", "DECIDED")).upper()
+        course_code = event.payload.get("course_code") or "your course"
+        proposed_mark = event.payload.get("proposed_mark")
+        remarks = event.payload.get("remarks")
+        if state == "ENDORSED":
+            title = f"Incomplete completion endorsed for {course_code}"
+            body = f"The Incomplete completion for {course_code} was endorsed" + (
+                f" with final grade {proposed_mark}." if proposed_mark else "."
+            )
+        else:
+            title = f"Incomplete completion rejected for {course_code}"
+            body = f"The Incomplete completion for {course_code} was rejected."
+        if remarks:
+            body += f" Remarks: {remarks}"
+    elif event.name == "grading.inc_expired":
+        course_code = event.payload.get("course_code") or "a course"
+        title = f"Incomplete grade expired for {course_code}"
+        body = (
+            f"The Incomplete mark for {course_code} was not completed before its "
+            "deadline and has been converted to 5.00."
+        )
     return RenderedNotification(
         notification_type=event.name,
         title=title,

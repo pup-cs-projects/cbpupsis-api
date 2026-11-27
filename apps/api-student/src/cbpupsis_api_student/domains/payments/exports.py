@@ -2,10 +2,24 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from io import BytesIO
+from zoneinfo import ZoneInfo
 
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
+
+MANILA = ZoneInfo("Asia/Manila")
+
+
+def _format_paid_at(paid_at: datetime | None) -> str:
+    """Format settlement timestamps in readable Asia/Manila (UTC+8) time."""
+    if paid_at is None:
+        return "Pending"
+    aware = paid_at.replace(tzinfo=UTC) if paid_at.tzinfo is None else paid_at
+    local = aware.astimezone(MANILA)
+    hour = local.strftime("%I").lstrip("0") or "12"
+    return f"{local:%B} {local.day}, {local:%Y} at {hour}:{local:%M %p} (UTC+8)"
 
 
 def receipt_pdf(payment) -> bytes:
@@ -27,7 +41,7 @@ def receipt_pdf(payment) -> bytes:
         ("Amount", f"PHP {payment.amount:.2f}"),
         ("Status", payment.payment_status),
         ("Gateway reference", payment.gateway_reference or "Pending"),
-        ("Paid at", payment.paid_at.isoformat() if payment.paid_at else "Pending"),
+        ("Paid at", _format_paid_at(payment.paid_at)),
     )
     y = height - 145
     for label, value in lines:

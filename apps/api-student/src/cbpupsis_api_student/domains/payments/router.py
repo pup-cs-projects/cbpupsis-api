@@ -16,7 +16,7 @@ from cbpupsis_api_student.domains.payments import service
 from cbpupsis_api_student.domains.payments.schemas import (
     PaymentCreate,
     PaymentCreated,
-    PaymentStatusRead,
+    PaymentDetailRead,
     XenditWebhook,
 )
 from cbpupsis_api_student.domains.student_auth.dependencies import (
@@ -106,12 +106,12 @@ async def create_payment(
 
 @router.get(
     "/{payment_id}",
-    response_model=PaymentStatusRead,
+    response_model=PaymentDetailRead,
     dependencies=[Depends(require_permission(READ_PAYMENT))],
 )
 async def read_payment(
     payment_id: uuid.UUID, user: Student, db: Database
-) -> PaymentStatusRead:
+) -> PaymentDetailRead:
     """Read only the signed-in student's payment; foreign IDs are hidden as 404."""
     return await service.read_payment(db, student_id=user.id, payment_id=payment_id)
 
@@ -150,10 +150,9 @@ async def xendit_webhook(
     request: Request,
     db: Database,
     callback_token: Annotated[str | None, Header(alias="x-callback-token")] = None,
-    webhook_id: Annotated[str | None, Header(alias="webhook-id")] = None,
 ) -> dict[str, bool]:
     """Verify Xendit's token before parsing or touching payment state."""
-    if not billing_client.valid_webhook_token(callback_token) or not webhook_id:
+    if not billing_client.valid_webhook_token(callback_token):
         logger.warning("payment.webhook_signature_invalid")
         raise billing_client.WebhookSignatureInvalidError
 
@@ -167,6 +166,13 @@ async def xendit_webhook(
     if not billing_client.webhook_timestamp_is_fresh(webhook.created):
         logger.warning("payment.webhook_timestamp_invalid")
         raise billing_client.WebhookSignatureInvalidError
+
+    provider_event_id = (
+        webhook.data.payment_id
+        or webhook.data.payment_session_id
+        or webhook.data.reference_id
+    )
+    webhook_id = f"{webhook.event}:{provider_event_id}"
 
     processed = await billing_client.process_xendit_webhook(
         db, webhook_id=webhook_id, webhook=webhook

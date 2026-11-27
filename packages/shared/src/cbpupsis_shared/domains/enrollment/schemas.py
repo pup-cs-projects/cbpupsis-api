@@ -58,6 +58,25 @@ class EnrolledSection(BaseModel):
     status: str
 
 
+class SectionRosterEnrollment(BaseModel):
+    enrollment_id: uuid.UUID
+    student_id: uuid.UUID
+    enrollment_status: str
+
+
+class SectionRosterAddDrop(BaseModel):
+    student_id: uuid.UUID
+    status: str
+
+
+class EnrollmentAttemptOwner(BaseModel):
+    enrollment_id: uuid.UUID
+    student_id: uuid.UUID
+    academic_term_id: uuid.UUID
+    section_id: uuid.UUID
+    status: str
+
+
 class AcademicDTO(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,

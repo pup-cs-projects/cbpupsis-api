@@ -76,7 +76,7 @@ async def test_change_password_keeps_a_null_address_null(
         headers={"Authorization": f"Bearer {login.json()['access_token']}"},
         json={
             "current_password": registered_user["password"],
-            "new_password": "a-freshly-chosen-password",
+            "new_password": "A-freshly-chosen-password-1!",
         },
     )
     assert changed.status_code == 200, changed.text

@@ -45,9 +45,12 @@ from cbpupsis_shared.domains.auth.exceptions import (
 )
 from cbpupsis_shared.domains.auth.schemas import RefreshRequest
 from cbpupsis_shared.domains.iam import service as iam_service
-from cbpupsis_shared.domains.iam.constants import ADMIN_GROUP, SUPERADMIN_GROUP
+from cbpupsis_shared.domains.iam.constants import (
+    ADMIN_GROUPS,
+    SUPERADMIN_GROUP,
+)
 from cbpupsis_shared.domains.users import client as users_client
-from cbpupsis_shared.domains.users.constants import AdminPosition
+from cbpupsis_shared.domains.users.constants import POSITION_GROUPS, AdminPosition
 from cbpupsis_shared.domains.users.schemas import AdminProfileRead
 
 
@@ -84,12 +87,27 @@ async def _password_step(db: AsyncSession, email: str, password: str):
 
 
 async def login_admin(
-    db: AsyncSession, *, email: str, password: str
-) -> AdminLoginChallenge:
-    """Verify an Admin password and return only a non-privileged challenge."""
+    db: AsyncSession,
+    *,
+    email: str,
+    password: str,
+    ip_address: str | None = None,
+    device_info: str = "",
+) -> AdminLoginChallenge | AdminTokenPair:
+    """Verify credentials; require MFA unless the development switch is on."""
     subject = await _password_step(db, email, password)
-    if not await iam_service.is_user_in_group(
-        db, subject.user_id, ADMIN_GROUP
+    if settings.development_mfa_skip_for(ROLE_ADMIN):
+        current = await users_client.lock_role_subject(db, subject.user_id)
+        if not current.is_active:
+            raise InvalidCredentialsError
+        current_version = await users_client.get_session_version(db, subject.user_id)
+        if current_version is None:
+            raise InvalidAuthTokenError
+        auth_client.validate_session_version(
+            {"session_version": subject.session_version}, current_version
+        )
+    if not await iam_service.is_user_in_any_group(
+        db, subject.user_id, ADMIN_GROUPS
     ) or await iam_service.is_user_in_group(db, subject.user_id, SUPERADMIN_GROUP):
         raise InvalidCredentialsError
     if not subject.email_verified:
@@ -97,6 +115,21 @@ async def login_admin(
     profile = await users_client.get_admin_profile(db, subject.user_id)
     if profile is None or not profile.is_active:
         raise AdminProfileRequiredError
+
+    if settings.development_mfa_skip_for(ROLE_ADMIN):
+        claims, position = _admin_session_claims(profile)
+        claims.update(mfa=False, development_mfa_skipped=True)
+        pair = await auth_client.complete_sign_in(
+            db,
+            subject.user_id,
+            role=ROLE_ADMIN,
+            attempted_id=str(subject.user_id),
+            ip_address=ip_address,
+            device_info=device_info,
+            mfa=False,
+            claims=claims,
+        )
+        return _admin_pair(pair.access_token, pair.refresh_token, position, profile)
 
     enrolled = await auth_client.enrolled_factors(db, subject.user_id)
     token, webauthn_challenge, jti = auth_client.create_challenge_token(
@@ -261,15 +294,14 @@ async def _verify_assertion(
 async def refresh_admin(db: AsyncSession, request: RefreshRequest) -> AdminTokenPair:
     """Rotate an Admin refresh token using the current role and profile scope."""
     refresh_claims = auth_client.decode_refresh_session(request.refresh_token)
-    if (
-        refresh_claims.get("role") != ROLE_ADMIN
-        or refresh_claims.get("mfa") is not True
-    ):
+    if refresh_claims.get("role") != ROLE_ADMIN:
+        raise InvalidAuthTokenError
+    if not auth_client.session_mfa_satisfied(refresh_claims):
         raise InvalidAuthTokenError
     user_id = uuid.UUID(str(refresh_claims["sub"]))
     if await iam_service.is_user_in_group(db, user_id, SUPERADMIN_GROUP):
         raise InvalidAuthTokenError
-    if not await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP):
+    if not await iam_service.is_user_in_any_group(db, user_id, ADMIN_GROUPS):
         raise InvalidAuthTokenError
     profile = await users_client.get_admin_profile(db, user_id)
     if profile is None or not profile.is_active:
@@ -295,8 +327,15 @@ async def configure_admin_profile(
     college_id: str | None = None,
 ) -> AdminProfileRead:
     """Assign an Admin position and its valid data scope during bootstrap."""
-    if not await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP):
+    if not await iam_service.is_user_in_any_group(db, user_id, ADMIN_GROUPS):
         raise AdminProfileRequiredError
+    target_group = POSITION_GROUPS.get(position)
+    if target_group and not await iam_service.is_user_in_group(
+        db, user_id, target_group
+    ):
+        group_id = await iam_service.get_group_id_by_name(db, target_group)
+        if group_id:
+            await iam_service.add_user_to_group(db, user_id, group_id)
     if position is AdminPosition.chairperson and not department_id:
         raise ValueError("chairperson requires department_id")
     if position is AdminPosition.dean and not college_id:
@@ -320,7 +359,7 @@ async def _admin_profile(db: AsyncSession, user_id: uuid.UUID) -> AdminProfileRe
     if (
         profile is None
         or not profile.is_active
-        or not await iam_service.is_user_in_group(db, user_id, ADMIN_GROUP)
+        or not await iam_service.is_user_in_any_group(db, user_id, ADMIN_GROUPS)
     ):
         raise AdminProfileRequiredError
     return profile

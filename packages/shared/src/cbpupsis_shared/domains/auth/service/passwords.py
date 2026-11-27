@@ -6,17 +6,21 @@ import asyncio
 import math
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from pydantic import EmailStr, TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.config import settings
 from cbpupsis_core.events import Event
-from cbpupsis_database.models.auth import TokenPurpose
+from cbpupsis_database.models.auth import AuthFailureStep, TokenPurpose
 from cbpupsis_shared.domains.audit import client as audit_client
 from cbpupsis_shared.domains.audit import service as audit_service
 from cbpupsis_shared.domains.auth import repository
-from cbpupsis_shared.domains.auth.constants import ROLE_SUPERADMIN
+from cbpupsis_shared.domains.auth.constants import (
+    INSTITUTIONAL_ID_PATTERN,
+    ROLE_SUPERADMIN,
+)
 from cbpupsis_shared.domains.auth.exceptions import (
     AuthError,
     AuthSessionExpiredError,
@@ -42,6 +46,11 @@ from cbpupsis_shared.domains.auth.security import (
     reset_address_hash,
     verify_password,
 )
+from cbpupsis_shared.domains.auth.service.lockout import (
+    clear_sign_in_failures,
+    record_sign_in_failure,
+    require_not_locked,
+)
 from cbpupsis_shared.domains.auth.service.sessions import as_utc, stage_session
 from cbpupsis_shared.domains.auth.service.tokens import (
     carried_claims,
@@ -65,13 +74,29 @@ async def check_password(raw_password: str, password_hash: str | None) -> bool:
     return await asyncio.to_thread(verify_password, raw_password, password_hash)
 
 
+def _parse_reset_identifier(
+    identifier: object,
+) -> tuple[Literal["email", "institutional_id"], str]:
+    """Validate and classify a reset identifier as an institutional ID or email."""
+    if not isinstance(identifier, str):
+        raise InvalidEmailAddressError
+    candidate = identifier.strip()
+    if INSTITUTIONAL_ID_PATTERN.match(candidate):
+        return ("institutional_id", candidate)
+    try:
+        email = str(TypeAdapter(EmailStr).validate_python(candidate)).lower()
+    except ValueError:
+        raise InvalidEmailAddressError from None
+    return ("email", email)
+
+
 async def forgot_password(
-    db: AsyncSession, email: str, *, ip_address: str | None = None
+    db: AsyncSession, identifier: object, *, ip_address: str | None = None
 ) -> None:
     """Atomically issue a digest, encrypted delivery job, and one audit row."""
     try:
-        email = str(TypeAdapter(EmailStr).validate_python(email)).lower()
-    except ValueError:
+        kind, value = _parse_reset_identifier(identifier)
+    except InvalidEmailAddressError:
         audit_service.stage_record(
             db,
             action="auth.password_reset_requested",
@@ -80,17 +105,21 @@ async def forgot_password(
             outcome="INVALID_EMAIL_ADDRESS",
         )
         await db.commit()
-        raise InvalidEmailAddressError from None
+        raise
     now = datetime.now(UTC)
-    email_hash = reset_address_hash(email)
+    user = (
+        await users_service.get_by_institutional_id_for_update(db, value)
+        if kind == "institutional_id"
+        else await users_service.get_by_email_for_update(db, value)
+    )
+    actor_id = user.id if user is not None else None
+    throttle_key = reset_address_hash(user.email if user is not None else value)
     window = timedelta(seconds=settings.password_reset_request_window_seconds)
     allowed = not settings.rate_limit_enabled or await repository.claim_reset_request(
-        db, email_hash, now, now - window, settings.password_reset_request_limit
+        db, throttle_key, now, now - window, settings.password_reset_request_limit
     )
-    user = await users_service.get_by_email_for_update(db, email.lower())
-    actor_id = user.id if user is not None else None
     if not allowed:
-        started = await repository.reset_request_retry_after(db, email_hash)
+        started = await repository.reset_request_retry_after(db, throttle_key)
         retry_after = max(
             1, math.ceil((as_utc(started) + window - now).total_seconds())
         )
@@ -272,9 +301,11 @@ async def change_password(
     user = await users_service.get_active_user_for_update(db, user_id)
     if user is None:
         raise InactiveUserError
+    await require_not_locked(db, user_id)
     if not await asyncio.to_thread(
         verify_password, current_password, user.password_hash
     ):
+        await record_sign_in_failure(db, user_id, AuthFailureStep.credentials)
         # Distinct from the token errors: the caller is already authenticated,
         # so telling them their password was wrong reveals nothing they do not
         # know.
@@ -290,6 +321,9 @@ async def change_password(
     old_session = await repository.get_active_session(db, user_id, session_id)
     if old_session is None:
         raise AuthSessionExpiredError
+    unmet = check_password_complexity(new_password)
+    if unmet:
+        raise PasswordTooWeakError(unmet)
     # A NULL address stays NULL: str(None) is "None", which is not an INET value.
     address = old_session.ip_address
     ip_address = None if address is None else str(address)
@@ -297,6 +331,7 @@ async def change_password(
     digest = await asyncio.to_thread(hash_password, new_password)
     await users_service.stage_password_reset(db, user_id, digest)
     await stage_revoke_all_for_user(db, user_id)
+    await clear_sign_in_failures(db, user_id)
     await invalidate_outstanding(db, user_id, TokenPurpose.password_reset)
     await repository.delete_mfa_challenge(db, user_id)
 

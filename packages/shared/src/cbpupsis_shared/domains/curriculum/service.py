@@ -45,7 +45,19 @@ from cbpupsis_shared.domains.curriculum.schemas import (
     SubstitutionApproveRequest,
 )
 from cbpupsis_shared.domains.enrollment import client as enrollment_client
+from cbpupsis_shared.domains.grading.constants import GRADING_MODES
+from cbpupsis_shared.domains.grading.exceptions import GradeModeLockedError
 from cbpupsis_shared.domains.users import client as users_client
+
+
+def _normalize_grading_mode(value: str) -> str:
+    mode = value.strip().upper()
+    if mode not in GRADING_MODES:
+        raise ValidationError(
+            "Grading mode must be NUMERIC or PASS_FAIL.",
+            code="VALIDATION_ERROR",
+        )
+    return mode
 
 
 async def record_courses(db: AsyncSession, ids: Collection[uuid.UUID]):
@@ -498,6 +510,7 @@ async def create_catalog_course(
         if payload.lab_hours is not None
         else int(payload.lab_units or 0)
     )
+    grading_mode = _normalize_grading_mode(payload.grading_mode)
     is_nstp, pe_sequence = classify_course_code(payload.course_code)
     course = repository.add_course(
         db,
@@ -513,7 +526,7 @@ async def create_catalog_course(
         lecture_hours=lec_h,
         lab_hours=lab_h,
         term_offered=payload.term_offered,
-        grading_mode=payload.grading_mode,
+        grading_mode=grading_mode,
         is_active=payload.is_active,
     )
     try:
@@ -670,7 +683,23 @@ async def update_catalog_course(
     if payload.lab_units is not None:
         updates["lab_units"] = payload.lab_units
     if payload.grading_mode is not None:
-        updates["grading_mode"] = payload.grading_mode
+        grading_mode = _normalize_grading_mode(payload.grading_mode)
+        current_mode = (course.grading_mode or "NUMERIC").strip().upper()
+        if grading_mode != current_mode:
+            # Grading imports curriculum at module load; defer client imports here.
+            from cbpupsis_shared.domains.grading import (  # noqa: PLC0415
+                client as grading_client,
+            )
+            from cbpupsis_shared.domains.sections import (  # noqa: PLC0415
+                client as sections_client,
+            )
+
+            section_ids = await sections_client.ids_for_courses(db, [course.id])
+            if section_ids and await grading_client.sections_have_marks(
+                db, section_ids
+            ):
+                raise GradeModeLockedError
+        updates["grading_mode"] = grading_mode
     if payload.is_active is not None:
         updates["is_active"] = payload.is_active
 

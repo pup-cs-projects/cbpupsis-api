@@ -68,6 +68,15 @@ class OverloadStudentIdentity(BaseModel):
     program_id: uuid.UUID
 
 
+class FacultyRosterIdentity(BaseModel):
+    student_id: uuid.UUID
+    student_number: str
+    name: str
+    email: str
+    program_id: uuid.UUID
+    year_level: int
+
+
 class ScheduleIdentity(BaseModel):
     """Student identity for a private, caller-owned schedule."""
 
@@ -183,6 +192,10 @@ class UserRead(UserBase):
     locale: str | None = None
     phone_number: str | None = None
 
+    group: str | None = None
+    permissions: list[str] = Field(default_factory=list)
+    page_permissions: list[str] = Field(default_factory=list)
+
 
 class DeleteAccountRequest(BaseModel):
     """Payload for deleting your own account.
@@ -210,7 +223,7 @@ class AdminProfileRead(BaseModel):
 
 
 class FacultyProfileRead(BaseModel):
-    """A faculty member's employment identity, for the faculty sign-in domain."""
+    """A faculty member's employment identity and profile details."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -218,6 +231,10 @@ class FacultyProfileRead(BaseModel):
     employee_id: str | None = None
     department: str
     college: str | None = None
+    academic_rank: str | None = None
+    office_location: str | None = None
+    office_hours: str | None = None
+    qualifications: str | None = None
     is_active: bool
 
 
