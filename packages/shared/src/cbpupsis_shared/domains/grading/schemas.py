@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -362,6 +362,12 @@ class GradeDraftItemInput(BaseModel):
         max_length=100,
         description="Optional remarks for this grade entry.",
         examples=["Draft mark"],
+    )
+    completion_deadline: date | None = Field(
+        default=None,
+        description="Optional INC completion deadline (Manila date) chosen by the "
+        "faculty, from today up to the one-year limit. Omit to use the limit.",
+        examples=["2027-05-31"],
     )
 
 

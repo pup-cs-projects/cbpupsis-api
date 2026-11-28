@@ -6,7 +6,7 @@ import math
 import re
 import uuid
 from collections.abc import Collection
-from datetime import UTC, date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Literal
 from zoneinfo import ZoneInfo
@@ -443,6 +443,20 @@ def _inc_deadline_for(submitted_at: datetime) -> datetime:
     return utc(submitted_at) + timedelta(days=settings.inc_completion_days)
 
 
+_MANILA = ZoneInfo("Asia/Manila")
+
+
+def _chosen_inc_deadline(chosen: date, now: datetime) -> datetime | None:
+    """End of the chosen Manila day, capped at the limit; None when out of range."""
+    limit = _inc_deadline_for(now)
+    if chosen < utc(now).astimezone(_MANILA).date():
+        return None
+    if chosen > limit.astimezone(_MANILA).date():
+        return None
+    end_of_day = datetime.combine(chosen, time(23, 59, 59), tzinfo=_MANILA)
+    return min(utc(end_of_day), limit)
+
+
 def _is_enrolled(status: str) -> bool:
     return status.strip().lower() in ENROLLED_COURSE_STATUSES
 
@@ -845,6 +859,7 @@ async def save_section_grade_draft(
         mismatch_errors: list[dict[str, object]] = []
         seen_enrollments: set[uuid.UUID] = set()
         normalized_items: list[tuple[object, object, dict[str, object]]] = []
+        chosen_deadlines: dict[uuid.UUID, datetime] = {}
 
         for idx, item in enumerate(payload.grades):
             target, target_error = _resolve_target_membership(
@@ -927,6 +942,21 @@ async def save_section_grade_draft(
                 updates["remarks"] = (
                     item.remarks.strip() if item.remarks is not None else None
                 )
+            chosen = getattr(item, "completion_deadline", None)
+            if chosen is not None:
+                deadline = _chosen_inc_deadline(chosen, now)
+                if deadline is None:
+                    row_errors.append(
+                        {
+                            **row_meta,
+                            "field": "completionDeadline",
+                            "value": chosen.isoformat(),
+                            "message": "Choose a completion deadline from today up "
+                            "to one year from today.",
+                        }
+                    )
+                    continue
+                chosen_deadlines[target.enrollment_id] = deadline
             normalized_items.append((target, item, updates))
 
         if mismatch_errors:
@@ -963,7 +993,9 @@ async def save_section_grade_draft(
                     updated_at=now,
                 )
                 if updates.get("final_grade") == "INC":
-                    row.inc_expires_at = _inc_deadline_for(now)
+                    row.inc_expires_at = chosen_deadlines.get(
+                        target.enrollment_id, _inc_deadline_for(now)
+                    )
                     row.completion_status = INC_STATE_PENDING
                 grades_by_enrollment[target.enrollment_id] = row
             else:
@@ -973,7 +1005,9 @@ async def save_section_grade_draft(
                 row.is_locked = False
                 if "final_grade" in updates:
                     if updates["final_grade"] == "INC":
-                        row.inc_expires_at = _inc_deadline_for(now)
+                        row.inc_expires_at = chosen_deadlines.get(
+                            target.enrollment_id, _inc_deadline_for(now)
+                        )
                         row.completion_status = INC_STATE_PENDING
                     else:
                         row.inc_expires_at = None
@@ -1146,7 +1180,19 @@ async def finalize_section_grades(
             row = grades_by_enrollment[membership.enrollment_id]
             mark = normalized_final_marks[membership.enrollment_id]
             row.final_grade = mark
-            row.inc_expires_at = inc_deadline if mark == "INC" else None
+            kept = row.inc_expires_at
+            # Keep a deadline the faculty chose (an earlier day than the limit);
+            # a default one restarts from the finalize time.
+            keep_draft_deadline = (
+                mark == "INC"
+                and kept is not None
+                and utc(now) < utc(kept)
+                and utc(kept).astimezone(_MANILA).date()
+                < inc_deadline.astimezone(_MANILA).date()
+            )
+            row.inc_expires_at = (
+                kept if keep_draft_deadline else inc_deadline if mark == "INC" else None
+            )
             row.completion_status = INC_STATE_PENDING if mark == "INC" else None
             row.is_draft = False
             row.is_locked = True

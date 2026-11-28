@@ -356,6 +356,15 @@ async def change_password(
             prior_state={"sessions": "previous"},
             new_state={"sessions": "replaced"},
         )
+    else:
+        # The owner activity feed reads this row as "Password changed successfully."
+        audit_service.stage_record(
+            db,
+            action="auth.password_changed",
+            actor_id=user_id,
+            ip_address=ip_address,
+            outcome="success",
+        )
     return await issue_pair(db, user_id, claims=claims)
 
 
