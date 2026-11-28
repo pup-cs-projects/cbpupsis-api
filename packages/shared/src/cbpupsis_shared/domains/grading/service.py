@@ -1181,10 +1181,14 @@ async def finalize_section_grades(
             mark = normalized_final_marks[membership.enrollment_id]
             row.final_grade = mark
             kept = row.inc_expires_at
+            # Keep a deadline the faculty chose (an earlier day than the limit);
+            # a default one restarts from the finalize time.
             keep_draft_deadline = (
                 mark == "INC"
                 and kept is not None
-                and utc(now) < utc(kept) <= inc_deadline
+                and utc(now) < utc(kept)
+                and utc(kept).astimezone(_MANILA).date()
+                < inc_deadline.astimezone(_MANILA).date()
             )
             row.inc_expires_at = (
                 kept if keep_draft_deadline else inc_deadline if mark == "INC" else None
