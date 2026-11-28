@@ -19,6 +19,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cbpupsis_core.exceptions import UnauthorizedError
+from cbpupsis_shared.domains.audit import service as audit_service
 from cbpupsis_shared.domains.auth import service as auth_service
 from cbpupsis_shared.domains.auth.exceptions import (
     IncorrectCurrentPasswordError,
@@ -246,6 +247,25 @@ class TestChangePassword:
 
         with pytest.raises(UnauthorizedError):
             await auth_service.refresh(db, old_session.refresh_token)
+
+    async def test_changing_shows_in_the_owner_activity(
+        self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox
+    ) -> None:
+        """A successful change is listed in the owner's recent activity."""
+        user = await _verified_user(db)
+        await _change_password(
+            db,
+            user,
+            current_password=PASSWORD,
+            new_password="Brand-new-password-1!",
+        )
+        await db.commit()
+
+        activity = await audit_service.list_student_recent_activity(
+            db, user_id=user.id, limit=20
+        )
+
+        assert [item.type for item in activity].count("PASSWORD_CHANGED") == 1
 
     async def test_changing_notifies_the_owner(
         self, db: AsyncSession, sent_emails: list[dict[str, str]], drain_outbox

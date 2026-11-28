@@ -361,6 +361,12 @@ async def list_student_recent_activity(
 
     for entry in audit_entries:
         action = entry.action.lower()
+        payload = entry.payload or {}
+        if "password" in action and (
+            "requested" in action or payload.get("outcome", "success") != "success"
+        ):
+            # A reset request or a failed attempt changed nothing: no activity row.
+            continue
         if "enrollment" in action:
             act_type = "ENROLLMENT_SUBMITTED"
             severity = "SUCCESS"
@@ -374,7 +380,7 @@ async def list_student_recent_activity(
         elif "password" in action:
             act_type = "PASSWORD_CHANGED"
             severity = "INFO"
-            desc = "Password was changed."
+            desc = "Password changed successfully."
         elif "profile" in action:
             act_type = "PROFILE_UPDATED"
             severity = "INFO"
