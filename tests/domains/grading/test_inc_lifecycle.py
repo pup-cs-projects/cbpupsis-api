@@ -442,6 +442,52 @@ async def test_ac_fac_001_3_draft_with_inc_sets_deadline_and_setting_override(
     )
 
 
+async def test_draft_inc_accepts_a_chosen_deadline_within_one_year(
+    client: AsyncClient, inc_setup
+) -> None:
+    setup = inc_setup
+    headers = await _faculty_headers(client, "2021-00951-MN-0")
+    section_id = setup["section_a_id"]
+    url = f"/api/v1/faculty/sections/{section_id}/grades/draft"
+    chosen = (datetime.now(UTC) + timedelta(days=90)).date()
+
+    resp = await client.put(
+        url,
+        headers=headers,
+        json={
+            "version": 1,
+            "grades": [
+                {
+                    "enrollmentId": str(setup["alice_enr_a_id"]),
+                    "mark": "INC",
+                    "completionDeadline": chosen.isoformat(),
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    row = {g["studentNumber"]: g for g in resp.json()["grades"]}["2024-00201-MN-0"]
+    deadline = datetime.fromisoformat(row["completionDeadline"])
+    assert timedelta(days=89) <= deadline - datetime.now(UTC) <= timedelta(days=91)
+
+    too_late = (datetime.now(UTC) + timedelta(days=400)).date()
+    rejected = await client.put(
+        url,
+        headers=headers,
+        json={
+            "version": 2,
+            "grades": [
+                {
+                    "enrollmentId": str(setup["alice_enr_a_id"]),
+                    "mark": "INC",
+                    "completionDeadline": too_late.isoformat(),
+                }
+            ],
+        },
+    )
+    assert rejected.status_code == 422, rejected.text
+
+
 async def test_ac_fac_001_4_student_record_excludes_inc_from_gwa_and_lists_incs(
     client: AsyncClient, inc_setup
 ) -> None:
